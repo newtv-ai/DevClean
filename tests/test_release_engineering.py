@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+
+from reclaimer import __version__
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = spec_from_file_location(
@@ -22,6 +25,24 @@ MODULE = module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 _parse_checksums = cast(Callable[[Path], dict[str, str]], MODULE._parse_checksums)
 _validate_wheel_member_name = cast(Callable[[str], str], MODULE._validate_wheel_member_name)
+
+_GATE_TEMPLATES = (
+    "g0-release-manifest.template.json",
+    "g1-physical-manifest.template.json",
+    "g2-machine-manifest.template.json",
+    "g5-race-manifest.template.json",
+)
+
+
+def test_product_version_is_single_sourced_across_release_contracts() -> None:
+    """Prevent divergent public release and gate-evidence version labels."""
+
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert project["project"]["version"] == __version__ == "0.1.0"
+    for template_name in _GATE_TEMPLATES:
+        template_path = ROOT / "docs" / "evidence" / "templates" / template_name
+        template = json.loads(template_path.read_text(encoding="utf-8"))
+        assert template["product"]["version"] == __version__
 
 
 def test_all_checked_in_schemas_pass_offline_validator() -> None:

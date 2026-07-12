@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "reclaimer"
-version = "0.0.1"
+version = "0.1.0"
 description = "Evidence-first, fail-closed disk inventory for Windows developer workstations"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"

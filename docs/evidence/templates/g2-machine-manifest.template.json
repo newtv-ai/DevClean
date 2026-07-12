@@ -5,7 +5,7 @@
   "run_id": "gate_run_g2_template",
   "captured_at": "2026-07-11T00:00:00Z",
   "product": {
-    "version": "0.0.1",
+    "version": "0.1.0",
     "source_revision": "REPLACE_WITH_REVISION",
     "artifact_kind": "WHEEL",
     "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000"

@@ -117,7 +117,7 @@ def _scan_report(resource: dict[str, Any]) -> dict[str, Any]:
         "scan": {
             "scan_id": new_id("scan"),
             "schema_version": "1.0.0",
-            "engine_version": "0.0.1",
+            "engine_version": "0.1.0",
             "status": "COMPLETED",
             "started_at": timestamp,
             "finished_at": timestamp,

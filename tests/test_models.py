@@ -166,7 +166,7 @@ def _plan_fixture() -> Plan:
         plan_id=new_id("plan"),
         scan_id=new_id("scan"),
         schema_version="1.0.0",
-        engine_build_id="0.0.1",
+        engine_build_id="0.1.0",
         created_at=created_at,
         expires_at=created_at + timedelta(minutes=30),
         actions=(_action_fixture(),),

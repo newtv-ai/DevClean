@@ -234,7 +234,7 @@ def get_loopback(endpoint: str) -> LoopbackResponse:
                 "Accept": "application/json",
                 "Accept-Encoding": "identity",
                 "Connection": "close",
-                "User-Agent": "Reclaimer-inventory/0.0.1",
+                "User-Agent": "Reclaimer-inventory/0.1.0",
             },
         )
         response = connection.getresponse()

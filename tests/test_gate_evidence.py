@@ -101,7 +101,7 @@ def _base_manifest(gate: str, product_hash: str) -> dict[str, Any]:
         "run_id": f"gate_run_{gate.casefold()}_fixture01",
         "captured_at": NOW,
         "product": {
-            "version": "0.0.1",
+            "version": "0.1.0",
             "source_revision": REVISION,
             "artifact_kind": "WHEEL",
             "artifact_sha256": product_hash,
@@ -367,7 +367,7 @@ def _build_g0(directory: Path) -> Path:
             {
                 "schema_version": "1.0.0",
                 "source_revision": REVISION,
-                "version": "0.0.1",
+                "version": "0.1.0",
                 "captured_at": NOW,
                 "artifact_sha256": product_hash,
                 "wheel_sha256": product_hash,
@@ -503,7 +503,7 @@ def _scan_report() -> dict[str, Any]:
         "scan": {
             "scan_id": scan_id,
             "schema_version": "1.0.0",
-            "engine_version": "0.0.1",
+            "engine_version": "0.1.0",
             "status": "COMPLETED",
             "started_at": NOW,
             "finished_at": NOW,
@@ -734,7 +734,7 @@ def _prerequisite_result(gate: str, product_hash: str) -> dict[str, Any]:
         "gate": gate if gate in {"G3", "G4"} else None,
         "matrix_errors": [],
         "product_binding": {
-            "version": "0.0.1",
+            "version": "0.1.0",
             "source_revision": REVISION,
             "artifact_sha256": product_hash,
         },
