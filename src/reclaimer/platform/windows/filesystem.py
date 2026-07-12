@@ -210,14 +210,6 @@ def _windows_metadata(path: str) -> FileSystemMetadata:
     ]
     create_file.restype = wintypes.HANDLE
 
-    get_info = kernel32.GetFileInformationByHandleEx
-    get_info.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
-    get_info.restype = wintypes.BOOL
-
-    get_basic_info = kernel32.GetFileInformationByHandle
-    get_basic_info.argtypes = [wintypes.HANDLE, ctypes.POINTER(_BY_HANDLE_FILE_INFORMATION)]
-    get_basic_info.restype = wintypes.BOOL
-
     close_handle = kernel32.CloseHandle
     close_handle.argtypes = [wintypes.HANDLE]
     close_handle.restype = wintypes.BOOL
@@ -237,96 +229,126 @@ def _windows_metadata(path: str) -> FileSystemMetadata:
         _raise_last_windows_error(path)
 
     try:
-        standard = _FILE_STANDARD_INFO()
-        standard_ok = bool(
-            get_info(
-                handle,
-                _FILE_STANDARD_INFO_CLASS,
-                ctypes.byref(standard),
-                ctypes.sizeof(standard),
-            )
-        )
-
-        attribute_tag = _FILE_ATTRIBUTE_TAG_INFO()
-        attribute_ok = bool(
-            get_info(
-                handle,
-                _FILE_ATTRIBUTE_TAG_INFO_CLASS,
-                ctypes.byref(attribute_tag),
-                ctypes.sizeof(attribute_tag),
-            )
-        )
-
-        identity = _FILE_ID_INFO()
-        identity_ok = bool(
-            get_info(
-                handle,
-                _FILE_ID_INFO_CLASS,
-                ctypes.byref(identity),
-                ctypes.sizeof(identity),
-            )
-        )
-
-        basic = _BY_HANDLE_FILE_INFORMATION()
-        basic_ok = bool(get_basic_info(handle, ctypes.byref(basic)))
-
-        if not standard_ok and not basic_ok:
-            _raise_last_windows_error(path)
-
-        if attribute_ok:
-            attributes: int | None = int(attribute_tag.file_attributes)
-        elif basic_ok:
-            attributes = int(basic.file_attributes)
-        else:
-            attributes = None
-        raw_reparse_tag = int(attribute_tag.reparse_tag) if attribute_ok else 0
-        reparse_tag = raw_reparse_tag if raw_reparse_tag else None
-
-        if identity_ok and any(identity.file_id.identifier):
-            volume_serial: int | None = int(identity.volume_serial_number)
-            file_id: str | None = bytes(identity.file_id.identifier).hex()
-            file_id_kind: str | None = "file_id_128"
-        elif basic_ok:
-            volume_serial = int(basic.volume_serial_number)
-            file_index = (int(basic.file_index_high) << 32) | int(basic.file_index_low)
-            file_id = f"{file_index:016x}" if file_index else None
-            file_id_kind = "file_index_64" if file_id is not None else None
-        else:
-            volume_serial = None
-            file_id = None
-            file_id_kind = None
-
-        if standard_ok:
-            logical_size = max(0, int(standard.end_of_file))
-            allocation_size: int | None = max(0, int(standard.allocation_size))
-            link_count: int | None = int(standard.number_of_links)
-            is_directory = bool(standard.directory)
-        else:
-            logical_size = (int(basic.file_size_high) << 32) | int(basic.file_size_low)
-            allocation_size = None
-            link_count = int(basic.number_of_links)
-            is_directory = bool((attributes or 0) & 0x00000010)
-
-        reparse = bool((attributes or 0) & FILE_ATTRIBUTE_REPARSE_POINT)
-        return FileSystemMetadata(
-            is_directory=is_directory,
-            logical_size=logical_size,
-            allocation_size=allocation_size,
-            volume_serial=volume_serial,
-            file_id=file_id,
-            file_id_kind=file_id_kind,
-            link_count=link_count,
-            attributes=attributes,
-            reparse_tag=reparse_tag,
-            is_reparse_point=reparse,
-            is_cloud_placeholder=is_cloud_placeholder(attributes, reparse_tag),
-            creation_time_ns=_filetime_to_unix_ns(basic.creation_time) if basic_ok else None,
-            last_write_time_ns=(
-                _filetime_to_unix_ns(basic.last_write_time) if basic_ok else None
-            ),
-        )
+        return _windows_metadata_from_handle(handle, path)
     finally:
         close_handle(handle)
+
+
+def _windows_metadata_from_handle(
+    handle: wintypes.HANDLE, source: str | os.PathLike[str]
+) -> FileSystemMetadata:
+    """Read metadata for one already-open Windows handle without reopening its path."""
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    get_info = kernel32.GetFileInformationByHandleEx
+    get_info.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+    get_info.restype = wintypes.BOOL
+
+    get_basic_info = kernel32.GetFileInformationByHandle
+    get_basic_info.argtypes = [wintypes.HANDLE, ctypes.POINTER(_BY_HANDLE_FILE_INFORMATION)]
+    get_basic_info.restype = wintypes.BOOL
+
+    standard = _FILE_STANDARD_INFO()
+    standard_ok = bool(
+        get_info(
+            handle,
+            _FILE_STANDARD_INFO_CLASS,
+            ctypes.byref(standard),
+            ctypes.sizeof(standard),
+        )
+    )
+
+    attribute_tag = _FILE_ATTRIBUTE_TAG_INFO()
+    attribute_ok = bool(
+        get_info(
+            handle,
+            _FILE_ATTRIBUTE_TAG_INFO_CLASS,
+            ctypes.byref(attribute_tag),
+            ctypes.sizeof(attribute_tag),
+        )
+    )
+
+    identity = _FILE_ID_INFO()
+    identity_ok = bool(
+        get_info(
+            handle,
+            _FILE_ID_INFO_CLASS,
+            ctypes.byref(identity),
+            ctypes.sizeof(identity),
+        )
+    )
+
+    basic = _BY_HANDLE_FILE_INFORMATION()
+    basic_ok = bool(get_basic_info(handle, ctypes.byref(basic)))
+
+    if not standard_ok and not basic_ok:
+        _raise_last_windows_error(os.fspath(source))
+
+    if attribute_ok:
+        attributes: int | None = int(attribute_tag.file_attributes)
+    elif basic_ok:
+        attributes = int(basic.file_attributes)
+    else:
+        attributes = None
+    raw_reparse_tag = int(attribute_tag.reparse_tag) if attribute_ok else 0
+    reparse_tag = raw_reparse_tag if raw_reparse_tag else None
+
+    if identity_ok and any(identity.file_id.identifier):
+        volume_serial: int | None = int(identity.volume_serial_number)
+        file_id: str | None = bytes(identity.file_id.identifier).hex()
+        file_id_kind: str | None = "file_id_128"
+    elif basic_ok:
+        volume_serial = int(basic.volume_serial_number)
+        file_index = (int(basic.file_index_high) << 32) | int(basic.file_index_low)
+        file_id = f"{file_index:016x}" if file_index else None
+        file_id_kind = "file_index_64" if file_id is not None else None
+    else:
+        volume_serial = None
+        file_id = None
+        file_id_kind = None
+
+    if standard_ok:
+        logical_size = max(0, int(standard.end_of_file))
+        allocation_size: int | None = max(0, int(standard.allocation_size))
+        link_count: int | None = int(standard.number_of_links)
+        is_directory = bool(standard.directory)
+    else:
+        logical_size = (int(basic.file_size_high) << 32) | int(basic.file_size_low)
+        allocation_size = None
+        link_count = int(basic.number_of_links)
+        is_directory = bool((attributes or 0) & 0x00000010)
+
+    reparse = bool((attributes or 0) & FILE_ATTRIBUTE_REPARSE_POINT)
+    return FileSystemMetadata(
+        is_directory=is_directory,
+        logical_size=logical_size,
+        allocation_size=allocation_size,
+        volume_serial=volume_serial,
+        file_id=file_id,
+        file_id_kind=file_id_kind,
+        link_count=link_count,
+        attributes=attributes,
+        reparse_tag=reparse_tag,
+        is_reparse_point=reparse,
+        is_cloud_placeholder=is_cloud_placeholder(attributes, reparse_tag),
+        creation_time_ns=_filetime_to_unix_ns(basic.creation_time) if basic_ok else None,
+        last_write_time_ns=(
+            _filetime_to_unix_ns(basic.last_write_time) if basic_ok else None
+        ),
+    )
+
+
+def read_file_metadata_handle(handle: wintypes.HANDLE) -> FileSystemMetadata:
+    """Read Windows metadata from an existing handle without a path lookup.
+
+    This is intentionally used only by the narrow deletion implementation after
+    it has opened the object with ``OPEN_REPARSE_POINT``.  It prevents a second
+    pathname lookup from validating a different file during a rename race.
+    """
+
+    if os.name != "nt":
+        raise OSError("handle-based Windows metadata is unavailable on this platform")
+    return _windows_metadata_from_handle(handle, "opened handle")
 
 
 def read_file_metadata(path: str | os.PathLike[str]) -> FileSystemMetadata:
@@ -353,4 +375,5 @@ __all__ = [
     "is_cloud_placeholder",
     "is_cloud_reparse_tag",
     "read_file_metadata",
+    "read_file_metadata_handle",
 ]

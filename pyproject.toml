@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "reclaimer"
 version = "0.1.0"
-description = "Evidence-first, fail-closed disk inventory for Windows developer workstations"
+description = "Bounded-memory, safe disk cleanup GUI for Windows 11"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = "GPL-3.0-or-later"
@@ -13,7 +13,7 @@ license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 authors = [{ name = "Reclaimer contributors" }]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
-  "Environment :: Console",
+  "Environment :: Win32 (MS Windows)",
   "Operating System :: Microsoft :: Windows :: Windows 11",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
@@ -34,6 +34,7 @@ dev = [
   "mypy>=1.15",
   "packaging>=24,<27",
   "pip-audit>=2.10,<3",
+  "pyinstaller>=6.21,<7",
   "pytest>=8.3",
   "pytest-cov>=6.0",
   "ruff>=0.11",

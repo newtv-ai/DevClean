@@ -5,9 +5,15 @@ from pathlib import Path
 import pytest
 
 from reclaimer.core import recycle
-from reclaimer.core.recycle import RecycleRefusal, recycle_targets, targets_from_records
+from reclaimer.core.recycle import (
+    RecycleRefusal,
+    recycle_targets,
+    target_from_scan_record,
+    targets_from_records,
+)
 from reclaimer.platform.windows.filesystem import FileSystemMetadata
 from reclaimer.platform.windows.recycle_bin import RecycleBinError, _absolute_source
+from reclaimer.scanner import ScanRecord, ScanRecordKind
 
 
 def _record(path: Path) -> dict[str, object]:
@@ -52,6 +58,30 @@ def test_recycle_selection_requires_stable_exact_filesystem_record(tmp_path: Pat
 
     assert target[0].path == tmp_path / "cache.bin"
     assert target[0].file_id_kind == "file_id_128"
+
+
+def test_bounded_gui_scan_record_uses_the_same_recycle_preflight(tmp_path: Path) -> None:
+    record = ScanRecord(
+        root=str(tmp_path),
+        path=str(tmp_path / "cache.bin"),
+        kind=ScanRecordKind.FILE,
+        depth=1,
+        logical_size=7,
+        allocated_size=4096,
+        raw_allocated_size=4096,
+        volume_serial=42,
+        file_id="ab" * 16,
+        file_id_kind="file_id_128",
+        link_count=1,
+        attributes=32,
+        creation_time_ns=100,
+        last_write_time_ns=200,
+    )
+
+    target = target_from_scan_record(record, candidate_id="gui_recycle_fixture")
+
+    assert target.candidate_id == "gui_recycle_fixture"
+    assert target.volume_serial == "000000000000002a"
 
 
 def test_recycle_selection_rejects_protected_credential_name(tmp_path: Path) -> None:

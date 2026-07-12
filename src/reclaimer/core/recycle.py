@@ -15,6 +15,7 @@ from reclaimer.platform.windows.filesystem import (
     read_file_metadata,
 )
 from reclaimer.platform.windows.volumes import is_local_fixed_path
+from reclaimer.scanner.filesystem import ScanRecord, ScanRecordKind
 
 MAX_RECYCLE_SELECTION = 32
 _PROTECTED_SEGMENTS = frozenset(
@@ -53,6 +54,39 @@ def targets_from_records(records: Sequence[Mapping[str, Any]]) -> tuple[RecycleT
     if len({os.path.normcase(str(target.path)) for target in targets}) != len(targets):
         raise RecycleRefusal("selected scan records must not resolve to the same path")
     return targets
+
+
+def target_from_scan_record(record: ScanRecord, *, candidate_id: str) -> RecycleTarget:
+    """Build one Recycle Bin target from a bounded, in-memory scan observation.
+
+    The GUI uses this only for a user's explicit selection.  It gives the
+    existing revalidation code the same identity snapshot without storing a
+    whole-disk inventory in SQLite.
+    """
+
+    if record.kind is not ScanRecordKind.FILE:
+        raise RecycleRefusal("only a scanned regular file can be recycled")
+    volume_serial = (
+        f"{record.volume_serial:016x}" if record.volume_serial is not None else None
+    )
+    return _target_from_record(
+        {
+            "adapter_id": "filesystem",
+            "candidate_id": candidate_id,
+            "path": record.path,
+            "logical_size": {"value": record.logical_size},
+            "identity": {
+                "volume_serial": volume_serial,
+                "file_id": record.file_id,
+                "file_id_kind": record.file_id_kind,
+                "link_count": record.link_count,
+                "attributes": record.attributes,
+                "reparse_tag": record.reparse_tag,
+                "creation_time_ns": record.creation_time_ns,
+                "last_write_time_ns": record.last_write_time_ns,
+            },
+        }
+    )
 
 
 def preflight_targets(targets: Sequence[RecycleTarget]) -> None:
@@ -219,5 +253,6 @@ __all__ = [
     "RecycleTarget",
     "preflight_targets",
     "recycle_targets",
+    "target_from_scan_record",
     "targets_from_records",
 ]
