@@ -200,6 +200,12 @@ def _doctor(*, as_json: bool) -> int:
         print(f"  Python: {diagnostics['python_version']}")
         print(f"  Elevated: {diagnostics['process_elevated']}")
         print(f"  State: {diagnostics['state_integrity']}")
+        execution_platform = diagnostics.get("future_execution_platform")
+        if isinstance(execution_platform, dict):
+            print(
+                "  Future execution platform: "
+                f"{execution_platform.get('status', 'UNKNOWN')}"
+            )
         print(f"  Safety: {diagnostics['safety_message']}")
     return 2 if diagnostics["process_elevated"] else 0
 
