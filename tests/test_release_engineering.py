@@ -97,7 +97,7 @@ def test_release_builder_enforces_clean_runtime_sbom_and_validation() -> None:
     script = (ROOT / "scripts" / "build_release.ps1").read_text(encoding="utf-8")
     assert "uv build --wheel --clear --no-create-gitignore" in script
     assert "uv lock --check" in script
-    assert "uv sync --frozen" in script
+    assert "uv sync --frozen --python $Python" in script
     assert "validate_schemas.py" in script
     assert "--no-build-isolation" in script
     assert "--no-deps --no-index" in script

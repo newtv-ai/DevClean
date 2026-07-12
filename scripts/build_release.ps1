@@ -108,7 +108,7 @@ try {
 
     & uv lock --check
     if ($LASTEXITCODE -ne 0) { throw "uv.lock is not current for pyproject.toml" }
-    & uv sync --frozen
+    & uv sync --frozen --python $Python
     if ($LASTEXITCODE -ne 0) { throw "locked development environment sync failed" }
     & uv run --frozen python scripts/validate_schemas.py
     if ($LASTEXITCODE -ne 0) { throw "checked-in JSON Schema validation failed" }
