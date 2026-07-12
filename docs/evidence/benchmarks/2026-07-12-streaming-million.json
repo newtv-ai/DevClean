@@ -1,0 +1,26 @@
+{
+  "artifact_sha256": "1bcbd0aa3e95a5b547d0338ca83bded0d039bbefbcf46c3f056c557e47ff3bce",
+  "captured_at": "2026-07-12T06:20:59.596091+00:00",
+  "evidence_kind": "G1_STREAMING_STATE_BENCHMARK",
+  "result": {
+    "baseline_working_set_bytes": 25894912,
+    "batch_size": 512,
+    "count": 1000000,
+    "database_bytes": 1145122816,
+    "elapsed_seconds": 329.301,
+    "final_python_traced_bytes": 543459,
+    "final_working_set_bytes": 28991488,
+    "integrity": true,
+    "peak_python_traced_bytes": 1267137,
+    "peak_working_set_bytes": 32501760,
+    "resources_per_second": 3036.7,
+    "stored": 1000000
+  },
+  "schema_version": "1.0.0",
+  "source_revision": "WORKTREE_UNCOMMITTED",
+  "verification": {
+    "bounded_batching": true,
+    "row_count_matches": true,
+    "sqlite_integrity_check": "ok"
+  }
+}

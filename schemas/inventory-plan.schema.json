@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reclaimer.dev/schemas/inventory-plan.schema.json",
+  "title": "Reclaimer Inventory-only Plan",
+  "description": "An internal review artifact whose actions are permanently REPORT_ONLY.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "plan_id",
+    "scan_id",
+    "schema_version",
+    "engine_build_id",
+    "created_at",
+    "expires_at",
+    "actions",
+    "executable"
+  ],
+  "properties": {
+    "plan_id": {
+      "type": "string",
+      "pattern": "^plan_[a-f0-9]{32}$"
+    },
+    "scan_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "schema_version": {"const": "1.0.0"},
+    "engine_build_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "created_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "executable": {"const": false},
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/report_only_action"}
+    }
+  },
+  "$defs": {
+    "report_only_action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action_id",
+        "candidate_id",
+        "adapter_id",
+        "kind",
+        "effect_class",
+        "selection_mode",
+        "preview_mode",
+        "reclaim_scope",
+        "risk_tier",
+        "summary",
+        "undo_capability",
+        "reconstruction",
+        "enabled"
+      ],
+      "properties": {
+        "action_id": {"type": "string", "pattern": "^action_[a-f0-9]{32}$"},
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "adapter_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9_-]*$"
+        },
+        "kind": {"const": "REPORT_ONLY"},
+        "effect_class": {"const": "PURE_QUERY"},
+        "selection_mode": {"const": "NONE"},
+        "preview_mode": {"const": "NONE"},
+        "reclaim_scope": {"const": "UNKNOWN"},
+        "risk_tier": {"enum": ["GREEN", "YELLOW", "RED"]},
+        "summary": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "undo_capability": {"enum": ["RECYCLE_BIN", "VENDOR_ROLLBACK", "NONE"]},
+        "reconstruction": {
+          "enum": ["EXACT", "REDOWNLOAD_BEST_EFFORT", "REBUILD_BEST_EFFORT", "NONE"]
+        },
+        "enabled": {"const": false}
+      }
+    }
+  }
+}

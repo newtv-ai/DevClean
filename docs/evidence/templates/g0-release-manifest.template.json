@@ -1,0 +1,96 @@
+{
+  "$schema": "../../../schemas/gate-evidence.schema.json",
+  "schema_version": "1.0.0",
+  "gate": "G0",
+  "run_id": "gate_run_g0_template",
+  "captured_at": "2026-07-11T00:00:00Z",
+  "product": {
+    "version": "0.0.1",
+    "source_revision": "REPLACE_WITH_REVISION",
+    "artifact_kind": "WHEEL",
+    "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "prerequisites": [],
+  "environment": {
+    "machine_kind": "CI_RUNNER",
+    "machine_fingerprint_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "os_product": "GitHub Actions Windows runner",
+    "os_version": "Windows Server",
+    "os_build": "REPLACE_WITH_RUNNER_BUILD",
+    "architecture": "x86_64",
+    "locale": "en-US",
+    "filesystem": "NTFS",
+    "volume_kind": "FIXED",
+    "user_integrity": "ELEVATED",
+    "isolation_notes": "替换为 GitHub run ID、runner image/version 与 artifact retention 说明。"
+  },
+  "scope": {
+    "adapters": ["repository"],
+    "available_adapters": ["repository"],
+    "required_process_names": ["python.exe"],
+    "managed_root_labels": [],
+    "protected_asset_labels": [],
+    "allowed_write_root_labels": []
+  },
+  "evidence": [],
+  "checks": [
+    {
+      "check_id": "license_owner_confirmed",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "项目 owner 尚未签署最终许可证决定。"
+    },
+    {
+      "check_id": "third_party_boundary_clean",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未对固定 revision 生成并复核 source audit。"
+    },
+    {
+      "check_id": "windows_ci_matrix_passed",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "真实 GitHub Windows/Python 矩阵尚未运行。"
+    },
+    {
+      "check_id": "codeql_passed",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "真实 CodeQL run 尚未绑定。"
+    },
+    {
+      "check_id": "dependency_audit_clean",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "真实 CI dependency audit JSON 尚未绑定。"
+    },
+    {
+      "check_id": "release_artifacts_validated",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "可复现 wheel/SBOM/校验和证据尚未绑定。"
+    },
+    {
+      "check_id": "preview_inventory_only",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "真实 CI 尚未复核发行 wheel 的不可执行边界。"
+    }
+  ],
+  "review": {
+    "author_ids": ["owner_placeholder"],
+    "reviewer_ids": [],
+    "review_method": "NONE",
+    "reviewed_at": null,
+    "notes": "G0 未完成模板；owner attestation 与 CI/CodeQL 必须来自外部真实状态。"
+  },
+  "limitations": ["该模板不能代替项目 owner 授权、真实 GitHub run 或安全扫描结果。"],
+  "conclusion": "INCOMPLETE"
+}

@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Windows / Python ${{ matrix.python-version }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.6"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Verify lockfile is current
+        run: uv lock --check
+
+      - name: Sync locked development environment
+        run: uv sync --frozen
+
+      - name: Verify installed dependencies
+        run: uv pip check
+
+      - name: Validate checked-in JSON Schemas
+        run: uv run --frozen python scripts/validate_schemas.py
+
+      - name: Audit installed dependencies
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/ci | Out-Null
+          uv run --frozen python -m pip_audit --local --skip-editable --progress-spinner off --format json --output artifacts/ci/dependency-audit-py${{ matrix.python-version }}.json
+
+      - name: Test
+        run: uv run --frozen pytest --cov=reclaimer --cov-report=term-missing --cov-report=xml:artifacts/ci/coverage-py${{ matrix.python-version }}.xml --junitxml=artifacts/ci/junit-py${{ matrix.python-version }}.xml
+
+      - name: Lint
+        run: uv run --frozen ruff check .
+
+      - name: Type check
+        run: uv run --frozen mypy src
+
+      - name: Build wheel and runtime SBOM
+        if: matrix.python-version == '3.13'
+        shell: pwsh
+        run: ./scripts/build_release.ps1 -Python ${{ matrix.python-version }}
+
+      - name: Upload wheel and SBOM
+        if: matrix.python-version == '3.13'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: reclaimer-wheel-and-sbom
+          path: |
+            artifacts/release/*
+            artifacts/release-validation.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload per-version CI evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-evidence-python-${{ matrix.python-version }}
+          path: |
+            artifacts/ci/dependency-audit-py${{ matrix.python-version }}.json
+            artifacts/ci/coverage-py${{ matrix.python-version }}.xml
+            artifacts/ci/junit-py${{ matrix.python-version }}.xml
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0.0",
+  "source_revision": "REPLACE_WITH_FULL_COMMIT_SHA",
+  "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "captured_at": "2026-07-11T00:00:00Z",
+  "workflow_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "run_id": "REPLACE_WITH_GITHUB_RUN_ID",
+  "run_attempt": 1,
+  "repository": "owner/repository",
+  "python_matrix": [
+    {
+      "python_version": "3.11",
+      "conclusion": "FAIL",
+      "tests_passed": 0,
+      "tests_skipped": 0,
+      "coverage_percent": 0,
+      "schemas_validated": false,
+      "dependency_audit_clean": false,
+      "ruff_passed": false,
+      "mypy_passed": false
+    },
+    {
+      "python_version": "3.12",
+      "conclusion": "FAIL",
+      "tests_passed": 0,
+      "tests_skipped": 0,
+      "coverage_percent": 0,
+      "schemas_validated": false,
+      "dependency_audit_clean": false,
+      "ruff_passed": false,
+      "mypy_passed": false
+    },
+    {
+      "python_version": "3.13",
+      "conclusion": "FAIL",
+      "tests_passed": 0,
+      "tests_skipped": 0,
+      "coverage_percent": 0,
+      "schemas_validated": false,
+      "dependency_audit_clean": false,
+      "ruff_passed": false,
+      "mypy_passed": false
+    }
+  ],
+  "actions_pinned": false,
+  "persist_credentials_false": false,
+  "inventory_only_contract_tests_passed": false,
+  "dependency_audit_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "release_validation_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "conclusion": "FAIL"
+}

@@ -1,0 +1,518 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reclaimer.dev/schemas/scan-report.schema.json",
+  "title": "Reclaimer ScanReport",
+  "description": "A one-way, inventory-only report. It is not accepted as plan or execution input.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "scan",
+    "resources",
+    "errors",
+    "adapter_runs",
+    "evidence",
+    "safety_boundary"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "scan": {
+      "$ref": "#/$defs/scan"
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          {"$ref": "resource.schema.json"},
+          {
+            "properties": {"actionable": {"const": false}},
+            "required": ["actionable"]
+          }
+        ]
+      },
+      "maxItems": 10000000
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/scan_error"
+      },
+      "maxItems": 1000000
+    },
+    "adapter_runs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/adapter_run"
+      },
+      "maxItems": 100000
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence_record"
+      },
+      "maxItems": 1000000
+    },
+    "safety_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable", "statement"],
+      "properties": {
+        "executable": {"const": false},
+        "statement": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      }
+    }
+  },
+  "$defs": {
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scan_id",
+        "schema_version",
+        "engine_version",
+        "status",
+        "started_at",
+        "finished_at",
+        "roots",
+        "summary"
+      ],
+      "properties": {
+        "scan_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "schema_version": {"const": "1.0.0"},
+        "engine_version": {"type": "string", "minLength": 1, "maxLength": 128},
+        "status": {"enum": ["RUNNING", "COMPLETED", "CANCELLED", "FAILED"]},
+        "started_at": {"type": "string", "format": "date-time"},
+        "finished_at": {"type": ["string", "null"], "format": "date-time"},
+        "roots": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1, "maxLength": 32767},
+          "maxItems": 1024
+        },
+        "summary": {
+          "type": "object",
+          "description": "Versioned scanner summary. Unknown summary keys are preserved as evidence.",
+          "additionalProperties": true
+        }
+      }
+    },
+    "scan_error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind", "message"],
+      "properties": {
+        "path": {"type": ["string", "null"], "maxLength": 32767},
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "message": {"type": "string", "minLength": 1, "maxLength": 8192}
+      }
+    },
+    "adapter_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "scan_id",
+        "adapter_id",
+        "status",
+        "version",
+        "effect_class",
+        "started_at",
+        "finished_at",
+        "completed"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "pattern": "^adapter_run_[a-f0-9]{32}$"
+        },
+        "scan_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "adapter_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9_-]*$"
+        },
+        "status": {
+          "enum": ["AVAILABLE", "UNAVAILABLE", "UNSUPPORTED_VERSION", "ERROR"]
+        },
+        "version": {"type": ["string", "null"], "maxLength": 128},
+        "effect_class": {
+          "enum": ["PURE_QUERY", "OBSERVATION_WITH_OPERATIONAL_WRITES"]
+        },
+        "started_at": {"type": "string", "format": "date-time"},
+        "finished_at": {"type": "string", "format": "date-time"},
+        "completed": {"type": "boolean"},
+        "executable": {"type": ["string", "null"], "maxLength": 32767},
+        "detail": {"type": ["string", "null"], "maxLength": 8192},
+        "resources": {"type": "integer", "minimum": 0},
+        "issues": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "message", "fatal"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Z0-9][A-Z0-9_]*$"
+              },
+              "message": {"type": "string", "minLength": 1, "maxLength": 8192},
+              "fatal": {"type": "boolean"}
+            }
+          }
+        },
+        "evidence_ids": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+          }
+        },
+        "failure_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"completed": {"const": true}},
+            "required": ["completed"]
+          },
+          "then": {
+            "required": ["executable", "detail", "resources", "issues", "evidence_ids"],
+            "not": {"required": ["failure_type"]}
+          },
+          "else": {
+            "required": ["failure_type"],
+            "not": {
+              "anyOf": [
+                {"required": ["resources"]},
+                {"required": ["issues"]},
+                {"required": ["evidence_ids"]}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "evidence_record": {
+      "oneOf": [
+        {"$ref": "#/$defs/command_evidence"},
+        {"$ref": "#/$defs/loopback_evidence"}
+      ]
+    },
+    "command_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "scan_id",
+        "adapter_id",
+        "kind",
+        "captured_at",
+        "executable_path",
+        "executable_size",
+        "executable_mtime_ns",
+        "executable_volume_serial",
+        "executable_file_id",
+        "executable_file_id_kind",
+        "executable_sha256",
+        "argv_redacted",
+        "effect_class",
+        "returncode",
+        "duration_ms",
+        "timed_out",
+        "output_limit_exceeded",
+        "transcript_redaction_version",
+        "stdout_size",
+        "stderr_size",
+        "stdout_sha256",
+        "stderr_sha256",
+        "stdout_stored_size",
+        "stderr_stored_size",
+        "stdout_stored_sha256",
+        "stderr_stored_sha256",
+        "stdout_storage",
+        "stderr_storage",
+        "stdout_file",
+        "stderr_file"
+      ],
+      "properties": {
+        "evidence_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "scan_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "adapter_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9_-]*$"
+        },
+        "kind": {"const": "VENDOR_CLI"},
+        "captured_at": {"type": "string", "format": "date-time"},
+        "executable_path": {"type": "string", "minLength": 1, "maxLength": 32767},
+        "executable_size": {"type": "integer", "minimum": 0},
+        "executable_mtime_ns": {"type": "integer", "minimum": 0},
+        "executable_volume_serial": {
+          "type": ["string", "null"],
+          "pattern": "^[a-f0-9]{1,16}$"
+        },
+        "executable_file_id": {
+          "type": ["string", "null"],
+          "pattern": "^[a-f0-9]{1,32}$"
+        },
+        "executable_file_id_kind": {
+          "type": ["string", "null"],
+          "pattern": "^[a-z0-9_]{1,32}$"
+        },
+        "executable_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "argv_redacted": {
+          "type": "array",
+          "items": {"type": "string", "maxLength": 32767},
+          "minItems": 1,
+          "maxItems": 128
+        },
+        "effect_class": {
+          "enum": ["PURE_QUERY", "OBSERVATION_WITH_OPERATIONAL_WRITES"]
+        },
+        "returncode": {"type": ["integer", "null"]},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "timed_out": {"type": "boolean"},
+        "output_limit_exceeded": {"type": "boolean"},
+        "transcript_redaction_version": {
+          "const": "transcript-redaction-v1"
+        },
+        "stdout_size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Byte length of the original in-memory stdout source; those bytes are not persisted."
+        },
+        "stderr_size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Byte length of the original in-memory stderr source; those bytes are not persisted."
+        },
+        "stdout_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 of the original in-memory stdout source, distinct from stdout_stored_sha256."
+        },
+        "stderr_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 of the original in-memory stderr source, distinct from stderr_stored_sha256."
+        },
+        "stdout_stored_size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Byte length of the redacted UTF-8 or marker file actually persisted for stdout."
+        },
+        "stderr_stored_size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Byte length of the redacted UTF-8 or marker file actually persisted for stderr."
+        },
+        "stdout_stored_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 of the stdout evidence file actually persisted."
+        },
+        "stderr_stored_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 of the stderr evidence file actually persisted."
+        },
+        "stdout_storage": {"$ref": "#/$defs/transcript_storage"},
+        "stderr_storage": {"$ref": "#/$defs/transcript_storage"},
+        "stdout_file": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "stderr_file": {"type": "string", "minLength": 1, "maxLength": 1024}
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "executable_volume_serial": {"type": "string"},
+                "executable_file_id": {"type": "string"},
+                "executable_file_id_kind": {"type": "string"}
+              }
+            },
+            {
+              "properties": {
+                "executable_volume_serial": {"type": "null"},
+                "executable_file_id": {"type": "null"},
+                "executable_file_id_kind": {"type": "null"}
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "loopback_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "scan_id",
+        "adapter_id",
+        "kind",
+        "captured_at",
+        "host",
+        "port",
+        "method",
+        "endpoint",
+        "effect_class",
+        "outcome",
+        "http_status",
+        "error_type",
+        "duration_ms",
+        "timed_out",
+        "output_limit_exceeded",
+        "content_type_class",
+        "content_encoding_class",
+        "transcript_redaction_version",
+        "response_size",
+        "response_sha256",
+        "response_stored_size",
+        "response_stored_sha256",
+        "response_storage",
+        "response_file"
+      ],
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "scan_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "adapter_id": {"const": "ollama"},
+        "kind": {"const": "LOOPBACK_API"},
+        "captured_at": {"type": "string", "format": "date-time"},
+        "host": {"const": "127.0.0.1"},
+        "port": {"const": 11434},
+        "method": {"const": "GET"},
+        "endpoint": {"enum": ["/api/version", "/api/tags", "/api/ps"]},
+        "effect_class": {"const": "PURE_QUERY"},
+        "outcome": {"enum": ["RESPONSE", "FAILURE"]},
+        "http_status": {"type": ["integer", "null"]},
+        "error_type": {"type": ["string", "null"]},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "timed_out": {"type": "boolean"},
+        "output_limit_exceeded": {"type": "boolean"},
+        "content_type_class": {
+          "enum": ["APPLICATION_JSON", "OTHER", "MISSING"]
+        },
+        "content_encoding_class": {
+          "enum": ["IDENTITY", "OTHER", "MISSING"]
+        },
+        "transcript_redaction_version": {
+          "const": "transcript-redaction-v1"
+        },
+        "response_size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Byte length of the original bounded in-memory response; those bytes are not persisted."
+        },
+        "response_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 of the original bounded in-memory response."
+        },
+        "response_stored_size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Byte length of the redacted UTF-8 or marker file actually persisted."
+        },
+        "response_stored_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 of the persisted redacted response evidence file."
+        },
+        "response_storage": {"$ref": "#/$defs/transcript_storage"},
+        "response_file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^loopback/[A-Za-z0-9][A-Za-z0-9._:-]*\\.response\\.redacted\\.txt$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"outcome": {"const": "RESPONSE"}},
+            "required": ["outcome"]
+          },
+          "then": {
+            "properties": {
+              "http_status": {"type": "integer", "minimum": 100, "maximum": 599},
+              "error_type": {"type": "null"},
+              "timed_out": {"const": false},
+              "output_limit_exceeded": {"const": false}
+            }
+          },
+          "else": {
+            "properties": {
+              "outcome": {"const": "FAILURE"},
+              "http_status": {"type": "null"},
+              "error_type": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "transcript_storage": {
+      "enum": [
+        "REDACTED_UTF8",
+        "NON_UTF8_MARKER",
+        "UNSAFE_TEXT_MARKER",
+        "SOURCE_TOO_LARGE_MARKER",
+        "REDACTION_ERROR_MARKER",
+        "REDACTED_OUTPUT_TOO_LARGE_MARKER"
+      ]
+    }
+  }
+}

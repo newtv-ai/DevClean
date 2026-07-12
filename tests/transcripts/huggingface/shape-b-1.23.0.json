@@ -1,0 +1,12 @@
+[
+  {
+    "id": "model/fixture-org/model-b",
+    "repo_id": "fixture-org/model-b",
+    "repo_type": "model",
+    "revision": "2222222222222222222222222222222222222222",
+    "snapshot_path": "G:\\fixtures\\hf\\hub\\models--fixture-org--model-b\\snapshots\\2222222222222222222222222222222222222222",
+    "size": "117.7M",
+    "last_modified": "2 days ago",
+    "refs": ["main"]
+  }
+]

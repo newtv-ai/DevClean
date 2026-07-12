@@ -1,0 +1,141 @@
+{
+  "$schema": "../../../schemas/gate-evidence.schema.json",
+  "schema_version": "1.0.0",
+  "gate": "G2",
+  "run_id": "gate_run_g2_template",
+  "captured_at": "2026-07-11T00:00:00Z",
+  "product": {
+    "version": "0.0.1",
+    "source_revision": "REPLACE_WITH_REVISION",
+    "artifact_kind": "WHEEL",
+    "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "prerequisites": [],
+  "environment": {
+    "machine_kind": "PHYSICAL",
+    "machine_fingerprint_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "os_product": "Windows 11",
+    "os_version": "10.0.00000",
+    "os_build": "00000.0000",
+    "architecture": "x86_64",
+    "locale": "zh-CN",
+    "filesystem": "NTFS",
+    "volume_kind": "FIXED",
+    "user_integrity": "STANDARD",
+    "isolation_notes": "替换为本机或一次性 VM 的隔离、快照和测试账户说明。"
+  },
+  "scope": {
+    "adapters": [
+      "huggingface",
+      "pip",
+      "uv",
+      "conda",
+      "npm",
+      "pnpm",
+      "docker",
+      "ollama",
+      "vscode"
+    ],
+    "available_adapters": [],
+    "required_process_names": ["python.exe"],
+    "managed_root_labels": ["managed_cache"],
+    "protected_asset_labels": ["random_canary", "user_assets"],
+    "allowed_write_root_labels": ["reclaimer_data", "vendor_sandbox"]
+  },
+  "evidence": [],
+  "checks": [
+    {
+      "check_id": "inventory_smoke",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "procmon_capture_complete",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "procmon_csv_validated",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "no_managed_root_writes",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "no_user_asset_writes",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "allowed_operational_writes_declared",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "no_service_start",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "no_npm_verify",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "no_dism",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "unknown_versions_inventory_only",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "size_semantics_reviewed",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "preview_inventory_only",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    }
+  ],
+  "review": {
+    "author_ids": ["author_placeholder"],
+    "reviewer_ids": [],
+    "review_method": "NONE",
+    "reviewed_at": null,
+    "notes": "每台机器复制一份；不得把单机 PASS 当作 G2 矩阵 PASS。"
+  },
+  "limitations": ["该文件只是未完成模板，不能证明 G2 或 v0.1 发布门槛已通过。"],
+  "conclusion": "INCOMPLETE"
+}

@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://reclaimer.dev/schemas/resource.schema.json",
+  "title": "Reclaimer Resource",
+  "description": "A version 1.0.0 inventory resource. This schema describes evidence, not execution authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "candidate_id",
+    "adapter_id",
+    "display_name",
+    "semantic_type",
+    "risk_tier",
+    "provenance_class",
+    "vendor_locator",
+    "path",
+    "logical_size",
+    "allocated_size",
+    "exclusive_host_reclaimable",
+    "vendor_logical_reclaimable",
+    "undo_capability",
+    "reconstruction",
+    "reconstruction_preconditions",
+    "identity",
+    "warnings",
+    "evidence",
+    "actionable"
+  ],
+  "properties": {
+    "candidate_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "description": "Opaque local identifier; it is not an authorization secret."
+    },
+    "adapter_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "semantic_type": {
+      "enum": [
+        "REBUILDABLE_CACHE",
+        "INSTALLED_MODEL",
+        "PACKAGE_STORE",
+        "BUILD_OUTPUT",
+        "APP_STATE",
+        "USER_DATA",
+        "SYSTEM_ROLLBACK",
+        "UNKNOWN"
+      ]
+    },
+    "risk_tier": {
+      "enum": ["GREEN", "YELLOW", "RED"]
+    },
+    "provenance_class": {
+      "enum": [
+        "REGENERABLE_CONFIRMED",
+        "REMOTE_RETRIEVABLE_VERIFIED",
+        "LOCAL_ONLY",
+        "UNKNOWN"
+      ]
+    },
+    "vendor_locator": {
+      "type": ["string", "null"],
+      "maxLength": 32767,
+      "description": "Adapter-owned stable locator. It is hidden in privacy-preserving exports."
+    },
+    "path": {
+      "type": ["string", "null"],
+      "maxLength": 32767,
+      "description": "A local path or null for vendor resources without a filesystem locator. Exports may redact it."
+    },
+    "logical_size": {
+      "$ref": "#/$defs/size_value"
+    },
+    "allocated_size": {
+      "$ref": "#/$defs/size_value"
+    },
+    "exclusive_host_reclaimable": {
+      "$ref": "#/$defs/size_value"
+    },
+    "vendor_logical_reclaimable": {
+      "$ref": "#/$defs/size_value"
+    },
+    "undo_capability": {
+      "enum": ["RECYCLE_BIN", "VENDOR_ROLLBACK", "NONE"]
+    },
+    "reconstruction": {
+      "enum": [
+        "EXACT",
+        "REDOWNLOAD_BEST_EFFORT",
+        "REBUILD_BEST_EFFORT",
+        "NONE"
+      ]
+    },
+    "reconstruction_preconditions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+      },
+      "maxItems": 64
+    },
+    "identity": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/file_identity"}
+      ]
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      },
+      "maxItems": 256
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      },
+      "maxItems": 256
+    },
+    "actionable": {
+      "type": "boolean",
+      "description": "Always false in a ScanReport. Future non-report models may use true after a separate decision."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"semantic_type": {"const": "UNKNOWN"}},
+        "required": ["semantic_type"]
+      },
+      "then": {
+        "properties": {
+          "risk_tier": {"const": "RED"},
+          "actionable": {"const": false}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provenance_class": {"enum": ["LOCAL_ONLY", "UNKNOWN"]}
+        },
+        "required": ["provenance_class"]
+      },
+      "then": {
+        "properties": {"actionable": {"const": false}}
+      }
+    }
+  ],
+  "$defs": {
+    "size_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "confidence"],
+      "properties": {
+        "value": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "confidence": {
+          "enum": ["EXACT", "ESTIMATE", "UNKNOWN"]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "value": {"type": "null"},
+            "confidence": {"const": "UNKNOWN"}
+          }
+        },
+        {
+          "properties": {
+            "value": {"type": "integer", "minimum": 0},
+            "confidence": {"enum": ["EXACT", "ESTIMATE", "UNKNOWN"]}
+          }
+        }
+      ]
+    },
+    "file_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "volume_serial",
+        "file_id",
+        "file_id_kind",
+        "link_count",
+        "attributes",
+        "reparse_tag",
+        "creation_time_ns",
+        "last_write_time_ns"
+      ],
+      "properties": {
+        "volume_serial": {"type": ["string", "null"], "maxLength": 128},
+        "file_id": {"type": ["string", "null"], "maxLength": 256},
+        "file_id_kind": {"type": ["string", "null"], "maxLength": 64},
+        "link_count": {"type": ["integer", "null"], "minimum": 0},
+        "attributes": {"type": ["integer", "null"], "minimum": 0},
+        "reparse_tag": {"type": ["integer", "null"], "minimum": 0},
+        "creation_time_ns": {"type": ["integer", "null"], "minimum": 0},
+        "last_write_time_ns": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "detail", "checked_at", "digest"],
+      "properties": {
+        "source": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "detail": {"type": "string", "minLength": 1, "maxLength": 8192},
+        "checked_at": {"type": "string", "format": "date-time"},
+        "digest": {
+          "type": ["string", "null"],
+          "maxLength": 256,
+          "description": "Optional digest of the cited artifact or transcript."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling==1.28.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "reclaimer"
+version = "0.0.1"
+description = "Evidence-first, fail-closed disk inventory for Windows developer workstations"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+authors = [{ name = "Reclaimer contributors" }]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Environment :: Console",
+  "Operating System :: Microsoft :: Windows :: Windows 11",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: System :: Systems Administration",
+]
+dependencies = []
+
+[project.scripts]
+reclaimer = "reclaimer.cli.main:main"
+
+[dependency-groups]
+dev = [
+  "cyclonedx-bom>=7.3,<8",
+  "hatchling==1.28.0",
+  "jsonschema>=4.23",
+  "mypy>=1.15",
+  "packaging>=24,<27",
+  "pip-audit>=2.10,<3",
+  "pytest>=8.3",
+  "pytest-cov>=6.0",
+  "ruff>=0.11",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reclaimer"]
+
+[tool.uv]
+required-version = "==0.11.6"
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+packages = ["reclaimer"]
+
+[tool.coverage.run]
+branch = true
+source = ["reclaimer"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 75

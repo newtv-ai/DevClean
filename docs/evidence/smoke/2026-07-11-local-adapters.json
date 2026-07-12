@@ -1,0 +1,66 @@
+{
+  "evidence_kind": "G2_LOCAL_ADAPTER_SMOKE_PARTIAL",
+  "captured_at_local_date": "2026-07-11",
+  "environment": {
+    "os": "Microsoft Windows 11 Professional",
+    "os_version": "10.0.26200",
+    "os_build": "26200",
+    "architecture": "64-bit",
+    "python": "3.13.13"
+  },
+  "command_scope": {
+    "adapters": [
+      "huggingface",
+      "pip",
+      "uv",
+      "conda",
+      "npm",
+      "pnpm",
+      "docker",
+      "ollama",
+      "vscode"
+    ],
+    "elapsed_seconds": 114,
+    "main_process_elevated": false,
+    "roots_scanned": 0
+  },
+  "adapter_results": [
+    {"adapter_id": "huggingface", "status": "AVAILABLE", "version": "1.7.2", "effect_class": "PURE_QUERY", "resources": 0, "issues": 1, "evidence": 2},
+    {"adapter_id": "pip", "status": "AVAILABLE", "version": "26.1.2", "effect_class": "PURE_QUERY", "resources": 1, "issues": 0, "evidence": 5},
+    {"adapter_id": "uv", "status": "AVAILABLE", "version": "0.11.6", "effect_class": "PURE_QUERY", "resources": 1, "issues": 1, "evidence": 5},
+    {"adapter_id": "conda", "status": "UNAVAILABLE", "version": null, "effect_class": "OBSERVATION_WITH_OPERATIONAL_WRITES", "resources": 0, "issues": 0, "evidence": 0},
+    {"adapter_id": "npm", "status": "AVAILABLE", "version": "9.8.1", "effect_class": "PURE_QUERY", "resources": 5, "issues": 2, "evidence": 4},
+    {"adapter_id": "pnpm", "status": "AVAILABLE", "version": null, "effect_class": "PURE_QUERY", "resources": 0, "issues": 2, "evidence": 0},
+    {"adapter_id": "docker", "status": "UNAVAILABLE", "version": null, "effect_class": "OBSERVATION_WITH_OPERATIONAL_WRITES", "resources": 0, "issues": 1, "evidence": 1},
+    {"adapter_id": "ollama", "status": "UNAVAILABLE", "version": null, "effect_class": "PURE_QUERY", "resources": 0, "issues": 1, "evidence": 1},
+    {"adapter_id": "vscode", "status": "UNAVAILABLE", "version": null, "effect_class": "PURE_QUERY", "resources": 0, "issues": 3, "evidence": 0}
+  ],
+  "report_verification": {
+    "scan_status": "COMPLETED",
+    "schema_draft": "2020-12",
+    "schema_valid": true,
+    "resources": 8,
+    "errors_or_boundaries": 11,
+    "adapter_runs": 9,
+    "evidence_records": 18,
+    "all_resources_actionable_false": true,
+    "safety_boundary_executable_false": true,
+    "redacted_report_sha256": "665d2645fc4f7e00a3d9f9f9d265febe99a1e9d6d784098c205f137a3111bc45"
+  },
+  "plan_verification": {
+    "selected_by_opaque_candidate_id": true,
+    "created_and_read_back": true,
+    "schema_validated_in_test_suite": true,
+    "action_kind": "REPORT_ONLY",
+    "action_enabled": false,
+    "plan_executable": false,
+    "apply_command_present": false
+  },
+  "limitations": [
+    "This is one-machine evidence and does not satisfy the required second physical machine or disposable VM.",
+    "Filesystem tree scan was not exercised in this adapter-only smoke.",
+    "No ProcMon trace was captured, so this run does not prove the G2 managed-root write allowlist.",
+    "Conda was not installed; Docker and Ollama were offline and were not started; no VS Code extension root was present.",
+    "Unavailable and skipped products still require dedicated real-product smoke evidence before G2 can pass."
+  ]
+}

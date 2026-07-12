@@ -1,0 +1,37 @@
+{
+  "models": [
+    {
+      "name": "fixture/gemma3:4b",
+      "model": "fixture/gemma3:4b",
+      "modified_at": "2026-07-01T12:34:56.123456789+08:00",
+      "size": 3338801804,
+      "digest": "a2af6cc3eb7fa8be8504abaf9b04e88f17a119ec3f04a3addf55f92841195f5a",
+      "details": {
+        "format": "gguf",
+        "family": "gemma3",
+        "families": [
+          "gemma3"
+        ],
+        "parameter_size": "4.3B",
+        "quantization_level": "Q4_K_M"
+      }
+    },
+    {
+      "name": "fixture/custom:latest",
+      "model": "fixture/custom:latest",
+      "modified_at": "2026-06-30T10:00:00Z",
+      "size": 1024,
+      "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "details": {
+        "format": "gguf",
+        "family": "fixture",
+        "families": [
+          "fixture"
+        ],
+        "parameter_size": "1B",
+        "quantization_level": "F16"
+      }
+    }
+  ]
+}
+

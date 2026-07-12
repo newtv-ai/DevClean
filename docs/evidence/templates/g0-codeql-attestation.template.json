@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0.0",
+  "source_revision": "REPLACE_WITH_FULL_COMMIT_SHA",
+  "captured_at": "2026-07-11T00:00:00Z",
+  "workflow_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "run_id": "REPLACE_WITH_GITHUB_RUN_ID",
+  "language": "python",
+  "build_mode": "none",
+  "query_suite": "security-extended",
+  "unresolved_error_alerts": 1,
+  "conclusion": "FAIL"
+}

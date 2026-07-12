@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "source_revision": "REPLACE_WITH_FULL_COMMIT_SHA",
+  "decision_at": "2026-07-11T00:00:00Z",
+  "owner_id": "owner_placeholder",
+  "license_expression": "GPL-3.0-or-later",
+  "approved": false,
+  "no_third_party_rule_copy_attested": false,
+  "notes": "Only the project owner may change both booleans after reviewing the fixed revision."
+}

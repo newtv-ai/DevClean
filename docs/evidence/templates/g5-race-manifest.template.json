@@ -1,0 +1,145 @@
+{
+  "$schema": "../../../schemas/gate-evidence.schema.json",
+  "schema_version": "1.0.0",
+  "gate": "G5",
+  "run_id": "gate_run_g5_template",
+  "captured_at": "2026-07-11T00:00:00Z",
+  "product": {
+    "version": "0.0.1",
+    "source_revision": "REPLACE_WITH_REVISION",
+    "artifact_kind": "WHEEL",
+    "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "prerequisites": [],
+  "environment": {
+    "machine_kind": "DISPOSABLE_VM",
+    "machine_fingerprint_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "os_product": "Windows 11",
+    "os_version": "10.0.00000",
+    "os_build": "00000.0000",
+    "architecture": "x86_64",
+    "locale": "en-US",
+    "filesystem": "NTFS",
+    "volume_kind": "FIXED",
+    "user_integrity": "STANDARD",
+    "isolation_notes": "只能在一次性测试卷/VM 上执行未来竞态夹具；当前模板不授权实现或运行删除。"
+  },
+  "scope": {
+    "adapters": ["direct_fs_fixture"],
+    "available_adapters": [],
+    "required_process_names": ["reclaimer-race-fixture.exe"],
+    "managed_root_labels": ["approved_fixture_root"],
+    "protected_asset_labels": ["random_canary", "hardcoded_deny_assets"],
+    "allowed_write_root_labels": ["race_fixture_control"]
+  },
+  "evidence": [],
+  "checks": [
+    {
+      "check_id": "junction_swap_race",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "执行器尚未获准实现，未运行。"
+    },
+    {
+      "check_id": "rename_race",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "执行器尚未获准实现，未运行。"
+    },
+    {
+      "check_id": "file_id_replacement_race",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "执行器尚未获准实现，未运行。"
+    },
+    {
+      "check_id": "locked_file_race",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "执行器尚未获准实现，未运行。"
+    },
+    {
+      "check_id": "read_only_file_race",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "执行器尚未获准实现，未运行。"
+    },
+    {
+      "check_id": "hardlink_race",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "执行器尚未获准实现，未运行。"
+    },
+    {
+      "check_id": "new_file_insertion_race",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "执行器尚未获准实现，未运行。"
+    },
+    {
+      "check_id": "protected_canaries_unchanged",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "执行器尚未获准实现，未运行。"
+    },
+    {
+      "check_id": "identity_mismatch_skips",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "执行器尚未获准实现，未运行。"
+    },
+    {
+      "check_id": "approved_root_handle_pinned",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "执行器尚未获准实现，未运行。"
+    },
+    {
+      "check_id": "deny_list_defense_in_depth",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "执行器尚未获准实现，未运行。"
+    },
+    {
+      "check_id": "no_fallback_delete",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "执行器尚未获准实现，未运行。"
+    },
+    {
+      "check_id": "local_fixed_ntfs_only",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "执行器尚未获准实现，未运行。"
+    },
+    {
+      "check_id": "independent_review",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚无独立审查。"
+    }
+  ],
+  "review": {
+    "author_ids": ["author_placeholder"],
+    "reviewer_ids": [],
+    "review_method": "NONE",
+    "reviewed_at": null,
+    "notes": "G5 未来验收模板；其存在不表示 DIRECT_FS_ACTION 已获授权。"
+  },
+  "limitations": ["G2 尚未由外部矩阵证明时，禁止实现任何 DIRECT_FS_ACTION 执行能力。"],
+  "conclusion": "INCOMPLETE"
+}

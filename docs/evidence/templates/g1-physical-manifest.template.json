@@ -1,0 +1,138 @@
+{
+  "$schema": "../../../schemas/gate-evidence.schema.json",
+  "schema_version": "1.0.0",
+  "gate": "G1",
+  "run_id": "gate_run_g1_template",
+  "captured_at": "2026-07-11T00:00:00Z",
+  "product": {
+    "version": "0.0.1",
+    "source_revision": "REPLACE_WITH_REVISION",
+    "artifact_kind": "WHEEL",
+    "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "prerequisites": [],
+  "environment": {
+    "machine_kind": "PHYSICAL",
+    "machine_fingerprint_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "os_product": "Windows 11",
+    "os_version": "10.0.00000",
+    "os_build": "00000.0000",
+    "architecture": "x86_64",
+    "locale": "zh-CN",
+    "filesystem": "MIXED",
+    "volume_kind": "MIXED",
+    "user_integrity": "STANDARD",
+    "isolation_notes": "替换为隔离账户、测试卷和回滚方式；不得使用真实用户资产。"
+  },
+  "scope": {
+    "adapters": ["filesystem"],
+    "available_adapters": ["filesystem"],
+    "required_process_names": ["python.exe"],
+    "managed_root_labels": ["fixture_root"],
+    "protected_asset_labels": ["random_canary"],
+    "allowed_write_root_labels": ["reclaimer_data"]
+  },
+  "evidence": [],
+  "checks": [
+    {
+      "check_id": "symlink_not_descended",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "junction_not_descended",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "mount_point_not_descended",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "junction_loop_bounded",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "onedrive_placeholder_not_hydrated",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "unc_no_execution_candidate",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "network_volume_no_execution_candidate",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "removable_volume_no_execution_candidate",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "refs_volume_no_execution_candidate",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未在专用 ReFS 测试卷执行。"
+    },
+    {
+      "check_id": "million_resource_streaming",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "cancellation_under_two_seconds",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "access_denied_no_uac",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    },
+    {
+      "check_id": "inventory_only_no_delete",
+      "status": "SKIP",
+      "required": true,
+      "evidence_refs": [],
+      "explanation": "尚未执行。"
+    }
+  ],
+  "review": {
+    "author_ids": ["author_placeholder"],
+    "reviewer_ids": [],
+    "review_method": "NONE",
+    "reviewed_at": null,
+    "notes": "G1 模板；替换所有占位值并附实际证据。"
+  },
+  "limitations": ["该文件只是未完成模板，不能证明 G1 已通过。"],
+  "conclusion": "INCOMPLETE"
+}
