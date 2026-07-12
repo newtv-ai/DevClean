@@ -51,7 +51,7 @@ _SCAN_BATCH_SIZE = 512
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="reclaimer",
-        description="Evidence-first, inventory-only disk analysis for Windows.",
+        description="Evidence-first disk scanning and safe Recycle Bin workflow for Windows.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
