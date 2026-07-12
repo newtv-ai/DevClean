@@ -1,5 +1,7 @@
 # 适配器支持与命令能力基线
 
+> 本文档只约束保留的 inventory 兼容层。GUI 当前不调用这些 adapter 作为删除执行器；用户产品的实际安全边界见 [threat-model.md](threat-model.md)。
+
 ## 1. 本文档的约束力
 
 本表定义当前 v0.1 inventory 可以探测的官方接口，并登记未来版本的候选动作。当前仓库已经实现九个内置只读适配器，但没有 cleanup execution code；“未来动作”不是已实现或默认授权。

@@ -9,6 +9,13 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 
+from reclaimer.core.cleanup_catalog import (
+    CleanupCategory,
+    CleanupPolicy,
+    KnownCleanupRoot,
+    known_root_for_path,
+)
+from reclaimer.core.scan_insights import ScanInsights
 from reclaimer.scanner.filesystem import ScanRecord, ScanRecordKind
 
 _DISPLAY_LIMIT = 500
@@ -49,6 +56,7 @@ class TriageItem:
     path: str
     logical_size: int
     allocated_size: int | None
+    category: CleanupCategory
     lane: ReviewLane
     reason: str
 
@@ -71,6 +79,7 @@ class TriageSession:
         self._items: dict[ReviewLane, list[TriageItem]] = {
             lane: [] for lane in ReviewLane
         }
+        self._insights = ScanInsights()
 
     def add(self, item: TriageItem) -> None:
         summary = self._summaries[item.lane]
@@ -78,6 +87,7 @@ class TriageSession:
         summary.logical_bytes += item.logical_size
         if item.allocated_size is not None:
             summary.allocated_bytes += item.allocated_size
+        self._insights.add(item)
 
         displayed = self._items[item.lane]
         if len(displayed) < self._display_limit:
@@ -95,21 +105,36 @@ class TriageSession:
     def items(self, lane: ReviewLane) -> tuple[TriageItem, ...]:
         return tuple(sorted(self._items[lane], key=lambda item: item.logical_size, reverse=True))
 
+    @property
+    def insights(self) -> ScanInsights:
+        return self._insights
+
 
 def triage_file(
-    record: ScanRecord, *, now: datetime | None = None, temp_root: Path | None = None
+    record: ScanRecord,
+    *,
+    now: datetime | None = None,
+    temp_root: Path | None = None,
+    known_roots: tuple[KnownCleanupRoot, ...] = (),
 ) -> TriageItem:
     """Classify one observed regular file without reading its contents or persisting it."""
 
     if record.kind is not ScanRecordKind.FILE:
         raise ValueError("triage accepts file observations only")
     path = Path(record.path)
-    lane, reason = _classify(path, record.last_write_time_ns, now=now, temp_root=temp_root)
+    category, lane, reason = _classify(
+        path,
+        record.last_write_time_ns,
+        now=now,
+        temp_root=temp_root,
+        known_roots=known_roots,
+    )
     return TriageItem(
         record=record,
         path=record.path,
         logical_size=record.logical_size,
         allocated_size=record.allocated_size,
+        category=category,
         lane=lane,
         reason=reason,
     )
@@ -121,15 +146,51 @@ def _classify(
     *,
     now: datetime | None,
     temp_root: Path | None,
-) -> tuple[ReviewLane, str]:
+    known_roots: tuple[KnownCleanupRoot, ...],
+) -> tuple[CleanupCategory, ReviewLane, str]:
     if is_protected_path(path):
-        return (ReviewLane.PROTECTED, "Protected developer, credential, or editor-history asset")
+        return (
+            CleanupCategory.OTHER,
+            ReviewLane.PROTECTED,
+            "Protected developer, credential, or editor-history asset",
+        )
+    known = known_root_for_path(path, known_roots)
+    if known is not None:
+        if known.policy is CleanupPolicy.AUTO_AFTER_AGE:
+            if _is_older_than(last_write_time_ns, _AUTO_TEMP_AGE, now):
+                return (
+                    known.category,
+                    ReviewLane.AUTO_CLEAN,
+                    f"{known.label} older than seven days",
+                )
+            return (
+                known.category,
+                ReviewLane.USER_REVIEW,
+                f"{known.label} is newer than the automatic-clean threshold",
+            )
+        return (
+            known.category,
+            ReviewLane.AI_REVIEW,
+            f"{known.label} requires item-level explanation",
+        )
     root = temp_root or Path(tempfile.gettempdir())
     if _is_descendant(path, root) and _is_older_than(last_write_time_ns, _AUTO_TEMP_AGE, now):
-        return (ReviewLane.AUTO_CLEAN, "User temporary file older than seven days")
+        return (
+            CleanupCategory.USER_TEMP,
+            ReviewLane.AUTO_CLEAN,
+            "User temporary file older than seven days",
+        )
     if requires_ai_review_path(path):
-        return (ReviewLane.AI_REVIEW, "Known development cache requires item-level explanation")
-    return (ReviewLane.USER_REVIEW, "No deterministic safe-clean rule matches this file")
+        return (
+            CleanupCategory.OTHER,
+            ReviewLane.AI_REVIEW,
+            "Known development cache requires item-level explanation",
+        )
+    return (
+        CleanupCategory.OTHER,
+        ReviewLane.USER_REVIEW,
+        "No deterministic safe-clean rule matches this file",
+    )
 
 
 def _is_descendant(path: Path, root: Path) -> bool:
@@ -172,6 +233,7 @@ def _is_older_than(
 
 
 __all__ = [
+    "CleanupCategory",
     "ReviewLane",
     "TriageItem",
     "TriageSession",

@@ -1,111 +1,35 @@
-# Reclaimer v2 需求可追踪矩阵
+# Reclaimer 当前需求可追踪矩阵
 
-## 判定规则
+本矩阵描述用户实际运行的 Windows GUI EXE。旧的 SQLite inventory、G0–G6 gate 和 REPORT_ONLY plan 文件是研发兼容资产，不覆盖也不否定本矩阵。
 
-本矩阵以仓库外的《Reclaimer 可落地实施方案 v2》和《Claude 复核 v2 审定》为
-工程权威输入。状态含义如下：
-
-> 2026-07-12 本机交付范围调整：当前产品目标是“扫描后对用户明确选择的普通文件进行安全、
-> 可恢复的回收站移动”，不以 GitHub 或多机发布门槛作为本机使用前提。以下 G0–G6 是保留的
-> 公开发布/能力扩展审查资产；它们不能否定已经实现的 local recycle，也不能授权永久删除、
-> 目录递归或厂商 GC。
-
-- `IMPLEMENTED`：当前授权范围内的代码、测试或文档已经存在；不等于退出门槛通过。
-- `PARTIAL_EVIDENCE`：有本机或合成证据，但证据范围不足以关闭外部门槛。
-- `EXTERNAL_BLOCKED`：需要项目 owner、真实 GitHub、额外真机/VM、ProcMon、签名证书或非作者 reviewer。
-- `PREREQUISITE_BLOCKED`：方案明确禁止现在编写该执行能力。
-- `FORBIDDEN`：属于 v0.x 非目标或永久禁区。
-
-任何一行的实现状态都不能覆盖 [implementation-status.md](implementation-status.md) 中的
-门槛账本。尤其是 G0/G1/G2/G5/G6 验证器、模板和合成测试只证明验收合同可运行，
-不构成真实 PASS。
-
-## Claude 审定增补
-
-| 审定项 | 当前落点 | 状态与边界 |
-|---|---|---|
-| P1-1 DIRECT_FS_ACTION 硬编码用户资产 deny-list | `core/recycle.py` 与 [G5 race protocol](evidence/G5-direct-fs-race-protocol.md) | `IMPLEMENTED` 用于本地 Recycle Bin：`.git`、`.env*`、key/certificate、editor history 和 Reclaimer state 均 fail-closed；未来永久删除仍受 G5 约束 |
-| P1-2 v0.1 REPORT_ONLY 系统维护价值 | `reclaimer guides` 与 `adapters/windows_maintenance.py` | `IMPLEMENTED`：只打印可复制的官方 DISM 分析命令，不运行、不提权、不 journal、不审计外部结果 |
-| P2 SQLite 措辞 | [threat-model.md](threat-model.md) 与状态账本 | 当前仅有只读 SQLite 状态；未来 intent 必须依靠原子状态提交和 reconcile，不能宣称“换 SQLite 自动消除不确定窗口” |
-| P2 G5 非作者复核 | G5 manifest/review attestation 验证 | `IMPLEMENTED` 验收合同；作者与 reviewer 重叠会失败，真实复核仍 `EXTERNAL_BLOCKED` |
-| P2 broker 使用当前 .NET LTS | [G6 protocol](evidence/gates/G6-broker-verification.md) | 未钉死 .NET 8；broker 尚不存在，仍 `EXTERNAL_BLOCKED` |
-| P2 G2 设备数 | [G2 protocol](evidence/G2-procmon-smoke-protocol.md) | 固定为 2 台真机 + 1 台 disposable VM，并要求 x64、en-US/zh-CN 和九适配器 AVAILABLE 并集 |
-| P2 uv `--force` 核实 | [adapter-support.md](adapter-support.md) | 已用 uv 0.11.6 的本地 help 核实存在；未来 prune 明确禁止 `--force`，当前无 prune 代码 |
-| P2 HF JSON 旗标版本门控 | `adapters/huggingface.py` 与版本绑定 transcript 测试 | `IMPLEMENTED`：1.x 两组 shape 分段；未知/2.x 不进入受支持 inventory 解析 |
-
-## 阶段与退出门槛
-
-| 阶段 | 当前安全交付 | 退出门槛状态 | 权威证据/阻塞 |
+| 需求 | 当前实现 | 状态 | 测试/限制 |
 |---|---|---|---|
-| 0 仓库/ADR/发布基线 | ADR、完整 GPLv3 固定字节契约、第三方边界、Schema、CI/CodeQL、锁文件、SBOM、可复现 wheel、许可文件校验 | G0 `EXTERNAL_BLOCKED` | [G0 protocol](evidence/G0-release-readiness-protocol.md)；缺 owner 最终许可决定、完整 Git revision 上的真实 GitHub CI/CodeQL 与发布授权 |
-| 1 只读 Windows 核心 | streaming 扫描、SQLite、文件身份/大小、reparse/Cloud 边界、取消、doctor/scan/report | G1 `PARTIAL_EVIDENCE` | [G1 protocol](evidence/G1-physical-boundary-protocol.md)；缺固定 artifact 的 mount point、loop、OneDrive、ReFS、removable、access-denied 和真机证据 |
-| 2 v0.1 九适配器 | HF、pip、uv、Conda、npm、pnpm、Docker、Ollama、VS Code inventory 与证据 containment | G2 `EXTERNAL_BLOCKED` | [G2 protocol](evidence/G2-procmon-smoke-protocol.md)；缺完整 ProcMon/PML/filter/service snapshot 及 2 真机 + 1 VM 产品矩阵 |
-| 3 v0.2 精确/可预览厂商动作 | 只有不可执行 `REPORT_ONLY` review plan 的 Schema/存储表面 | G3 `PREREQUISITE_BLOCKED` | G2 未通过；无 action builder、apply、preflight、intent/reconcile、确认 UI 或厂商清理调用 |
-| 4 v0.3 无 dry-run 策略动作 | 无执行实现 | G4 `PREREQUISITE_BLOCKED` | G3 尚不存在；pip/uv/npm/pnpm/Docker/Ollama 清理路径均未开放 |
-| 5 v0.4 DIRECT_FS_ACTION | 只有未来 race/canary/static-review 验收资产 | G5 `PREREQUISITE_BLOCKED` | [G5 protocol](evidence/G5-direct-fs-race-protocol.md)要求 G2/G3/G4 clean PASS；无 executor、批准根、10,000 次真实竞态或非作者复核 |
-| 6 v0.5 signed broker | 只有普通用户只读安装树/签名/ACL 子集验证器 | G6 `EXTERNAL_BLOCKED` | [G6 protocol](evidence/gates/G6-broker-verification.md)；无 broker、installer、证书、IPC、UAC、注入矩阵，验证结果固定 `g6_gate_passed=false` |
+| 单文件 Windows GUI，无 Python 前置 | `scripts/build_windows_exe.ps1` + PyInstaller | 已实现 | 构建检查 EXE ≤ 50 MB 并执行 `--smoke` |
+| 不创建全盘 SQLite 扫描库 | `ui/app.py` → `scan_roots` → `TriageSession` | 已实现 | GUI 只保留每栏最多 500 条显示记录 |
+| 可停止长扫描 | `CancellationToken` + GUI 停止按钮 | 已实现 | 取消仅停止后续扫描/自动清理 |
+| 旧用户 TEMP 自动清理 | `triage.py` + `auto_clean.py` | 已实现 | 仅当前 `%TEMP%`、7 天、普通文件；失败不删除 |
+| 旧用户崩溃转储自动清理 | `cleanup_catalog.py` + `auto_clean.py` | 已实现 | 仅现有 `%LOCALAPPDATA%\\CrashDumps`、7 天、普通文件；失败不删除 |
+| 常见缓存目录册 | `cleanup_catalog.py` | 已实现 | 只扫描存在的固定本地根；浏览器/缩略图和 pip/uv/npm/pnpm/HF/Gradle/Yarn/Ollama/VS Code 默认进入 AI 审查 |
+| 删除抗路径替换 | `permanent_delete.py` | 已实现 | 扫描快照 + 最终句柄路径 + 句柄元数据复核；Windows canary 覆盖 |
+| 硬保护用户资产 | `triage.py`、`recycle.py` | 已实现 | 开发仓库、凭据、编辑器历史、reparse/Cloud、目录、硬链接拒绝 |
+| AI 逐项解释候选缓存 | `ai_review.py` + GUI 粘贴流程 | 已实现 | 50 条批次、严格 JSON、固定 review/item ID；不传文件内容 |
+| AI 不确定时用户决定 | GUI USER_REVIEW + Windows Recycle Bin | 已实现 | 最多 32 条、完整路径确认、执行前重验 |
+| AI/自动删除轻量历史 | `action_history.py` + GUI 历史页 | 已实现 | 脱敏 JSONL ≤ 1 MiB，自动轮换；不是恢复机制 |
+| 浏览器/系统/IDE 等通用分类清理 | 无 GUI 执行器 | 未实现 | 不得以路径猜测替代专用分类器 |
+| HF/Conda/pip/uv/npm/pnpm/Docker/Ollama/IDE 语义清理 | 仅保留早期只读 adapter | 未实现 | GUI 未连接这些 adapter；后续需逐工具适配器 |
+| 卷、类别空间汇总和目录排行 | `scan_insights.py` + GUI 空间概览 | 已实现 | 显示扫描卷可用/总量；类别完整；目录只聚合扫描根下的前 2,000 个首层桶 |
+| 大文件精确重复检测 | `duplicates.py` + GUI 重复文件页 | 已实现 | ≥1 MiB、SHA-256、仅有限最大同尺寸组；每组自动保留一个基准 |
+| 空目录、相似媒体、卷仪表盘/treemap | 无 | 未实现 | 后续专项功能，不可用路径猜测代替 |
+| 系统维护、注册表、提权、应用卸载 | 无 | 明确非当前范围 | 需另立 ADR、预览、恢复与 Windows 专项验证 |
+| BleachBit / Winapp2 执行 | 无 | 明确非当前范围 | 不 fork、不调用 `--clean`，第三方规则不能绕过本机复核 |
 
-## v2 首批 22 个工作包
+## 研发兼容层
 
-| # | 工作包 | 实现映射 | 状态 |
-|---:|---|---|---|
-| 1 | ADR-001 independent engine | [ADR-001](adr/ADR-001-independent-engine.md) | `IMPLEMENTED` |
-| 2 | ADR-002 AI excluded | [ADR-002](adr/ADR-002-ai-excluded.md) | `IMPLEMENTED` |
-| 3 | ADR-003 license boundary | [ADR-003](adr/ADR-003-third-party-license-boundary.md)、`LICENSE`、`THIRD_PARTY_NOTICES.md` | `IMPLEMENTED`；owner 决定仍属 G0 |
-| 4 | SEC-001 threat model | [threat-model.md](threat-model.md)、`SECURITY.md` | `IMPLEMENTED` |
-| 5 | CORE-001 models/Schemas | `core/models.py`、resource/plan/report Schemas | `IMPLEMENTED`；运行时长度、类型、数量和不可执行约束与 Schema 对齐 |
-| 6 | CORE-002 SQLite/migrations | `core/state.py` | `IMPLEMENTED`：FULL synchronous、FK、迁移备份 DACL、严格 JSON、索引列/载荷复核；无未来执行 intent |
-| 7 | WIN-001 file/volume identity | `platform/windows/filesystem.py`、`volumes.py` | `IMPLEMENTED` |
-| 8 | WIN-002 reparse/Cloud boundary | `scanner/filesystem.py` | `IMPLEMENTED`；真实 OneDrive/mount/ReFS 矩阵仍属 G1 |
-| 9 | SCAN-001 streaming/cancellation | `scanner/` 与百万行 benchmark | `IMPLEMENTED` + `PARTIAL_EVIDENCE` |
-| 10 | CLI-001 doctor/scan/report | `cli/main.py` | `IMPLEMENTED`：console/json/markdown report；所有非 doctor 命令拒绝 elevated/未知 token |
-| 11 | ADP-HF-001 | `adapters/huggingface.py` | `IMPLEMENTED` inventory；G2 真版本矩阵未完成 |
-| 12 | ADP-PIP-001 | `adapters/pip_cache.py` | `IMPLEMENTED` 多解释器 inventory；无 purge |
-| 13 | ADP-UV-001 | `adapters/uv_cache.py` | `IMPLEMENTED` inventory；无 prune |
-| 14 | ADP-CONDA-001 | `adapters/conda.py` | `IMPLEMENTED` 分类 dry-run inventory；无 clean |
-| 15 | ADP-NPM-001 | `adapters/npm.py` | `IMPLEMENTED` cache ls/量测；明确不运行 verify |
-| 16 | ADP-PNPM-001 | `adapters/pnpm.py` | `IMPLEMENTED` 文件系统 inventory；不调用有写副作用的 store path/status |
-| 17 | ADP-DOCKER-001 | `adapters/docker.py` | `IMPLEMENTED` 已在线 daemon inventory；不启动 Desktop、不 prune |
-| 18 | ADP-OLLAMA-001 | `adapters/ollama.py` | `IMPLEMENTED` 固定回环 GET；不 serve/pull/load/delete |
-| 19 | TEST-001 transcript framework | `adapters/json_contract.py`、`tests/transcripts/`、各 adapter parser 测试 | `IMPLEMENTED` 基础设施；真实支持版本覆盖仍属 G2 |
-| 20 | TEST-002 filesystem fixtures | `tests/fs_integration/`、scanner/security/volume 测试 | `IMPLEMENTED` 本机安全夹具；外部 G1 矩阵未完成 |
-| 21 | REL-001 release engineering | `build_release.ps1`、release/schema validators、CI、CodeQL | `IMPLEMENTED` 机械链；真实 G0 未通过 |
-| 22 | DOC-001 adapter coverage/evidence | [coverage-matrix.md](coverage-matrix.md)、[adapter-support.md](adapter-support.md)、[evidence index](evidence/README.md) | `IMPLEMENTED` |
+`core/state.py`、CLI、报告、Schema 和九个 adapter 仍可用于只读盘点研究；它们不向 GUI 提供删除授权。任何未来复用都必须把结果重新转成 GUI 的精确扫描快照，并经过当前威胁模型规定的保护和复核。
 
-VS Code 是阶段 2 明确要求但未列入 v2 最后 22 项编号的第九个适配器；其实现与只读
-边界位于 `adapters/vscode.py` 和对应 parser/文件系统测试中。
+## 不允许的快捷方式
 
-## 不可执行纵深
-
-当前以下层次分别拒绝越权状态，任一层通过都不能替代其他层：
-
-1. `Resource` 对 UNKNOWN/LOCAL_ONLY provenance 关闭 actionable；
-2. `InventoryResult` 拒绝任意 actionable resource；
-3. `StateStore` 拒绝 actionable resource、维护/破坏型 adapter-run 和非闭集 payload；
-4. 当前 `Plan` 只接受精确 `REPORT_ONLY` 语义；状态读取再次复核；
-5. 报告首字节前流式核对资源/run/evidence 的 SQLite 索引身份、effect class、固定回环端点和 evidence 外键；
-6. 发布构建对顶层 CLI help 断言不存在 apply/execute/clean/delete 命令；
-7. G2 外部 ProcMon/服务快照/三机合同仍必须独立证明没有未预期写入或服务启动。
-
-## 永久禁区
-
-当前源代码没有通用大文件/重复文件删除、`C:\Windows\Installer` 清理、
-SoftwareDistribution/WinSxS 裸删、ResetBase、VHDX 压缩、AI 决策/规则生成、
-BleachBit `--clean`、在线规则、运行时第三方插件、注册表优化或主进程提权入口。
-重新讨论任何禁区必须满足 v2 的独立 ADR/证据条件；其中标为永久禁止的项目不能因
-本矩阵更新而重开。
-
-## 本地复核命令
-
-```powershell
-uv lock --check
-uv pip check
-uv run --frozen pytest --cov=reclaimer
-uv run --frozen ruff check .
-uv run --frozen mypy src
-uv run --frozen python scripts/validate_schemas.py
-uv run --frozen python scripts/validate_release_artifacts.py --directory artifacts/release
-```
-
-外部门槛必须使用各 protocol 的 manifest/matrix 命令，不能把上述本地命令的绿色结果
-改写为 G0/G1/G2/G5/G6 PASS。
+- 不用单纯路径后缀或通配符把任意目录变成“安全垃圾”。
+- 不允许 AI 返回路径、命令或未经扫描的项目。
+- 不用 SQLite 保存全盘候选后再删除。
+- 不通过 UAC、注册表清理、厂商 CLI 或 BleachBit 扩大当前清理范围。

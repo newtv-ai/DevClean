@@ -13,10 +13,16 @@ from reclaimer.scanner.filesystem import ScanRecord, ScanRecordKind
 def permanently_clean_temp_record(record: ScanRecord, *, temp_root: Path) -> None:
     """Permanently clean one already-triaged regular file from the approved temp root."""
 
+    permanently_clean_deterministic_record(record, approved_root=temp_root)
+
+
+def permanently_clean_deterministic_record(record: ScanRecord, *, approved_root: Path) -> None:
+    """Permanently clean one exact file from a deterministic approved cleanup root."""
+
     if record.kind is not ScanRecordKind.FILE:
         raise ValueError("automatic cleanup accepts file observations only")
     permanently_delete_verified_file(
-        Path(record.path), approved_root=temp_root, expected=_snapshot_from_record(record)
+        Path(record.path), approved_root=approved_root, expected=_snapshot_from_record(record)
     )
 
 
@@ -56,6 +62,7 @@ def _snapshot_from_record(record: ScanRecord) -> FileSystemMetadata:
 
 
 __all__ = [
+    "permanently_clean_deterministic_record",
     "permanently_clean_model_approved_record",
     "permanently_clean_temp_record",
 ]

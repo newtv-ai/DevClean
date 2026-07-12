@@ -1,5 +1,7 @@
 # Phase 0 覆盖矩阵
 
+> 说明：本文件是早期只读 adapter 与外部 BleachBit 覆盖研究，不是当前 GUI 的功能清单。当前 GUI 的真实删除、AI 审查和用户回收站边界以 [threat-model.md](threat-model.md)、[implementation-status.md](implementation-status.md) 和 [requirements-traceability.md](requirements-traceability.md) 为准。
+
 ## 目的
 
 本矩阵是范围控制与证据索引，不是“可删除清单”。只有 `ADAPTER_INVENTORY` 和 `REPORT_ONLY` 会进入 v0.1；所有执行能力仍未实现。状态含义如下：
