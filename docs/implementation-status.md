@@ -1,20 +1,22 @@
 # Reclaimer implementation and gate ledger
 
-Checked: 2026-07-12. This ledger separates code that exists in the current tree, local evidence
-that has been produced, and release/security gates that require independent or external
-verification. Local tests and one-machine smoke results do not waive GitHub Actions, ProcMon,
-Cloud Files, additional-machine, disposable-VM, code-signing, or reviewer requirements.
+Checked: 2026-07-12. This ledger separates code that exists in the current tree from optional
+public-release and future-expansion evidence. GitHub Actions, ProcMon, Cloud Files,
+additional-machine, disposable-VM, code-signing, and reviewer protocols remain useful for a later
+public release; they are not prerequisites for the current local scan-and-recycle workflow.
 
-No complete external manifest/matrix in this repository closes G0, G1, G2, G5, or G6. The
-protocols, templates, schemas, and validators described below are verification infrastructure;
-their presence and synthetic tests are not gate results.
+No complete external manifest/matrix in this repository closes G0, G1, G2, G5, or G6. Those
+protocols are retained as future verification infrastructure and are not local product features.
 
 ## Current safety boundary
 
-Reclaimer is inventory-only. Every current resource is non-actionable; exported reports are
-one-way; stored review plans contain only disabled `REPORT_ONLY` actions and declare
-`executable=false`. There is no `apply`, `execute`, cleanup executor, direct-filesystem delete,
-broker, BleachBit invocation, service-start, or UAC path.
+Every stored resource remains non-actionable, exported reports are one-way, and stored review plans
+remain disabled `REPORT_ONLY` artifacts. Separately, `reclaimer recycle` can move up to 32 exact
+filesystem candidate IDs from one completed scan to the Windows Recycle Bin after a typed
+confirmation and two identity preflights. It accepts no path/glob/directory/`--yes`, refuses
+reparse/Cloud Files/hard-links/protected user assets, and never calls a permanent-delete API.
+There is no `apply`, vendor cleanup executor, broker, BleachBit invocation, service-start, or UAC
+path.
 
 The `doctor` command may report that its token is elevated, but it does not open inventory/state in
 that condition; every other CLI command refuses an elevated token. Failure to determine elevation

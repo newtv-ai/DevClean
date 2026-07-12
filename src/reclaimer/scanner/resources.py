@@ -27,7 +27,8 @@ def file_record_to_resource(record: ScanRecord) -> Resource:
         else SizeValue(None, Confidence.UNKNOWN)
     )
     warnings: list[str] = [
-        "Report-only filesystem observation; arbitrary scan results cannot be executed."
+        "Scan observation only; recycle requires an exact candidate ID and a separate "
+        "identity-checked interactive preflight."
     ]
     if record.hardlink_duplicate:
         warnings.append(
@@ -49,6 +50,8 @@ def file_record_to_resource(record: ScanRecord) -> Resource:
             record.link_count,
             record.attributes,
             record.reparse_tag,
+            record.creation_time_ns,
+            record.last_write_time_ns,
         )
     ):
         identity = FileIdentity(
@@ -62,6 +65,8 @@ def file_record_to_resource(record: ScanRecord) -> Resource:
             link_count=record.link_count,
             attributes=record.attributes,
             reparse_tag=record.reparse_tag,
+            creation_time_ns=record.creation_time_ns,
+            last_write_time_ns=record.last_write_time_ns,
         )
 
     return Resource(

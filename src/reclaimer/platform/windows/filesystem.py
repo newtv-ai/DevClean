@@ -60,6 +60,8 @@ class FileSystemMetadata:
     reparse_tag: int | None
     is_reparse_point: bool
     is_cloud_placeholder: bool
+    creation_time_ns: int | None = None
+    last_write_time_ns: int | None = None
 
     @property
     def identity(self) -> tuple[int, str] | None:
@@ -173,12 +175,24 @@ def _portable_metadata(path: str) -> FileSystemMetadata:
         reparse_tag=reparse_tag,
         is_reparse_point=reparse,
         is_cloud_placeholder=is_cloud_placeholder(attributes, reparse_tag),
+        creation_time_ns=int(result.st_ctime_ns),
+        last_write_time_ns=int(result.st_mtime_ns),
     )
 
 
 def _raise_last_windows_error(path: str) -> None:
     error_code = ctypes.get_last_error()
     raise OSError(error_code, ctypes.FormatError(error_code), path)
+
+
+def _filetime_to_unix_ns(value: wintypes.FILETIME) -> int | None:
+    """Convert a Windows FILETIME to Unix nanoseconds without floating-point loss."""
+
+    raw = (int(value.dwHighDateTime) << 32) | int(value.dwLowDateTime)
+    if raw == 0:
+        return None
+    unix_100ns = raw - 116_444_736_000_000_000
+    return None if unix_100ns < 0 else unix_100ns * 100
 
 
 def _windows_metadata(path: str) -> FileSystemMetadata:
@@ -265,7 +279,8 @@ def _windows_metadata(path: str) -> FileSystemMetadata:
             attributes = int(basic.file_attributes)
         else:
             attributes = None
-        reparse_tag = int(attribute_tag.reparse_tag) if attribute_ok else None
+        raw_reparse_tag = int(attribute_tag.reparse_tag) if attribute_ok else 0
+        reparse_tag = raw_reparse_tag if raw_reparse_tag else None
 
         if identity_ok and any(identity.file_id.identifier):
             volume_serial: int | None = int(identity.volume_serial_number)
@@ -305,6 +320,10 @@ def _windows_metadata(path: str) -> FileSystemMetadata:
             reparse_tag=reparse_tag,
             is_reparse_point=reparse,
             is_cloud_placeholder=is_cloud_placeholder(attributes, reparse_tag),
+            creation_time_ns=_filetime_to_unix_ns(basic.creation_time) if basic_ok else None,
+            last_write_time_ns=(
+                _filetime_to_unix_ns(basic.last_write_time) if basic_ok else None
+            ),
         )
     finally:
         close_handle(handle)

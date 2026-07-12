@@ -31,6 +31,7 @@ from reclaimer.adapters.windows_maintenance import (
 from reclaimer.core.doctor import collect_diagnostics
 from reclaimer.core.models import Resource, ScanStatus, utc_now
 from reclaimer.core.policy import build_inventory_plan_from_records
+from reclaimer.core.recycle import RecycleRefusal, recycle_targets, targets_from_records
 from reclaimer.core.reporting import (
     iter_json_report,
     iter_markdown_report,
@@ -39,6 +40,7 @@ from reclaimer.core.reporting import (
 from reclaimer.core.state import StateStore
 from reclaimer.evidence.store import EvidenceStore
 from reclaimer.platform.windows.process import validate_executable_path
+from reclaimer.platform.windows.recycle_bin import RecycleBinError, recycle_file
 from reclaimer.platform.windows.security import is_process_elevated
 from reclaimer.scanner import CancellationToken, ScanOptions, ScanRecordKind, ScanStats, scan_roots
 from reclaimer.scanner.resources import file_record_to_resource, record_to_scan_error
@@ -148,6 +150,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plan_show.add_argument("plan_id", help="Stored plan identifier")
     plan_show.add_argument("--json", action="store_true", help="Emit structured JSON")
+
+    recycle = subparsers.add_parser(
+        "recycle",
+        help="Move explicitly selected scanned files to the Windows Recycle Bin",
+    )
+    recycle.add_argument("scan_id", help="Completed scan that produced the selected file IDs")
+    recycle.add_argument(
+        "--select",
+        action="append",
+        required=True,
+        metavar="CANDIDATE_ID",
+        help="Exact scanned filesystem candidate ID; repeat for up to 32 files",
+    )
+    recycle.add_argument("--json", action="store_true", help="Emit structured result JSON")
     return parser
 
 
@@ -168,6 +184,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _plan_create(args)
     if args.command == "plan" and args.plan_command == "show":
         return _plan_show(args)
+    if args.command == "recycle":
+        return _recycle(args)
     parser.error(f"unsupported command: {args.command}")
 
 
@@ -623,6 +641,77 @@ def _plan_show(args: argparse.Namespace) -> int:
         print(f"Report-only plan: {plan['plan_id']}")
         print(f"  Actions: {len(plan['actions'])}; expires: {plan['expires_at']}")
         print("  Safety: non-executable; no apply command exists in this milestone.")
+    return 0
+
+
+def _recycle(args: argparse.Namespace) -> int:
+    """Move exact scanned regular files to the Windows Recycle Bin after confirmation."""
+
+    if not sys.stdin.isatty():
+        print(
+            "recycle requires an interactive terminal; --yes is intentionally unavailable",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        with StateStore() as store:
+            scan = store.get_scan(args.scan_id)
+            if scan is None:
+                print(f"Unknown scan: {args.scan_id}", file=sys.stderr)
+                return 1
+            if scan["status"] != ScanStatus.COMPLETED.value:
+                print("Recycle requires a completed scan.", file=sys.stderr)
+                return 1
+            targets = targets_from_records(store.get_resources_by_ids(args.scan_id, args.select))
+    except (KeyError, OSError, RecycleRefusal, RuntimeError, ValueError, sqlite3.Error) as error:
+        print(f"Recycle refused: {error}", file=sys.stderr)
+        return 1
+
+    review_stream = sys.stderr if args.json else sys.stdout
+    print(
+        "The following exact scanned files will be moved to the Windows Recycle Bin:",
+        file=review_stream,
+    )
+    for target in targets:
+        print(f"  {target.candidate_id}: {target.path}", file=review_stream)
+    expected_confirmation = f"RECYCLE {args.scan_id}"
+    try:
+        print(
+            f"Type '{expected_confirmation}' to continue: ",
+            end="",
+            file=review_stream,
+            flush=True,
+        )
+        confirmation = input()
+    except (EOFError, KeyboardInterrupt):
+        print("Recycle cancelled; no file was moved.", file=sys.stderr)
+        return 2
+    if confirmation != expected_confirmation:
+        print("Recycle cancelled; confirmation did not match.", file=sys.stderr)
+        return 2
+
+    try:
+        recycled = recycle_targets(targets, recycle_file)
+    except (OSError, RecycleBinError, RecycleRefusal) as error:
+        print(f"Recycle stopped: {error}", file=sys.stderr)
+        return 1
+
+    payload = {
+        "scan_id": args.scan_id,
+        "recycled_candidate_ids": [target.candidate_id for target in recycled],
+        "recycled_paths": [str(target.path) for target in recycled],
+        "undo_capability": "RECYCLE_BIN",
+        "safety_boundary": {
+            "selection": "exact scanned candidate IDs only",
+            "confirmation": "interactive typed scan ID",
+            "preflight": "file identity, timestamps, size, fixed-volume and protected-path checks",
+            "permanent_delete": False,
+        },
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print(f"Moved {len(recycled)} file(s) to the Windows Recycle Bin.")
     return 0
 
 

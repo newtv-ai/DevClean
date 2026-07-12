@@ -137,7 +137,7 @@ try {
     }
     $cliHelp = (& $runtimePython -m reclaimer.cli.main --help 2>&1) -join "`n"
     if ($LASTEXITCODE -ne 0) { throw "installed CLI help smoke failed" }
-    foreach ($requiredCommand in @("scan", "report", "plan")) {
+    foreach ($requiredCommand in @("scan", "report", "plan", "recycle")) {
         if ($cliHelp -notmatch "\b$requiredCommand\b") {
             throw "installed CLI help is missing $requiredCommand"
         }

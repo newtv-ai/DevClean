@@ -77,6 +77,17 @@ def test_windows_junction_loop_is_bounded_at_first_reparse_point(tmp_path: Path)
     assert sum(Path(record.path).name == "visible-canary.txt" for record in records) == 1
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows metadata integration test")
+def test_windows_regular_file_has_no_reparse_tag(tmp_path: Path) -> None:
+    target = tmp_path / "ordinary-file.txt"
+    target.write_text("ordinary", encoding="utf-8")
+
+    metadata = read_file_metadata(target)
+
+    assert metadata.is_reparse_point is False
+    assert metadata.reparse_tag is None
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows sparse-file integration test")
 def test_windows_sparse_file_keeps_logical_and_allocated_sizes_distinct(
     tmp_path: Path,

@@ -23,6 +23,8 @@ def test_file_record_maps_to_red_unknown_non_actionable_resource() -> None:
         file_id_kind="file_id_128",
         link_count=1,
         attributes=32,
+        creation_time_ns=100,
+        last_write_time_ns=200,
     )
 
     resource = file_record_to_resource(record)
@@ -32,6 +34,8 @@ def test_file_record_maps_to_red_unknown_non_actionable_resource() -> None:
     assert resource.actionable is False
     assert resource.identity is not None
     assert resource.identity.file_id_kind == "file_id_128"
+    assert resource.identity.creation_time_ns == 100
+    assert resource.identity.last_write_time_ns == 200
 
 
 def test_hardlink_raw_allocation_and_aggregate_uncertainty_are_kept_separate() -> None:

@@ -1,8 +1,9 @@
-"""Streaming, report-only file-system inventory.
+"""Streaming file-system inventory.
 
 The scanner intentionally has no delete or elevation capability.  A generic
-tree scan produces evidence only; callers may map records to higher-level
-resources, but paths discovered here are never execution authorization.
+tree scan produces evidence only. The explicit Recycle Bin workflow may use an
+exact stored candidate only after a separate identity preflight; raw paths are
+never accepted as an execution parameter.
 """
 
 from __future__ import annotations
@@ -75,6 +76,8 @@ class ScanRecord:
     link_count: int | None = None
     attributes: int | None = None
     reparse_tag: int | None = None
+    creation_time_ns: int | None = None
+    last_write_time_ns: int | None = None
     hardlink_duplicate: bool = False
     allocation_uncertain: bool = False
     boundary_reason: BoundaryReason | None = None
@@ -239,6 +242,8 @@ def _base_record(
         link_count=metadata.link_count,
         attributes=metadata.attributes,
         reparse_tag=metadata.reparse_tag,
+        creation_time_ns=metadata.creation_time_ns,
+        last_write_time_ns=metadata.last_write_time_ns,
         boundary_reason=boundary_reason,
     )
 

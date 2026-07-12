@@ -13,7 +13,16 @@ from reclaimer.adapters.base import (
     ProbeStatus,
 )
 from reclaimer.cli import main as cli
-from reclaimer.core.models import ProvenanceClass, Resource, RiskTier, ScanStatus, SemanticType
+from reclaimer.core.models import (
+    Confidence,
+    FileIdentity,
+    ProvenanceClass,
+    Resource,
+    RiskTier,
+    ScanStatus,
+    SemanticType,
+    SizeValue,
+)
 from reclaimer.core.state import StateStore
 
 
@@ -80,6 +89,66 @@ def test_non_doctor_commands_refuse_elevated_main_process(monkeypatch, capsys) -
 
     assert cli.main(["guides", "--json"]) == 2
     assert "without elevation" in capsys.readouterr().err
+
+
+class _InteractiveStdin:
+    def isatty(self) -> bool:
+        return True
+
+
+def test_recycle_requires_exact_interactive_confirmation(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(tmp_path / "state"))
+    target_path = tmp_path / "scan-root" / "cache.bin"
+    target_path.parent.mkdir()
+    target_path.write_bytes(b"fixture")
+    resource = Resource(
+        candidate_id="candidate_recycle_cli",
+        adapter_id="filesystem",
+        display_name="Filesystem file",
+        semantic_type=SemanticType.UNKNOWN,
+        risk_tier=RiskTier.RED,
+        provenance_class=ProvenanceClass.UNKNOWN,
+        path=str(target_path),
+        logical_size=SizeValue(7, Confidence.EXACT),
+        identity=FileIdentity(
+            volume_serial="000000000000002a",
+            file_id="ab" * 16,
+            file_id_kind="file_id_128",
+            link_count=1,
+            attributes=32,
+            creation_time_ns=100,
+            last_write_time_ns=200,
+        ),
+    )
+    with StateStore() as store:
+        scan_id = store.create_scan([str(target_path.parent)])
+        store.add_resources(scan_id, [resource])
+        store.finish_scan(scan_id, ScanStatus.COMPLETED)
+
+    monkeypatch.setattr(cli.sys, "stdin", _InteractiveStdin())
+    monkeypatch.setattr("builtins.input", lambda _prompt="": f"RECYCLE {scan_id}")
+    observed: list[str] = []
+
+    def fake_recycle(targets, _recycler):
+        observed.extend(target.candidate_id for target in targets)
+        return tuple(targets)
+
+    monkeypatch.setattr(cli, "recycle_targets", fake_recycle)
+    assert cli.main(["recycle", scan_id, "--select", resource.candidate_id, "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert observed == [resource.candidate_id]
+    assert payload["undo_capability"] == "RECYCLE_BIN"
+    assert payload["safety_boundary"]["permanent_delete"] is False
+
+
+def test_recycle_rejects_noninteractive_input(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(tmp_path / "state"))
+
+    assert cli.main(["recycle", "scan_fixture", "--select", "candidate_fixture"]) == 2
+    assert "interactive terminal" in capsys.readouterr().err
 
 
 def test_elevation_probe_failure_is_fail_closed(monkeypatch, capsys) -> None:

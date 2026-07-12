@@ -137,8 +137,8 @@ def iter_markdown_report(store: StateStore, scan_id: str, *, redact: bool = True
             "",
             "## Resources",
             "",
-            "| Adapter | Name | Locator | Type | Risk | Logical | Allocated | Path |",
-            "|---|---|---|---|---|---:|---:|---|",
+            "| Candidate | Adapter | Name | Locator | Type | Risk | Logical | Allocated | Path |",
+            "|---|---|---|---|---|---:|---:|---:|---|",
             "",
         )
     )
@@ -150,6 +150,7 @@ def iter_markdown_report(store: StateStore, scan_id: str, *, redact: bool = True
             "| "
             + " | ".join(
                 (
+                    _cell(resource.get("candidate_id")),
                     _cell(resource.get("adapter_id")),
                     _cell(resource.get("display_name")),
                     _cell(resource.get("vendor_locator")),
@@ -209,8 +210,8 @@ def render_markdown(report: Mapping[str, Any]) -> str:
         "",
         "## Resources",
         "",
-        "| Adapter | Name | Locator | Type | Risk | Logical | Allocated | Path |",
-        "|---|---|---|---|---|---:|---:|---|",
+        "| Candidate | Adapter | Name | Locator | Type | Risk | Logical | Allocated | Path |",
+        "|---|---|---|---|---|---:|---:|---:|---|",
     ]
     for item in resources:
         resource = _as_mapping(item)
@@ -220,6 +221,7 @@ def render_markdown(report: Mapping[str, Any]) -> str:
             "| "
             + " | ".join(
                 (
+                    _cell(resource.get("candidate_id")),
                     _cell(resource.get("adapter_id")),
                     _cell(resource.get("display_name")),
                     _cell(resource.get("vendor_locator")),

@@ -17,7 +17,7 @@ from reclaimer.platform.windows.volumes import is_local_fixed_path
 
 
 def classify_execution_platform(
-    *, is_windows: bool, machine: str, product_name: str | None
+    *, is_windows: bool, machine: str, product_name: str | None, build_number: int | None
 ) -> dict[str, str]:
     """Describe future execution support without authorizing any action.
 
@@ -38,6 +38,19 @@ def classify_execution_platform(
             "status": "UNSUPPORTED",
             "detail": "Future execution support requires a Windows 11 x64 host.",
         }
+    product = product_name.casefold() if product_name is not None else ""
+    if "server" in product:
+        return {
+            "status": "UNSUPPORTED",
+            "detail": "Future execution support is limited to Windows 11 x64 client hosts.",
+        }
+    # The ProductName registry value can retain a Windows 10 string on Windows 11 upgrades.
+    # Windows client build 22000 introduced Windows 11, so prefer the build when it is available.
+    if product.startswith("windows 11") or (build_number is not None and build_number >= 22000):
+        return {
+            "status": "SUPPORTED_BASELINE",
+            "detail": "Windows 11 x64 is the documented baseline for safe deletion support.",
+        }
     if product_name is None:
         return {
             "status": "UNKNOWN",
@@ -46,12 +59,7 @@ def classify_execution_platform(
                 "be determined."
             ),
         }
-    if product_name.casefold().startswith("windows 11"):
-        return {
-            "status": "SUPPORTED_BASELINE",
-            "detail": "Windows 11 x64 is the documented baseline for a future execution release.",
-        }
-    if product_name.casefold().startswith("windows 10"):
+    if product.startswith("windows 10"):
         return {
             "status": "BEST_EFFORT_INVENTORY",
             "detail": (
@@ -67,11 +75,11 @@ def classify_execution_platform(
     }
 
 
-def _windows_product_name() -> str | None:
-    """Read the local Windows product name without launching a command."""
+def _windows_identity() -> tuple[str | None, int | None]:
+    """Read local Windows release identifiers without launching a command."""
 
     if os.name != "nt":
-        return None
+        return (None, None)
     try:
         import winreg
 
@@ -80,9 +88,15 @@ def _windows_product_name() -> str | None:
             r"SOFTWARE\Microsoft\Windows NT\CurrentVersion",
         ) as key:
             product_name, _ = winreg.QueryValueEx(key, "ProductName")
+            current_build, _ = winreg.QueryValueEx(key, "CurrentBuildNumber")
     except OSError:
-        return None
-    return product_name if isinstance(product_name, str) and product_name else None
+        return (None, None)
+    safe_product = product_name if isinstance(product_name, str) and product_name else None
+    try:
+        safe_build = int(current_build) if isinstance(current_build, str | int) else None
+    except ValueError:
+        safe_build = None
+    return (safe_product, safe_build)
 
 
 def collect_diagnostics() -> dict[str, Any]:
@@ -100,10 +114,12 @@ def collect_diagnostics() -> dict[str, Any]:
     else:
         integrity = "not_created"
 
+    product_name, build_number = _windows_identity()
     execution_platform = classify_execution_platform(
         is_windows=os.name == "nt",
         machine=platform.machine(),
-        product_name=_windows_product_name(),
+        product_name=product_name,
+        build_number=build_number,
     )
     return {
         "reclaimer_version": __version__,

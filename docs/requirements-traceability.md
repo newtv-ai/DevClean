@@ -5,6 +5,11 @@
 本矩阵以仓库外的《Reclaimer 可落地实施方案 v2》和《Claude 复核 v2 审定》为
 工程权威输入。状态含义如下：
 
+> 2026-07-12 本机交付范围调整：当前产品目标是“扫描后对用户明确选择的普通文件进行安全、
+> 可恢复的回收站移动”，不以 GitHub 或多机发布门槛作为本机使用前提。以下 G0–G6 是保留的
+> 公开发布/能力扩展审查资产；它们不能否定已经实现的 local recycle，也不能授权永久删除、
+> 目录递归或厂商 GC。
+
 - `IMPLEMENTED`：当前授权范围内的代码、测试或文档已经存在；不等于退出门槛通过。
 - `PARTIAL_EVIDENCE`：有本机或合成证据，但证据范围不足以关闭外部门槛。
 - `EXTERNAL_BLOCKED`：需要项目 owner、真实 GitHub、额外真机/VM、ProcMon、签名证书或非作者 reviewer。
@@ -19,7 +24,7 @@
 
 | 审定项 | 当前落点 | 状态与边界 |
 |---|---|---|
-| P1-1 DIRECT_FS_ACTION 硬编码用户资产 deny-list | [G5 race protocol](evidence/G5-direct-fs-race-protocol.md) 与 G5 static-audit 合同 | `PREREQUISITE_BLOCKED`：已经成为未来执行器硬门槛；G2/G3/G4 未通过前不写删除执行器 |
+| P1-1 DIRECT_FS_ACTION 硬编码用户资产 deny-list | `core/recycle.py` 与 [G5 race protocol](evidence/G5-direct-fs-race-protocol.md) | `IMPLEMENTED` 用于本地 Recycle Bin：`.git`、`.env*`、key/certificate、editor history 和 Reclaimer state 均 fail-closed；未来永久删除仍受 G5 约束 |
 | P1-2 v0.1 REPORT_ONLY 系统维护价值 | `reclaimer guides` 与 `adapters/windows_maintenance.py` | `IMPLEMENTED`：只打印可复制的官方 DISM 分析命令，不运行、不提权、不 journal、不审计外部结果 |
 | P2 SQLite 措辞 | [threat-model.md](threat-model.md) 与状态账本 | 当前仅有只读 SQLite 状态；未来 intent 必须依靠原子状态提交和 reconcile，不能宣称“换 SQLite 自动消除不确定窗口” |
 | P2 G5 非作者复核 | G5 manifest/review attestation 验证 | `IMPLEMENTED` 验收合同；作者与 reviewer 重叠会失败，真实复核仍 `EXTERNAL_BLOCKED` |

@@ -165,6 +165,7 @@ def test_streaming_reports_are_valid_and_complete(tmp_path: Path) -> None:
     assert "Alice" not in streamed_json
     assert "Resources: 17" in streamed_markdown
     assert "Errors/boundaries: 1" in streamed_markdown
+    assert resources[0].candidate_id in streamed_markdown
 
 
 def test_redacted_report_preserves_valid_loopback_evidence_identity(tmp_path: Path) -> None:
