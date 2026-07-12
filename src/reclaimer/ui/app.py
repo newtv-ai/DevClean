@@ -33,7 +33,7 @@ from reclaimer.core.recycle import RecycleRefusal, recycle_targets, target_from_
 from reclaimer.core.triage import ReviewLane, TriageItem, TriageSession, triage_file
 from reclaimer.platform.windows.permanent_delete import PermanentDeleteRefusal
 from reclaimer.platform.windows.recycle_bin import RecycleBinError, recycle_file
-from reclaimer.scanner import ScanOptions, ScanRecordKind, scan_roots
+from reclaimer.scanner import CancellationToken, ScanOptions, ScanRecordKind, scan_roots
 
 _LANE_TITLES = {
     ReviewLane.AUTO_CLEAN: "可自动清理",
@@ -53,12 +53,14 @@ class ReclaimerWindow:
         self._ai_packet: AiReviewPacket | None = None
         self._resolved_ai_paths: set[str] = set()
         self._next_display_id = 0
+        self._scan_cancel: CancellationToken | None = None
         self._root_path = tk.StringVar(value=str(Path.home()))
         self._status = tk.StringVar(value="选择目录后开始扫描；扫描结果不会写入 SQLite。")
         self._counts = {lane: tk.StringVar(value="0 个文件 · 0 B") for lane in ReviewLane}
         self._trees: dict[ReviewLane, ttk.Treeview] = {}
         self._displayed_items: dict[str, TriageItem] = {}
         self._scan_button: ttk.Button | None = None
+        self._cancel_button: ttk.Button | None = None
         self._build()
         self._root.after(80, self._drain_events)
 
@@ -75,6 +77,10 @@ class ReclaimerWindow:
         ttk.Button(controls, text="选择目录", command=self._choose_root).pack(side=tk.LEFT)
         self._scan_button = ttk.Button(controls, text="开始扫描", command=self._start_scan)
         self._scan_button.pack(side=tk.LEFT, padx=(8, 0))
+        self._cancel_button = ttk.Button(
+            controls, text="停止扫描", command=self._cancel_scan, state=tk.DISABLED
+        )
+        self._cancel_button.pack(side=tk.LEFT, padx=(8, 0))
 
         ttk.Label(
             content,
@@ -144,16 +150,29 @@ class ReclaimerWindow:
             return
         if self._scan_button is not None:
             self._scan_button.configure(state=tk.DISABLED)
+        self._scan_cancel = CancellationToken()
+        if self._cancel_button is not None:
+            self._cancel_button.configure(state=tk.NORMAL)
         self._ai_packet = None
         self._resolved_ai_paths.clear()
         self._clear_trees()
         self._status.set(
             "正在流式扫描；确定安全的旧 TEMP 文件会被立即永久清理；不会创建 SQLite 索引…"
         )
-        worker = threading.Thread(target=self._scan_worker, args=(root,), daemon=True)
+        worker = threading.Thread(
+            target=self._scan_worker, args=(root, self._scan_cancel), daemon=True
+        )
         worker.start()
 
-    def _scan_worker(self, root: Path) -> None:
+    def _cancel_scan(self) -> None:
+        if self._scan_cancel is None:
+            return
+        self._scan_cancel.cancel()
+        if self._cancel_button is not None:
+            self._cancel_button.configure(state=tk.DISABLED)
+        self._status.set("正在停止扫描；不会再处理新的文件。")
+
+    def _scan_worker(self, root: Path, cancel: CancellationToken) -> None:
         session = TriageSession()
         observed = 0
         cleaned_files = 0
@@ -161,7 +180,9 @@ class ReclaimerWindow:
         skipped_auto_clean = 0
         temp_root = Path(tempfile.gettempdir())
         try:
-            for record in scan_roots((root,), ScanOptions(include_directories=False)):
+            for record in scan_roots(
+                (root,), ScanOptions(include_directories=False), cancel=cancel
+            ):
                 if record.kind is not ScanRecordKind.FILE:
                     continue
                 item = triage_file(record, temp_root=temp_root)
@@ -194,7 +215,14 @@ class ReclaimerWindow:
         self._events.put(
             (
                 "finished",
-                (observed, cleaned_files, cleaned_bytes, skipped_auto_clean, session),
+                (
+                    observed,
+                    cleaned_files,
+                    cleaned_bytes,
+                    skipped_auto_clean,
+                    session,
+                    cancel.is_cancelled(),
+                ),
             )
         )
 
@@ -212,22 +240,36 @@ class ReclaimerWindow:
                         f"（{_format_bytes(cleaned_bytes)}）；跳过 {skipped_auto_clean:,} 个…"
                     )
                 elif kind == "finished":
-                    observed, cleaned_files, cleaned_bytes, skipped_auto_clean, session = cast(
-                        tuple[int, int, int, int, TriageSession], payload
+                    (
+                        observed,
+                        cleaned_files,
+                        cleaned_bytes,
+                        skipped_auto_clean,
+                        session,
+                        cancelled,
+                    ) = cast(
+                        tuple[int, int, int, int, TriageSession, bool], payload
                     )
                     self._session = session
                     self._render_session(session)
+                    summary_word = "扫描已停止" if cancelled else "扫描完成"
                     self._status.set(
-                        f"扫描完成：{observed:,} 个文件；已自动永久清理 {cleaned_files:,} 个"
+                        f"{summary_word}：{observed:,} 个文件；已自动永久清理 {cleaned_files:,} 个"
                         f"（{_format_bytes(cleaned_bytes)}），跳过 {skipped_auto_clean:,} 个；"
                         "仅保留每栏最大的 500 项。"
                     )
                     if self._scan_button is not None:
                         self._scan_button.configure(state=tk.NORMAL)
+                    if self._cancel_button is not None:
+                        self._cancel_button.configure(state=tk.DISABLED)
+                    self._scan_cancel = None
                 elif kind == "error":
                     messagebox.showerror("Reclaimer", f"扫描失败：{payload}")
                     if self._scan_button is not None:
                         self._scan_button.configure(state=tk.NORMAL)
+                    if self._cancel_button is not None:
+                        self._cancel_button.configure(state=tk.DISABLED)
+                    self._scan_cancel = None
         except queue.Empty:
             pass
         self._root.after(80, self._drain_events)
