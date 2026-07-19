@@ -67,7 +67,9 @@ def test_doctor_fails_closed_when_elevation_cannot_be_checked(monkeypatch, capsy
     assert "refusing to continue" in capsys.readouterr().err
 
 
-def test_guides_are_external_and_report_only(capsys) -> None:
+def test_guides_are_external_and_report_only(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(cli, "is_process_elevated", lambda: False)
+
     assert cli.main(["guides", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["externally_executed"] is True
@@ -77,6 +79,8 @@ def test_guides_are_external_and_report_only(capsys) -> None:
 
 def test_report_without_state_returns_error(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(cli, "is_process_elevated", lambda: False)
+
     assert cli.main(["report", "--latest"]) == 1
     assert "No stored scan" in capsys.readouterr().err
 

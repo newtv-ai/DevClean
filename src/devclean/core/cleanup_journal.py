@@ -20,9 +20,11 @@ from devclean.platform.windows.exact_cleanup import ExactFileSnapshot
 from devclean.platform.windows.security import secure_private_directory, secure_private_file
 from devclean.platform.windows.volumes import is_local_fixed_path
 
-JOURNAL_SCHEMA_VERSION = 2
+JOURNAL_SCHEMA_VERSION = 3
 MAX_JOURNAL_ERROR_LENGTH = 4_096
 MAX_RETAINED_COMPLETED_BATCHES = 128
+_MAX_SQLITE_INTEGER = (1 << 63) - 1
+_MAX_UINT64 = (1 << 64) - 1
 
 
 class CleanupJournalError(RuntimeError):
@@ -139,6 +141,18 @@ CREATE TABLE cleanup_actions (
     category TEXT NOT NULL,
     logical_size INTEGER NOT NULL CHECK(logical_size >= 0),
     volume_serial INTEGER NOT NULL CHECK(volume_serial >= 0),
+    volume_serial_u64 TEXT NOT NULL CHECK(
+        volume_serial_u64 = '0'
+        OR (
+            length(volume_serial_u64) BETWEEN 1 AND 20
+            AND volume_serial_u64 NOT GLOB '*[^0-9]*'
+            AND substr(volume_serial_u64, 1, 1) BETWEEN '1' AND '9'
+            AND (
+                length(volume_serial_u64) < 20
+                OR volume_serial_u64 <= '{_MAX_UINT64}'
+            )
+        )
+    ),
     file_id TEXT NOT NULL,
     file_id_kind TEXT NOT NULL,
     link_count INTEGER NOT NULL CHECK(link_count = 1),
@@ -147,6 +161,18 @@ CREATE TABLE cleanup_actions (
     creation_time_ns INTEGER NOT NULL CHECK(creation_time_ns >= 0),
     last_write_time_ns INTEGER NOT NULL CHECK(last_write_time_ns >= 0),
     root_volume_serial INTEGER NOT NULL CHECK(root_volume_serial >= 0),
+    root_volume_serial_u64 TEXT NOT NULL CHECK(
+        root_volume_serial_u64 = '0'
+        OR (
+            length(root_volume_serial_u64) BETWEEN 1 AND 20
+            AND root_volume_serial_u64 NOT GLOB '*[^0-9]*'
+            AND substr(root_volume_serial_u64, 1, 1) BETWEEN '1' AND '9'
+            AND (
+                length(root_volume_serial_u64) < 20
+                OR root_volume_serial_u64 <= '{_MAX_UINT64}'
+            )
+        )
+    ),
     root_file_id TEXT NOT NULL,
     root_file_id_kind TEXT NOT NULL,
     root_attributes INTEGER,
@@ -224,46 +250,71 @@ class CleanupJournal:
                             action_id, batch_id, candidate_id, action_ordinal, mode, state,
                             source_path,
                             scan_root, approved_root, quarantine_path, category,
-                            logical_size, volume_serial, file_id, file_id_kind, link_count,
+                            logical_size, volume_serial, volume_serial_u64,
+                            file_id, file_id_kind, link_count,
                             attributes, reparse_tag, creation_time_ns, last_write_time_ns,
-                            root_volume_serial, root_file_id, root_file_id_kind,
+                            root_volume_serial, root_volume_serial_u64,
+                            root_file_id, root_file_id_kind,
                             root_attributes, root_reparse_tag, root_creation_time_ns,
                             root_last_write_time_ns, last_error, created_at, updated_at
                         ) VALUES (
-                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                            ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?
+                            :action_id, :batch_id, :candidate_id, :action_ordinal, :mode, :state,
+                            :source_path, :scan_root, :approved_root, :quarantine_path, :category,
+                            :logical_size, :volume_serial, :volume_serial_u64,
+                            :file_id, :file_id_kind, :link_count,
+                            :attributes, :reparse_tag, :creation_time_ns, :last_write_time_ns,
+                            :root_volume_serial, :root_volume_serial_u64,
+                            :root_file_id, :root_file_id_kind,
+                            :root_attributes, :root_reparse_tag, :root_creation_time_ns,
+                            :root_last_write_time_ns, NULL, :created_at, :updated_at
                         )""",
-                        (
-                            intent.action_id,
-                            batch_id,
-                            intent.candidate_id,
-                            ordinal,
-                            mode.value,
-                            ActionState.INTENT_RECORDED.value,
-                            intent.source_path,
-                            intent.scan_root,
-                            intent.approved_root,
-                            intent.quarantine_path,
-                            intent.category,
-                            snapshot.logical_size,
-                            snapshot.volume_serial,
-                            snapshot.file_id,
-                            snapshot.file_id_kind,
-                            snapshot.link_count,
-                            snapshot.attributes,
-                            snapshot.reparse_tag,
-                            snapshot.creation_time_ns,
-                            snapshot.last_write_time_ns,
-                            intent.approved_root_snapshot.volume_serial,
-                            intent.approved_root_snapshot.file_id,
-                            intent.approved_root_snapshot.file_id_kind,
-                            intent.approved_root_snapshot.attributes,
-                            intent.approved_root_snapshot.reparse_tag,
-                            intent.approved_root_snapshot.creation_time_ns,
-                            intent.approved_root_snapshot.last_write_time_ns,
-                            now,
-                            now,
-                        ),
+                        {
+                            "action_id": intent.action_id,
+                            "batch_id": batch_id,
+                            "candidate_id": intent.candidate_id,
+                            "action_ordinal": ordinal,
+                            "mode": mode.value,
+                            "state": ActionState.INTENT_RECORDED.value,
+                            "source_path": intent.source_path,
+                            "scan_root": intent.scan_root,
+                            "approved_root": intent.approved_root,
+                            "quarantine_path": intent.quarantine_path,
+                            "category": intent.category,
+                            "logical_size": snapshot.logical_size,
+                            "volume_serial": _legacy_volume_serial(
+                                snapshot.volume_serial
+                            ),
+                            "volume_serial_u64": _encode_volume_serial(
+                                snapshot.volume_serial
+                            ),
+                            "file_id": snapshot.file_id,
+                            "file_id_kind": snapshot.file_id_kind,
+                            "link_count": snapshot.link_count,
+                            "attributes": snapshot.attributes,
+                            "reparse_tag": snapshot.reparse_tag,
+                            "creation_time_ns": snapshot.creation_time_ns,
+                            "last_write_time_ns": snapshot.last_write_time_ns,
+                            "root_volume_serial": _legacy_volume_serial(
+                                intent.approved_root_snapshot.volume_serial
+                            ),
+                            "root_volume_serial_u64": _encode_volume_serial(
+                                intent.approved_root_snapshot.volume_serial
+                            ),
+                            "root_file_id": intent.approved_root_snapshot.file_id,
+                            "root_file_id_kind": (
+                                intent.approved_root_snapshot.file_id_kind
+                            ),
+                            "root_attributes": intent.approved_root_snapshot.attributes,
+                            "root_reparse_tag": intent.approved_root_snapshot.reparse_tag,
+                            "root_creation_time_ns": (
+                                intent.approved_root_snapshot.creation_time_ns
+                            ),
+                            "root_last_write_time_ns": (
+                                intent.approved_root_snapshot.last_write_time_ns
+                            ),
+                            "created_at": now,
+                            "updated_at": now,
+                        },
                     )
                     self._event(
                         connection,
@@ -434,12 +485,45 @@ class CleanupJournal:
             version = connection.execute(
                 "SELECT value FROM cleanup_meta WHERE key = 'schema_version'"
             ).fetchone()
-            if version is None or int(version[0]) != JOURNAL_SCHEMA_VERSION:
+            if version is None:
+                raise CleanupJournalError("cleanup journal schema version is unsupported")
+            try:
+                current_version = int(version[0])
+            except (TypeError, ValueError) as error:
+                raise CleanupJournalError(
+                    "cleanup journal schema version is unsupported"
+                ) from error
+            if current_version == 2:
+                self._migrate_v2_to_v3(connection)
+                current_version = 3
+            if current_version != JOURNAL_SCHEMA_VERSION:
                 raise CleanupJournalError("cleanup journal schema version is unsupported")
             connection.execute("BEGIN IMMEDIATE")
             self._prune_completed_batches(connection)
             connection.commit()
         secure_private_file(self.path)
+
+    @staticmethod
+    def _migrate_v2_to_v3(connection: sqlite3.Connection) -> None:
+        """Add exact unsigned volume identities without discarding safety state."""
+
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute(
+            "ALTER TABLE cleanup_actions ADD COLUMN volume_serial_u64 TEXT"
+        )
+        connection.execute(
+            "ALTER TABLE cleanup_actions ADD COLUMN root_volume_serial_u64 TEXT"
+        )
+        connection.execute(
+            """UPDATE cleanup_actions
+               SET volume_serial_u64 = CAST(volume_serial AS TEXT),
+                   root_volume_serial_u64 = CAST(root_volume_serial AS TEXT)"""
+        )
+        connection.execute(
+            "UPDATE cleanup_meta SET value = ? WHERE key = 'schema_version'",
+            (str(JOURNAL_SCHEMA_VERSION),),
+        )
+        connection.commit()
 
     @contextmanager
     def _connect(self, *, create: bool = False) -> Iterator[sqlite3.Connection]:
@@ -516,7 +600,7 @@ class CleanupJournal:
 def _row_to_action(row: sqlite3.Row) -> JournalAction:
     snapshot = ExactFileSnapshot(
         logical_size=int(row["logical_size"]),
-        volume_serial=int(row["volume_serial"]),
+        volume_serial=_decode_volume_serial(row["volume_serial_u64"]),
         file_id=str(row["file_id"]),
         file_id_kind=str(row["file_id_kind"]),
         link_count=int(row["link_count"]),
@@ -527,7 +611,7 @@ def _row_to_action(row: sqlite3.Row) -> JournalAction:
     )
     root_snapshot = ExactFileSnapshot(
         logical_size=0,
-        volume_serial=int(row["root_volume_serial"]),
+        volume_serial=_decode_volume_serial(row["root_volume_serial_u64"]),
         file_id=str(row["root_file_id"]),
         file_id_kind=str(row["root_file_id_kind"]),
         link_count=1,
@@ -570,6 +654,35 @@ def _bounded(value: str | None) -> str | None:
     if value is None:
         return None
     return value[:MAX_JOURNAL_ERROR_LENGTH]
+
+
+def _encode_volume_serial(value: int) -> str:
+    if value < 0 or value > _MAX_UINT64:
+        raise CleanupJournalError("volume serial is outside the unsigned 64-bit range")
+    return str(value)
+
+
+def _legacy_volume_serial(value: int) -> int:
+    """Retain a bounded compatibility projection for schema-v2 tooling."""
+
+    _encode_volume_serial(value)
+    return value if value <= _MAX_SQLITE_INTEGER else 0
+
+
+def _decode_volume_serial(value: object) -> int:
+    if not isinstance(value, str):
+        raise CleanupJournalError("stored volume serial is not canonical decimal text")
+    if (
+        not value
+        or not value.isascii()
+        or not value.isdecimal()
+        or (len(value) > 1 and value.startswith("0"))
+    ):
+        raise CleanupJournalError("stored volume serial is not canonical decimal text")
+    decoded = int(value)
+    if decoded > _MAX_UINT64:
+        raise CleanupJournalError("stored volume serial is outside the unsigned 64-bit range")
+    return decoded
 
 
 __all__ = [
