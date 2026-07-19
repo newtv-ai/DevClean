@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import devclean.core.postscan_cleanup as postscan_cleanup_module
 from devclean.core.cleanup_catalog import (
     CleanupCategory,
     CleanupPolicy,
@@ -33,6 +34,10 @@ from devclean.platform.windows.exact_cleanup import (
     quarantine_exact_file,
 )
 from devclean.platform.windows.filesystem import read_file_metadata
+from devclean.platform.windows.known_folders import (
+    CanonicalCleanupKind,
+    CanonicalCleanupRoot,
+)
 from devclean.scanner import ScanOptions, ScanRecordKind, scan_roots
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows exact-handle canary")
@@ -48,10 +53,23 @@ def _scan_file(root: Path, path: Path, known: KnownCleanupRoot):
     return triage_file(record, known_roots=(known,), now=datetime.now(UTC))
 
 
-def test_real_handle_quarantine_restore_and_permanent_purge_canary(tmp_path: Path) -> None:
+def test_real_handle_quarantine_restore_and_permanent_purge_canary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     scan_root = tmp_path / "approved-scan"
     managed_temp = scan_root / "managed-temp"
     managed_temp.mkdir(parents=True)
+    monkeypatch.setattr(
+        postscan_cleanup_module,
+        "canonical_permanent_cleanup_roots",
+        lambda: (
+            CanonicalCleanupRoot(
+                managed_temp,
+                CanonicalCleanupKind.USER_TEMP,
+            ),
+        ),
+    )
     known = KnownCleanupRoot(
         managed_temp,
         CleanupCategory.USER_TEMP,
