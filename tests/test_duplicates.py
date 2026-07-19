@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from reclaimer.core.duplicates import find_large_duplicates
+from devclean.core.duplicates import find_large_duplicates
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows file-ID duplicate integration test")
 def test_large_duplicate_scan_hashes_exact_matching_regular_files(tmp_path: Path) -> None:
-    payload = b"reclaimer-duplicate-canary" * 64
+    payload = b"DevClean-duplicate-canary" * 64
     first = tmp_path / "first.bin"
     second = tmp_path / "second.bin"
     other = tmp_path / "other.bin"
@@ -33,7 +33,7 @@ def test_large_duplicate_scan_hashes_exact_matching_regular_files(tmp_path: Path
 def test_duplicate_scan_excludes_protected_paths(tmp_path: Path) -> None:
     protected = tmp_path / ".git"
     protected.mkdir()
-    payload = b"reclaimer-protected-canary" * 64
+    payload = b"DevClean-protected-canary" * 64
     (protected / "first.bin").write_bytes(payload)
     (protected / "second.bin").write_bytes(payload)
 

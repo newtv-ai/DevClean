@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-import reclaimer.adapters.command as command_module
-from reclaimer.adapters.command import QueryCommand, build_query_environment, run_query
-from reclaimer.core.models import EffectClass
-from reclaimer.platform.windows.process import ProcessLimits
+import devclean.adapters.command as command_module
+from devclean.adapters.command import QueryCommand, build_query_environment, run_query
+from devclean.core.models import EffectClass
+from devclean.platform.windows.process import ProcessLimits
 
 
 def test_query_command_rejects_execution_effects() -> None:

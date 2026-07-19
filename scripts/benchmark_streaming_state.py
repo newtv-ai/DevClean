@@ -1,7 +1,7 @@
 """Benchmark bounded-batch Resource ingestion without creating target files.
 
 This is an acceptance utility, not product cleanup code.  It creates a temporary
-Reclaimer state database under ``--work-dir``, verifies the requested row count
+DevClean state database under ``--work-dir``, verifies the requested row count
 and SQLite integrity, prints one JSON result, and removes only its own temporary
 directory unless ``--retain`` is supplied.
 """
@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from re import fullmatch
 
-from reclaimer.core.models import (
+from devclean.core.models import (
     Confidence,
     ProvenanceClass,
     Resource,
@@ -30,7 +30,7 @@ from reclaimer.core.models import (
     SemanticType,
     SizeValue,
 )
-from reclaimer.core.state import StateStore
+from devclean.core.state import StateStore
 
 
 def main() -> int:
@@ -58,12 +58,12 @@ def main() -> int:
 
     args.work_dir.mkdir(parents=True, exist_ok=True)
     if args.retain:
-        run_root = Path(tempfile.mkdtemp(prefix="reclaimer-benchmark-", dir=args.work_dir))
+        run_root = Path(tempfile.mkdtemp(prefix="DevClean-benchmark-", dir=args.work_dir))
         result = run_benchmark(run_root, args.count, args.batch_size)
         result["retained_at"] = str(run_root)
     else:
         with tempfile.TemporaryDirectory(
-            prefix="reclaimer-benchmark-", dir=args.work_dir
+            prefix="DevClean-benchmark-", dir=args.work_dir
         ) as temporary:
             result = run_benchmark(Path(temporary), args.count, args.batch_size)
     payload = {

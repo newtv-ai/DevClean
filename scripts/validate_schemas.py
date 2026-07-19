@@ -1,4 +1,4 @@
-"""Validate every checked-in Reclaimer JSON Schema without network access."""
+"""Validate every checked-in DevClean JSON Schema without network access."""
 
 from __future__ import annotations
 

@@ -27,8 +27,8 @@ Example (placeholders are intentional):
 
 ```powershell
 uv run --frozen python scripts/verify_broker_install.py `
-  --install-root 'C:\Program Files\Reclaimer' `
-  --installer 'D:\release\ReclaimerSetup.msi' `
+  --install-root 'C:\Program Files\DevClean' `
+  --installer 'D:\release\DevCleanSetup.msi' `
   --manifest 'D:\release\broker-install-manifest.json' `
   --manifest-sha256 '<published-64-lowercase-hex>' `
   --output 'G6-artifact-install-observation.json'
@@ -56,5 +56,5 @@ reviewable evidence for:
 7. a non-author security review of broker, installer, IPC, intent/reconcile, and negative tests.
 
 Only the complete matrix can close G6. Until then there is no broker project or privileged product
-path in Reclaimer.
+path in DevClean.
 

@@ -5,7 +5,7 @@
   "run_id": "gate_run_g1_template",
   "captured_at": "2026-07-11T00:00:00Z",
   "product": {
-    "version": "0.1.0",
+    "version": "0.2.0a1",
     "source_revision": "REPLACE_WITH_REVISION",
     "artifact_kind": "WHEEL",
     "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
@@ -30,7 +30,7 @@
     "required_process_names": ["python.exe"],
     "managed_root_labels": ["fixture_root"],
     "protected_asset_labels": ["random_canary"],
-    "allowed_write_root_labels": ["reclaimer_data"]
+    "allowed_write_root_labels": ["devclean_data"]
   },
   "evidence": [],
   "checks": [

@@ -1,34 +1,59 @@
-# v0.1 发布工程
+# DevClean `0.2.0a1` 发布工程
 
-## 发布边界
+## 两类构建产物
 
-v0.1 的发布载荷只包含 Windows 通用 Python wheel、CycloneDX 1.6 JSON SBOM 和
-`SHA256SUMS.txt`。构建脚本不会发布、签名、上传或创建 Git 标签；GitHub Actions 也只把三项文件保存为 CI artifact。
-wheel 内的 `dist-info/licenses/` 必须逐字节包含仓库的 `LICENSE` 与
-`THIRD_PARTY_NOTICES.md`，METADATA 使用 PEP 639 `License-Expression: GPL-3.0-or-later`
-并精确列出两份 `License-File`。`LICENSE` 固定为 GNU 官方 GPLv3 纯文本的 UTF-8/LF
-字节契约：35,149 字节，SHA-256
-`3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`；
-`.gitattributes` 与 `.editorconfig` 均固定该文件为 LF。仓库文件和 wheel 内文件必须同时
-匹配此契约，不能以“二者相同”替代完整正文验证。
+DevClean 当前有两个相互独立的构建入口：
 
-所有工作流中的第三方 action 必须固定到完整 40 位提交 SHA，并在行尾记录对应发布标签。
-CI 与项目元数据把 uv 固定为 `0.11.6`，并在同步前运行 `uv lock --check`；依赖环境由
-`uv.lock` 与 `uv sync --frozen` 固定。构建后端同时固定在
-`pyproject.toml` 的 build-system 和开发依赖中，wheel 使用已锁定环境的后端构建。
+1. `scripts/build_release.ps1` 生成可复现 Python wheel、CycloneDX 1.6 SBOM 和 `SHA256SUMS.txt`，并在 `artifacts/release-validation.json` 写入结构化验证证据。
+2. `scripts/build_windows_exe.ps1` 生成面向用户的单文件、无控制台 `DevClean.exe`，执行会真实构造完整窗口和控件树的 `--ui-smoke`，并强制 50 MB 上限。
 
-## 本地复现
+wheel/SBOM 的 `artifacts/release/` 是严格三文件载荷；GUI EXE 位于 `artifacts/windows-exe/dist/`，当前不混入该校验和清单。构建脚本不会签名、上传、发布 Release、创建 Git 标签或批准公开分发。
 
-从普通 PowerShell 运行：
+## 受控清理发布边界
+
+wheel 包含扫描、分类、AI 合同、同会话增量、持久意图和窄执行模块，但 console entry point 仍只暴露 `scan`、`report`、`plan`。用户写入流程只通过 GUI 的“完成扫描 -> 本地选择 -> 最终确认”链路到达。
+
+`validate_release_artifacts.py` 对每个运行时 Python 文件执行 AST 边界检查：
+
+- 拒绝已撤销的 `ai_review.py`、`auto_clean.py`、`recycle.py` 和旧 `permanent_delete.py`；
+- scanner、triage、AI 合同与增量/inventory 观察层不得导入执行模块；
+- 原始文件变更符号只允许出现在 `platform/windows/exact_cleanup.py`；隔离目录的原子 `CreateDirectoryW` 只允许出现在 `platform/windows/security.py`。`recycle_bin.py` 被列为禁止打包模块，不得重新进入运行时；
+- 所有模块都禁止通用 `os.remove`、`os.unlink`、`shutil.rmtree`；
+- CLI 不得注册 `apply`、`clean`、`delete`、`execute`、`prune`、`recycle`、`remove` 等执行命令；
+- GUI `_scan_worker` 不得引用批次执行、精确处置、隔离或清除原语。
+- 所有不可恢复清除必须在源码结构与测试中表现为“精确隔离 -> 持久化 `PURGE_PENDING` -> 隔离对象精确处置”；从原路径直接永久处置或 Shell 回收站桥接均为发布拒绝条件。
+
+验证器证明的是打包代码的分层/表面约束，不证明业务语义、Windows 真机行为或任意未来调用路径安全。它必须与测试、canary 和人工审计共同使用。
+
+## 锁定与许可契约
+
+- `uv` 固定为 `0.11.6`，同步前运行 `uv lock --check`，依赖由 `uv.lock` 与 `uv sync --frozen` 固定。
+- Hatchling 在 build-system 与开发依赖中均精确固定为 `1.28.0`；wheel 使用锁定环境并禁用构建隔离。
+- wheel 是 `py3-none-any`，运行时不声明第三方依赖。
+- METADATA 使用 PEP 639 `License-Expression: GPL-3.0-or-later`，并精确列出 `LICENSE` 与 `THIRD_PARTY_NOTICES.md`。
+- `LICENSE` 固定为 GNU GPLv3 官方 UTF-8/LF 文本：35,149 字节，SHA-256 `3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986`。
+- GitHub Actions 必须固定到完整 40 位提交 SHA，且 checkout 不持久化凭据。
+
+## 本地构建
+
+先运行质量门禁：
 
 ```powershell
-uv sync --frozen
-uv run --frozen python scripts/validate_schemas.py
+uv sync --frozen --python 3.13
+uv run --frozen --python 3.13 ruff check .
+uv run --frozen --python 3.13 mypy src/devclean
+uv run --frozen --python 3.13 pytest
+uv run --frozen --python 3.13 pytest --cov=devclean --cov-report=term-missing
+```
+
+已提交 revision 的 wheel/SBOM 构建：
+
+```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build_release.ps1 `
   -Python 3.13 -SourceRevision <full-commit-sha>
 ```
 
-已提交的 Git 仓库会自动把最后一次提交时间设为 `SOURCE_DATE_EPOCH`。尚无提交的工作树必须显式提供非负整数：
+脚本默认以最后一次 Git 提交时间设置 `SOURCE_DATE_EPOCH`。未提交工作树只允许本地演练，并应显式标记：
 
 ```powershell
 $env:SOURCE_DATE_EPOCH = "1783728000"
@@ -36,37 +61,55 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build_release.ps
   -Python 3.13 -SourceRevision WORKTREE_UNCOMMITTED
 ```
 
-输出位于 `artifacts/release/`：
+`WORKTREE_UNCOMMITTED` 证据不能用于 G0 发布验收。wheel 输出：
 
 ```text
-reclaimer-<version>-py3-none-any.whl
-reclaimer.cdx.json
-SHA256SUMS.txt
+artifacts/release/DevClean-<version>-py3-none-any.whl
+artifacts/release/DevClean.cdx.json
+artifacts/release/SHA256SUMS.txt
+artifacts/release-validation.json
 ```
 
-`artifacts/release-validation.json` 位于发布载荷目录之外，记录 source revision、构建器/
-校验器/锁文件哈希、干净运行时安装、两次 wheel/SBOM 逐字节一致、Schema/RECORD 校验和
-发行 wheel 不暴露执行命令的结构化结果。`WORKTREE_UNCOMMITTED` 只供本地演练，G0 验收会拒绝。
-自定义 `-EvidenceOutput` 只能是 `artifacts/` 的直接子文件，不能进入
-`artifacts/release/` 或工作区外部；已有证据通过同目录临时文件和原子替换更新。
-
-## 失败关闭验证
-
-构建过程依次验证：
-
-1. wheel 从锁定开发环境中的固定 Hatchling 版本构建；
-2. wheel 以 `--no-deps --no-index` 安装到新建运行时虚拟环境，且环境中只允许存在 Reclaimer；
-3. CycloneDX 工具使用随包离线 schema 生成并校验 1.6 SBOM，输出启用 reproducible 模式；
-4. 使用相同 `SOURCE_DATE_EPOCH` 连续生成两次 wheel 与 SBOM，要求两者分别逐字节一致；
-5. wheel 的 ZIP、METADATA、RECORD 哈希/大小、路径安全属性、PEP 639 许可证表达式、完整 GPLv3 固定字节契约以及两份许可/告知文件的原始字节通过独立校验；
-6. SBOM 根组件必须与 `pyproject.toml` 名称、版本和 GPL 表达式一致，运行组件为空且 dependency graph 只能引用 root；
-7. 校验和清单必须以无 BOM UTF-8 保存，并精确覆盖 wheel 与 SBOM；
-8. 发布目录不得夹带其他普通文件。
-
-可以在不重建的情况下重新验证现有载荷：
+GUI EXE 构建：
 
 ```powershell
-uv run --frozen python scripts/validate_release_artifacts.py --directory artifacts/release
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build_windows_exe.ps1 `
+  -Python 3.13 -MaximumMegabytes 50
 ```
 
-本流程不构成 G2、代码签名或公开发布门槛已经通过的声明。
+脚本输出 JSON，包括 `DevClean.exe` 的绝对路径、字节数、SHA-256、大小上限、“用户无需 Python”的标志以及许可证目录/文件清单。公开分发必须把整个 `artifacts/windows-exe/dist/licenses/` 与 EXE 放在同一下载包中；该目录由精确构建环境中的 CPython、Tcl/Tk、PyInstaller 许可证及项目许可证生成，任一必需文本缺失都会使构建失败。该输出应连同文件哈希写入当次交接证据；不得沿用旧 EXE 哈希。
+
+## wheel 失败关闭验证顺序
+
+`build_release.ps1` 依次：
+
+1. 检查 lockfile，建立冻结开发环境并离线校验仓库 JSON Schema；
+2. 用固定 Hatchling 构建 wheel；
+3. 在全新 runtime venv 中以 `--no-deps --no-index` 安装，要求环境仅包含 DevClean；
+4. smoke import、版本一致性、CLI 帮助与无执行命令检查；
+5. 生成并校验可复现 CycloneDX 1.6 SBOM；
+6. 在相同 `SOURCE_DATE_EPOCH` 下第二次构建，要求 wheel 和 SBOM 分别逐字节一致；
+7. 生成无 BOM、小写 SHA-256 清单；
+8. 校验 ZIP 路径/碰撞/压缩/大小、METADATA、WHEEL、RECORD、许可证原始字节、SBOM graph、三文件白名单和受控清理分层；
+9. 原子写入 `release-validation.json`，包括 source revision、wheel/SBOM/checksums、builder/validator/lockfile 哈希和 `controlled_cleanup_surface_validated=true`。
+
+可以不重建而复核现有三文件载荷：
+
+```powershell
+uv run --frozen python scripts/validate_release_artifacts.py `
+  --directory artifacts/release
+```
+
+## 带删除能力构建的额外发布门
+
+wheel 验证通过仍不足以交付 GUI。具体 `DevClean.exe` 至少还需要：
+
+- 在 Windows 11 标准用户 token 下启动，提升 token 必须被拒绝；
+- 复现历史扫描期误删场景，证明扫描/分类/AI 导出/导入对 canary 内容、身份和时间戳零修改；
+- 真机验证同卷隔离 -> 恢复，以及独立确认后的隔离 -> 精确清除；
+- 覆盖 replacement/rename race、reparse、Cloud placeholder、hardlink、锁定、ACL、根目录变化和保护资产；
+- 将增量结果与独立全量 oracle 比较，并验证所有 monitor 不确定性回退全量；
+- 人工走通默认零选择、AI 导入不选中、显式采纳、可恢复隔离/确认清除分开确认、失败状态与执行后刷新；
+- 固化 source revision、EXE 字节数/SHA-256、wheel/SBOM/checksum 哈希、测试数、覆盖率和审计结论。
+
+在这些门禁未对同一 source revision 和同一制品完成前，只能称为本地 Pre-Alpha 构建，不能称为已签名、已认证、生产就绪或公开发布。详细能力门见 [ADR-004](adr/ADR-004-controlled-cleanup-workflow.md) 与[需求追踪矩阵](requirements-traceability.md)。

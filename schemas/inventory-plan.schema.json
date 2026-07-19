@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://reclaimer.dev/schemas/inventory-plan.schema.json",
-  "title": "Reclaimer Inventory-only Plan",
+  "$id": "https://DevClean.dev/schemas/inventory-plan.schema.json",
+  "title": "DevClean Inventory-only Plan",
   "description": "An internal review artifact whose actions are permanently REPORT_ONLY.",
   "type": "object",
   "additionalProperties": false,

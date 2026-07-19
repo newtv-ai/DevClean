@@ -1,0 +1,20 @@
+name: Safety design review
+description: Public discussion for non-sensitive safety hardening only
+title: "[Safety] "
+labels: [safety]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not disclose an exploitable or data-loss vulnerability here. Follow SECURITY.md instead."
+  - type: textarea
+    id: invariant
+    attributes:
+      label: Invariant or threat being reviewed
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Non-sensitive evidence and proposed test
+    validations:
+      required: true

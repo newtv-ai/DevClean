@@ -10,8 +10,8 @@ from threading import Event, Timer
 
 import pytest
 
-import reclaimer.platform.windows.process as process_module
-from reclaimer.platform.windows.process import (
+import devclean.platform.windows.process as process_module
+from devclean.platform.windows.process import (
     ProcessLimits,
     ProcessTermination,
     run_bounded_process,

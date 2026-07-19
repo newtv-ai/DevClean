@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-import reclaimer.core.reporting as reporting_module
-from reclaimer.core.models import (
+import devclean.core.reporting as reporting_module
+from devclean.core.models import (
     Confidence,
     ProvenanceClass,
     Resource,
@@ -17,7 +17,7 @@ from reclaimer.core.models import (
     SizeValue,
     new_id,
 )
-from reclaimer.core.reporting import (
+from devclean.core.reporting import (
     build_report,
     iter_json_report,
     iter_markdown_report,
@@ -25,8 +25,8 @@ from reclaimer.core.reporting import (
     render_markdown,
     write_report_stream,
 )
-from reclaimer.core.state import StateStore
-from reclaimer.evidence.store import EvidenceStore
+from devclean.core.state import StateStore
+from devclean.evidence.store import EvidenceStore
 
 ROOT = Path(__file__).resolve().parents[1]
 

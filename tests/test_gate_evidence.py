@@ -114,7 +114,7 @@ def _base_manifest(gate: str, product_hash: str) -> dict[str, Any]:
             "required_process_names": ["python.exe"],
             "managed_root_labels": ["managed_cache"],
             "protected_asset_labels": ["user_assets"],
-            "allowed_write_root_labels": ["reclaimer_data"],
+            "allowed_write_root_labels": ["devclean_data"],
         },
         "evidence": [],
         "checks": [],
@@ -136,7 +136,7 @@ def _json_bytes(value: Any) -> bytes:
 
 def _build_g1(directory: Path) -> tuple[Path, dict[str, Any]]:
     directory.mkdir(parents=True, exist_ok=True)
-    product_content = b"synthetic-reclaimer-wheel"
+    product_content = b"synthetic-DevClean-wheel"
     product_hash = _sha(product_content)
     manifest = _base_manifest("G1", product_hash)
     product_id = _write_artifact(
@@ -144,7 +144,7 @@ def _build_g1(directory: Path) -> tuple[Path, dict[str, Any]]:
         manifest,
         evidence_id="gate_evidence_product_fixture01",
         kind="PRODUCT_ARTIFACT",
-        filename="reclaimer.whl",
+        filename="devclean.whl",
         content=product_content,
     )
     test_report = {
@@ -268,7 +268,7 @@ def _build_g1(directory: Path) -> tuple[Path, dict[str, Any]]:
 
 def _build_g0(directory: Path) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
-    product_content = b"synthetic-reclaimer-wheel"
+    product_content = b"synthetic-DevClean-wheel"
     product_hash = _sha(product_content)
     manifest = _base_manifest("G0", product_hash)
     manifest["environment"]["machine_kind"] = "CI_RUNNER"
@@ -287,7 +287,7 @@ def _build_g0(directory: Path) -> Path:
         manifest,
         evidence_id="gate_evidence_product_fixture00",
         kind="PRODUCT_ARTIFACT",
-        filename="reclaimer.whl",
+        filename="devclean.whl",
         content=product_content,
     )
     owner_id = _write_artifact(
@@ -334,7 +334,7 @@ def _build_g0(directory: Path) -> Path:
                 "runtime_dependencies": [],
                 "declared_license_expression": "GPL-3.0-or-later",
                 "declared_license_files": ["LICENSE", "THIRD_PARTY_NOTICES.md"],
-                "console_scripts": {"reclaimer": "reclaimer.cli.main:main"},
+                "console_scripts": {"DevClean": "devclean.cli.main:main"},
                 "runtime_plugin_groups": [],
                 "prohibited_vendored_paths": [],
                 "mechanical_result": "PASS",
@@ -402,7 +402,7 @@ def _build_g0(directory: Path) -> Path:
                 "workflow_sha256": _sha(b"ci-workflow"),
                 "run_id": "123456",
                 "run_attempt": 1,
-                "repository": "example/reclaimer",
+                "repository": "example/DevClean",
                 "python_matrix": [
                     {
                         "python_version": version,
@@ -545,7 +545,7 @@ def _write_procmon_csv(
             "Process Name": "python.exe",
             "PID": "4242",
             "Operation": "WriteFile",
-            "Path": r"C:\fixture\state\reclaimer.db",
+            "Path": r"C:\fixture\state\DevClean.db",
             "Result": "SUCCESS",
             "Detail": "",
         },
@@ -561,7 +561,7 @@ def _write_procmon_csv(
             PROCMON.parse_root_rule(r"user_assets=C:\fixture\protected"),
         ),
         allowed_write_roots=(
-            PROCMON.parse_root_rule(r"reclaimer_data=C:\fixture\state"),
+            PROCMON.parse_root_rule(r"devclean_data=C:\fixture\state"),
         ),
         required_processes=required_processes,
     )
@@ -569,7 +569,7 @@ def _write_procmon_csv(
 
 def _build_g2(directory: Path, g1_result: dict[str, Any]) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
-    product_content = b"synthetic-reclaimer-wheel"
+    product_content = b"synthetic-DevClean-wheel"
     product_hash = _sha(product_content)
     manifest = _base_manifest("G2", product_hash)
     manifest["scope"]["adapters"] = sorted(G2_ADAPTERS)
@@ -581,7 +581,7 @@ def _build_g2(directory: Path, g1_result: dict[str, Any]) -> Path:
         manifest,
         evidence_id="gate_evidence_product_fixture02",
         kind="PRODUCT_ARTIFACT",
-        filename="reclaimer.whl",
+        filename="devclean.whl",
         content=product_content,
     )
     prerequisite_id = _write_artifact(
@@ -753,14 +753,14 @@ def _prerequisite_result(gate: str, product_hash: str) -> dict[str, Any]:
 
 def _build_g5(directory: Path) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
-    product_content = b"synthetic-reclaimer-wheel"
+    product_content = b"synthetic-DevClean-wheel"
     product_hash = _sha(product_content)
     manifest = _base_manifest("G5", product_hash)
     manifest["environment"]["machine_kind"] = "DISPOSABLE_VM"
     manifest["scope"] = {
         "adapters": ["direct_fs_fixture"],
         "available_adapters": ["direct_fs_fixture"],
-        "required_process_names": ["reclaimer-race-fixture.exe"],
+        "required_process_names": ["DevClean-race-fixture.exe"],
         "managed_root_labels": ["approved_fixture_root"],
         "protected_asset_labels": ["user_assets"],
         "allowed_write_root_labels": ["race_control"],
@@ -777,7 +777,7 @@ def _build_g5(directory: Path) -> Path:
         manifest,
         evidence_id="gate_evidence_product_fixture05",
         kind="PRODUCT_ARTIFACT",
-        filename="reclaimer.whl",
+        filename="devclean.whl",
         content=product_content,
     )
     prerequisites = []

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from reclaimer.gates.broker_install import (
+from devclean.gates.broker_install import (
     ArtifactKind,
     parse_authenticode_json,
     parse_manifest_bytes,
@@ -24,12 +24,12 @@ def _manifest(*, artifacts: list[dict[str, str]] | None = None) -> bytes:
         "artifacts": artifacts
         or [
             {
-                "relative_path": "Reclaimer.Broker.exe",
+                "relative_path": "DevClean.Broker.exe",
                 "kind": "BROKER",
                 "sha256": "c" * 64,
             },
             {
-                "relative_path": "lib/Reclaimer.Fixed.dll",
+                "relative_path": "lib/DevClean.Fixed.dll",
                 "kind": "DLL",
                 "sha256": "d" * 64,
             },
@@ -44,7 +44,7 @@ def test_broker_manifest_parser_accepts_closed_canonical_contract() -> None:
     assert manifest.release_id == "0.5.0-rc.1"
     assert manifest.publisher_thumbprint == "a" * 40
     assert manifest.artifacts[0].kind is ArtifactKind.BROKER
-    assert manifest.artifacts[1].relative_path == "lib/Reclaimer.Fixed.dll"
+    assert manifest.artifacts[1].relative_path == "lib/DevClean.Fixed.dll"
 
 
 @pytest.mark.parametrize(
@@ -79,12 +79,12 @@ def test_broker_manifest_rejects_noncanonical_windows_paths(relative_path: str) 
 def test_broker_manifest_rejects_duplicate_casefold_path_and_external_data() -> None:
     duplicate = [
         {
-            "relative_path": "Reclaimer.Broker.exe",
+            "relative_path": "DevClean.Broker.exe",
             "kind": "BROKER",
             "sha256": "c" * 64,
         },
         {
-            "relative_path": "reclaimer.broker.EXE",
+            "relative_path": "DevClean.broker.EXE",
             "kind": "BROKER",
             "sha256": "d" * 64,
         },

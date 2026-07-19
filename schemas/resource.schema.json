@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://reclaimer.dev/schemas/resource.schema.json",
-  "title": "Reclaimer Resource",
+  "$id": "https://DevClean.dev/schemas/resource.schema.json",
+  "title": "DevClean Resource",
   "description": "A version 1.0.0 inventory resource. This schema describes evidence, not execution authority.",
   "type": "object",
   "additionalProperties": false,

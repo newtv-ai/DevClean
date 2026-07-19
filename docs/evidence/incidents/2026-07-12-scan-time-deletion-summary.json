@@ -1,0 +1,40 @@
+{
+  "schema": "DevClean-local-incident-summary-v1",
+  "incident_id": "INC-2026-07-12-SCAN-TIME-DELETION",
+  "captured_at": "2026-07-16T12:58:44.0472808+08:00",
+  "affected_source_revision": "aba14a25486d4a9e4b0d7c144d5e08d9873516ba",
+  "source_history": {
+    "path": "C:\\Users\\<USER>\\AppData\\Local\\devclean\\history\\actions.jsonl",
+    "bytes": 42724,
+    "sha256": "c8f961ba9c5137bdc2412d055819ca59a0c45ba9cd7a54bee948cb7ef2c0cd75",
+    "modified": false
+  },
+  "observed_records": {
+    "total": 135,
+    "AUTO_PERMANENT": 135,
+    "AI_PERMANENT": 0,
+    "USER_RECYCLE": 0,
+    "logical_bytes": 217980912,
+    "first_utc": "2026-07-12T09:29:22.881370+00:00",
+    "last_utc": "2026-07-12T09:33:18.416025+00:00",
+    "by_category": [
+      {
+        "category": "CRASH_DUMPS",
+        "records": 10,
+        "logical_bytes": 208470004
+      },
+      {
+        "category": "USER_TEMP",
+        "records": 125,
+        "logical_bytes": 9510908
+      }
+    ]
+  },
+  "interpretation": "The affected GUI recorded successful permanent deletion while its scan worker was still enumerating files.",
+  "limitations": [
+    "History was written only after a deletion returned success.",
+    "History write failures were swallowed by the affected GUI.",
+    "Therefore 135 is an observed lower bound, not proof that no additional files were deleted.",
+    "Zero AI_PERMANENT or USER_RECYCLE records means no such action was recorded; it does not prove those paths were impossible."
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://reclaimer.invalid/schemas/gate-evidence.schema.json",
-  "title": "Reclaimer external safety-gate evidence manifest",
+  "$id": "https://DevClean.invalid/schemas/gate-evidence.schema.json",
+  "title": "DevClean external safety-gate evidence manifest",
   "type": "object",
   "additionalProperties": false,
   "required": [

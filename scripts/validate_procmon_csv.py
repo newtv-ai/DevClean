@@ -599,7 +599,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         required=True,
         metavar="LABEL=PATH",
-        help="declared Reclaimer/vendor operational-write sandbox",
+        help="declared devclean/vendor operational-write sandbox",
     )
     parser.add_argument(
         "--required-process",

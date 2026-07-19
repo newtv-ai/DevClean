@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from reclaimer.adapters.json_contract import strict_json_loads
+from devclean.adapters.json_contract import strict_json_loads
 
 
 def test_strict_json_rejects_duplicate_keys_and_nonstandard_constants() -> None:

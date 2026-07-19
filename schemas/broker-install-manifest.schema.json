@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://reclaimer.invalid/schemas/broker-install-manifest.schema.json",
-  "title": "Reclaimer future-G6 broker install manifest",
+  "$id": "https://DevClean.invalid/schemas/broker-install-manifest.schema.json",
+  "title": "DevClean future-G6 broker install manifest",
   "type": "object",
   "additionalProperties": false,
   "required": [

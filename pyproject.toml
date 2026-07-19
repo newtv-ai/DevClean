@@ -3,14 +3,14 @@ requires = ["hatchling==1.28.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "reclaimer"
-version = "0.1.0"
-description = "Bounded-memory, safe disk cleanup GUI for Windows 11"
+name = "DevClean"
+version = "0.2.0a1"
+description = "Controlled AI and developer-tool disk cleanup workbench for Windows 11"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
-authors = [{ name = "Reclaimer contributors" }]
+authors = [{ name = "DevClean contributors" }]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "Environment :: Win32 (MS Windows)",
@@ -24,7 +24,7 @@ classifiers = [
 dependencies = []
 
 [project.scripts]
-reclaimer = "reclaimer.cli.main:main"
+DevClean = "devclean.cli.main:main"
 
 [dependency-groups]
 dev = [
@@ -41,7 +41,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/reclaimer"]
+packages = ["src/devclean"]
 
 [tool.uv]
 required-version = "==0.11.6"
@@ -61,11 +61,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 python_version = "3.11"
 strict = true
 warn_unreachable = true
-packages = ["reclaimer"]
+packages = ["devclean"]
 
 [tool.coverage.run]
 branch = true
-source = ["reclaimer"]
+source = ["devclean"]
 
 [tool.coverage.report]
 show_missing = true

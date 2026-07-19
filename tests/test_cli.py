@@ -6,24 +6,21 @@ from pathlib import Path
 
 import pytest
 
-from reclaimer.adapters.base import (
+from devclean.adapters.base import (
     AdapterIssue,
     InventoryResult,
     ProbeResult,
     ProbeStatus,
 )
-from reclaimer.cli import main as cli
-from reclaimer.core.models import (
-    Confidence,
-    FileIdentity,
+from devclean.cli import main as cli
+from devclean.core.models import (
     ProvenanceClass,
     Resource,
     RiskTier,
     ScanStatus,
     SemanticType,
-    SizeValue,
 )
-from reclaimer.core.state import StateStore
+from devclean.core.state import StateStore
 
 
 def test_doctor_json_is_inventory_only(monkeypatch, capsys) -> None:
@@ -79,7 +76,7 @@ def test_guides_are_external_and_report_only(capsys) -> None:
 
 
 def test_report_without_state_returns_error(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path))
     assert cli.main(["report", "--latest"]) == 1
     assert "No stored scan" in capsys.readouterr().err
 
@@ -89,66 +86,6 @@ def test_non_doctor_commands_refuse_elevated_main_process(monkeypatch, capsys) -
 
     assert cli.main(["guides", "--json"]) == 2
     assert "without elevation" in capsys.readouterr().err
-
-
-class _InteractiveStdin:
-    def isatty(self) -> bool:
-        return True
-
-
-def test_recycle_requires_exact_interactive_confirmation(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
-    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(tmp_path / "state"))
-    target_path = tmp_path / "scan-root" / "cache.bin"
-    target_path.parent.mkdir()
-    target_path.write_bytes(b"fixture")
-    resource = Resource(
-        candidate_id="candidate_recycle_cli",
-        adapter_id="filesystem",
-        display_name="Filesystem file",
-        semantic_type=SemanticType.UNKNOWN,
-        risk_tier=RiskTier.RED,
-        provenance_class=ProvenanceClass.UNKNOWN,
-        path=str(target_path),
-        logical_size=SizeValue(7, Confidence.EXACT),
-        identity=FileIdentity(
-            volume_serial="000000000000002a",
-            file_id="ab" * 16,
-            file_id_kind="file_id_128",
-            link_count=1,
-            attributes=32,
-            creation_time_ns=100,
-            last_write_time_ns=200,
-        ),
-    )
-    with StateStore() as store:
-        scan_id = store.create_scan([str(target_path.parent)])
-        store.add_resources(scan_id, [resource])
-        store.finish_scan(scan_id, ScanStatus.COMPLETED)
-
-    monkeypatch.setattr(cli.sys, "stdin", _InteractiveStdin())
-    monkeypatch.setattr("builtins.input", lambda _prompt="": f"RECYCLE {scan_id}")
-    observed: list[str] = []
-
-    def fake_recycle(targets, _recycler):
-        observed.extend(target.candidate_id for target in targets)
-        return tuple(targets)
-
-    monkeypatch.setattr(cli, "recycle_targets", fake_recycle)
-    assert cli.main(["recycle", scan_id, "--select", resource.candidate_id, "--json"]) == 0
-
-    payload = json.loads(capsys.readouterr().out)
-    assert observed == [resource.candidate_id]
-    assert payload["undo_capability"] == "RECYCLE_BIN"
-    assert payload["safety_boundary"]["permanent_delete"] is False
-
-
-def test_recycle_rejects_noninteractive_input(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(tmp_path / "state"))
-
-    assert cli.main(["recycle", "scan_fixture", "--select", "candidate_fixture"]) == 2
-    assert "interactive terminal" in capsys.readouterr().err
 
 
 def test_elevation_probe_failure_is_fail_closed(monkeypatch, capsys) -> None:
@@ -170,7 +107,7 @@ def test_scan_streams_to_state_and_remains_non_actionable(
     (root / "one.bin").write_bytes(b"one")
     (nested / "two.bin").write_bytes(b"two-two")
     data = tmp_path / "state-data"
-    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(data))
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(data))
     monkeypatch.setattr(cli, "is_process_elevated", lambda: False)
 
     assert cli.main(["scan", "--root", str(root), "--json"]) == 0
@@ -180,7 +117,7 @@ def test_scan_streams_to_state_and_remains_non_actionable(
     assert result["summary"]["filesystem_resources"] == 2
     assert result["safety_boundary"]["actionable"] is False
 
-    with StateStore(data / "state" / "reclaimer.db") as store:
+    with StateStore(data / "state" / "DevClean.db") as store:
         resources = store.list_resources(result["scan_id"])
         assert len(resources) == 3  # two files plus one REPORT_ONLY Windows guide
         assert all(resource["actionable"] is False for resource in resources)
@@ -193,21 +130,21 @@ def test_scan_streams_to_state_and_remains_non_actionable(
 
 
 def test_scan_rejects_unc_root_before_opening_state(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(cli, "is_process_elevated", lambda: False)
 
     assert cli.main(["scan", "--root", r"\\server\share"]) == 2
     assert "network and device roots" in capsys.readouterr().err
-    assert not (tmp_path / "state" / "reclaimer.db").exists()
+    assert not (tmp_path / "state" / "DevClean.db").exists()
 
 
 def test_full_path_report_warns_but_still_redacts_credentials(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     database_root = tmp_path / "state-data"
-    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(database_root))
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(database_root))
     monkeypatch.setattr(cli, "is_process_elevated", lambda: False)
-    with StateStore(database_root / "state" / "reclaimer.db") as store:
+    with StateStore(database_root / "state" / "DevClean.db") as store:
         scan_id = store.create_scan([r"C:\Users\Alice\project"])
         store.add_resource(
             scan_id,
@@ -232,7 +169,7 @@ def test_full_path_report_warns_but_still_redacts_credentials(
 
 
 def test_scan_requires_a_root_or_adapter(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(cli, "is_process_elevated", lambda: False)
 
     assert cli.main(["scan"]) == 2
@@ -240,7 +177,7 @@ def test_scan_requires_a_root_or_adapter(tmp_path: Path, monkeypatch, capsys) ->
 
 
 def test_python_option_requires_pip_adapter(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(cli, "is_process_elevated", lambda: False)
 
     assert cli.main(["scan", "--adapter", "uv", "--python", sys.executable]) == 2
@@ -248,7 +185,7 @@ def test_python_option_requires_pip_adapter(tmp_path: Path, monkeypatch, capsys)
 
 
 def test_docker_path_requires_docker_adapter(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(cli, "is_process_elevated", lambda: False)
 
     assert cli.main(["scan", "--adapter", "uv", "--docker", sys.executable]) == 2
@@ -269,12 +206,12 @@ def test_explicit_adapter_executable_rejects_batch_path_before_opening_state(
     data = tmp_path / "state-data"
     batch = tmp_path / "untrusted.CMD"
     batch.write_text("@echo off\n", encoding="ascii")
-    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(data))
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(data))
     monkeypatch.setattr(cli, "is_process_elevated", lambda: False)
 
     assert cli.main(["scan", "--adapter", adapter, option, str(batch)]) == 2
     assert "must be a .exe file" in capsys.readouterr().err
-    assert not (data / "state" / "reclaimer.db").exists()
+    assert not (data / "state" / "DevClean.db").exists()
 
 
 def test_filesystem_only_and_loopback_adapters_are_explicitly_registered() -> None:
@@ -331,7 +268,7 @@ def test_adapter_only_scan_persists_resources_issues_and_summary(
             )
 
     data = tmp_path / "state-data"
-    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(data))
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(data))
     monkeypatch.setattr(cli, "is_process_elevated", lambda: False)
     monkeypatch.setattr(cli, "_build_adapters", lambda args: [FakeAdapter()])
 
@@ -347,7 +284,7 @@ def test_adapter_only_scan_persists_resources_issues_and_summary(
             "version": "26.1.1",
         }
     ]
-    with StateStore(data / "state" / "reclaimer.db") as store:
+    with StateStore(data / "state" / "DevClean.db") as store:
         resources = store.list_resources(result["scan_id"])
         errors = store.list_scan_errors(result["scan_id"])
         adapter_runs = list(store.iter_adapter_runs(result["scan_id"]))
@@ -362,10 +299,10 @@ def test_plan_create_and_show_are_report_only_and_id_scoped(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     data = tmp_path / "state-data"
-    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(data))
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(data))
     monkeypatch.setattr(cli, "is_process_elevated", lambda: False)
     candidate_id = "candidate_plan_fixture"
-    with StateStore(data / "state" / "reclaimer.db") as store:
+    with StateStore(data / "state" / "DevClean.db") as store:
         scan_id = store.create_scan([r"C:\fixture"])
         store.add_resource(
             scan_id,
@@ -411,9 +348,9 @@ def test_plan_create_rejects_candidate_outside_selected_scan(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     data = tmp_path / "state-data"
-    monkeypatch.setenv("RECLAIMER_DATA_DIR", str(data))
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(data))
     monkeypatch.setattr(cli, "is_process_elevated", lambda: False)
-    with StateStore(data / "state" / "reclaimer.db") as store:
+    with StateStore(data / "state" / "DevClean.db") as store:
         scan_id = store.create_scan([r"C:\fixture"])
         store.finish_scan(scan_id, ScanStatus.COMPLETED)
 

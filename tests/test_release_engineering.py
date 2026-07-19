@@ -12,7 +12,7 @@ from typing import cast
 
 import pytest
 
-from reclaimer import __version__
+from devclean import __version__
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = spec_from_file_location(
@@ -25,6 +25,9 @@ MODULE = module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 _parse_checksums = cast(Callable[[Path], dict[str, str]], MODULE._parse_checksums)
 _validate_wheel_member_name = cast(Callable[[str], str], MODULE._validate_wheel_member_name)
+_validate_layered_runtime_python = cast(
+    Callable[[str, bytes], None], MODULE._validate_layered_runtime_python
+)
 
 _GATE_TEMPLATES = (
     "g0-release-manifest.template.json",
@@ -38,7 +41,7 @@ def test_product_version_is_single_sourced_across_release_contracts() -> None:
     """Prevent divergent public release and gate-evidence version labels."""
 
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert project["project"]["version"] == __version__ == "0.1.0"
+    assert project["project"]["version"] == __version__ == "0.2.0a1"
     for template_name in _GATE_TEMPLATES:
         template_path = ROOT / "docs" / "evidence" / "templates" / template_name
         template = json.loads(template_path.read_text(encoding="utf-8"))
@@ -61,10 +64,10 @@ def test_all_checked_in_schemas_pass_offline_validator() -> None:
 def test_checksum_manifest_parser_is_strict(tmp_path: Path) -> None:
     manifest = tmp_path / "SHA256SUMS.txt"
     digest = "a" * 64
-    manifest.write_text(f"{digest}  reclaimer.whl\n", encoding="utf-8")
-    assert _parse_checksums(manifest) == {"reclaimer.whl": digest}
+    manifest.write_text(f"{digest}  devclean.whl\n", encoding="utf-8")
+    assert _parse_checksums(manifest) == {"devclean.whl": digest}
 
-    manifest.write_text(f"{digest} *reclaimer.whl\n", encoding="utf-8")
+    manifest.write_text(f"{digest} *devclean.whl\n", encoding="utf-8")
     with pytest.raises(ValueError, match="invalid checksum line"):
         _parse_checksums(manifest)
 
@@ -74,12 +77,12 @@ def test_checksum_manifest_parser_is_strict(tmp_path: Path) -> None:
     (
         "../payload.py",
         "/payload.py",
-        "reclaimer\\payload.py",
-        "reclaimer//payload.py",
-        "reclaimer/./payload.py",
+        "devclean\\payload.py",
+        "devclean//payload.py",
+        "devclean/./payload.py",
         "C:/payload.py",
-        "reclaimer/NUL.py",
-        "reclaimer/payload.py.",
+        "devclean/NUL.py",
+        "devclean/payload.py.",
     ),
 )
 def test_wheel_member_validator_rejects_windows_aliases(name: str) -> None:
@@ -88,8 +91,8 @@ def test_wheel_member_validator_rejects_windows_aliases(name: str) -> None:
 
 
 def test_wheel_member_validator_normalizes_for_collision_detection() -> None:
-    assert _validate_wheel_member_name("Reclaimer/Payload.py") == (
-        "reclaimer/payload.py"
+    assert _validate_wheel_member_name("devclean/Payload.py") == (
+        "devclean/payload.py"
     )
 
 
@@ -107,7 +110,7 @@ def test_release_builder_enforces_clean_runtime_sbom_and_validation() -> None:
     assert "byte-for-byte reproducible" in script
     assert "validate_release_artifacts.py" in script
     assert "release-validation.json" in script
-    assert "inventory_only_surface_validated" in script
+    assert "controlled_cleanup_surface_validated" in script
     assert "builder_sha256" in script
     assert "uv_lock_sha256" in script
     assert "Invoke-GitProbe" in script
@@ -116,6 +119,82 @@ def test_release_builder_enforces_clean_runtime_sbom_and_validation() -> None:
     assert "EvidenceOutput must be a direct child of the repository artifacts directory" in script
     assert "EvidenceOutput must stay outside the validated release payload directory" in script
     assert "[IO.File]::Replace" in script
+
+
+def test_windows_exe_builder_packages_required_license_sidecars() -> None:
+    script = (ROOT / "scripts" / "build_windows_exe.ps1").read_text(encoding="utf-8")
+    for required_notice in (
+        "DevClean-GPL-3.0.txt",
+        "THIRD_PARTY_NOTICES.md",
+        "CPython-LICENSE.txt",
+        "Tcl-Tk-license.terms",
+        "PyInstaller-COPYING.txt",
+    ):
+        assert required_notice in script
+    assert "license_directory" in script
+    assert "license_files" in script
+    assert "python_required_by_user = $false" in script
+    assert "dist must be a direct child of its dedicated artifacts directory" in script
+    assert "Remove-Item -LiteralPath $distFull -Recurse -Force" in script
+
+
+def test_layered_validator_checks_every_runtime_source() -> None:
+    source_root = ROOT / "src" / "devclean"
+    relative_names = {
+        path.relative_to(ROOT / "src").as_posix() for path in source_root.rglob("*.py")
+    }
+    assert not relative_names.intersection(MODULE.FORBIDDEN_RUNTIME_MEMBERS)
+    for path in source_root.rglob("*.py"):
+        _validate_layered_runtime_python(
+            path.relative_to(ROOT / "src").as_posix(), path.read_bytes()
+        )
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "from devclean.core.recycle import recycle_targets\n",
+        "import os\nos.remove('candidate')\n",
+        "def configure(subparsers):\n    subparsers.add_parser('recycle')\n",
+        "SetFileInformationByHandle = object()\n",
+        "from os import remove\n",
+        "from os import unlink as u\n",
+        "from shutil import rmtree\n",
+        "from pathlib import Path\nPath('candidate').unlink()\n",
+        "import shutil as sh\nsh.rmtree('candidate')\n",
+    ),
+)
+def test_layered_validator_rejects_unreviewed_execution_surfaces(source: str) -> None:
+    with pytest.raises(ValueError):
+        _validate_layered_runtime_python("devclean/fixture.py", source.encode("utf-8"))
+
+
+def test_layered_validator_allows_raw_win32_only_in_narrow_platform_modules() -> None:
+    source = "SetFileInformationByHandle = object()\n"
+    _validate_layered_runtime_python(
+        "devclean/platform/windows/exact_cleanup.py", source.encode("utf-8")
+    )
+    with pytest.raises(ValueError, match="non-allowlisted"):
+        _validate_layered_runtime_python(
+            "devclean/core/postscan_cleanup.py", source.encode("utf-8")
+        )
+    _validate_layered_runtime_python(
+        "devclean/platform/windows/security.py",
+        b"CreateDirectoryW = object()\n",
+    )
+    with pytest.raises(ValueError, match="non-allowlisted"):
+        _validate_layered_runtime_python(
+            "devclean/core/postscan_cleanup.py",
+            b"CreateDirectoryW = object()\n",
+        )
+
+
+def test_observation_layer_cannot_import_execution_capability() -> None:
+    source = "from devclean.core.postscan_cleanup import execute_approved_batch\n"
+    with pytest.raises(ValueError, match="observation-only layer"):
+        _validate_layered_runtime_python(
+            "devclean/scanner/fixture.py", source.encode("utf-8")
+        )
 
 
 @pytest.mark.parametrize(
@@ -197,7 +276,7 @@ def test_release_validator_rejects_synchronized_but_incomplete_license(
     (tmp_path / "pyproject.toml").write_text(
         """
 [project]
-name = "reclaimer"
+name = "DevClean"
 version = "0.0.1"
 requires-python = ">=3.11,<3.14"
 license = "GPL-3.0-or-later"

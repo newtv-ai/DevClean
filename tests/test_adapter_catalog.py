@@ -2,13 +2,13 @@ from dataclasses import replace
 
 import pytest
 
-from reclaimer.adapters.base import InventoryResult, ProbeResult, ProbeStatus
-from reclaimer.adapters.catalog import get_descriptor, list_descriptors
-from reclaimer.adapters.windows_maintenance import (
+from devclean.adapters.base import InventoryResult, ProbeResult, ProbeStatus
+from devclean.adapters.catalog import get_descriptor, list_descriptors
+from devclean.adapters.windows_maintenance import (
     COMPONENT_STORE_ANALYSIS,
     report_only_resources,
 )
-from reclaimer.core.models import (
+from devclean.core.models import (
     EffectClass,
     ProvenanceClass,
     Resource,

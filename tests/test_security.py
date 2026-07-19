@@ -6,10 +6,11 @@ from pathlib import Path
 
 import pytest
 
-import reclaimer.platform.windows.security as security_module
-from reclaimer.platform.windows.security import (
+import devclean.platform.windows.security as security_module
+from devclean.platform.windows.security import (
     audit_private_directory,
     audit_private_file,
+    create_private_directory,
     secure_private_directory,
     secure_private_file,
 )
@@ -81,6 +82,28 @@ def test_private_directory_requires_absolute_existing_directory(tmp_path: Path) 
         secure_private_directory(tmp_path / "missing")
     with pytest.raises(ValueError, match="directory"):
         secure_private_directory(ordinary_file)
+
+
+def test_create_private_directory_is_private_and_never_adopts_existing_path(
+    tmp_path: Path,
+) -> None:
+    directory = tmp_path / "new-private"
+
+    audit = create_private_directory(directory)
+
+    assert directory.is_dir()
+    assert audit.path == str(directory)
+    assert audit.policy_satisfied
+    with pytest.raises(FileExistsError, match="already exists"):
+        create_private_directory(directory)
+    assert audit_private_directory(directory).policy_satisfied
+
+
+def test_create_private_directory_validates_path_and_parent(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="absolute"):
+        create_private_directory(Path("relative-private"))
+    with pytest.raises(FileNotFoundError):
+        create_private_directory(tmp_path / "missing-parent" / "private")
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows file DACL integration test")

@@ -7,15 +7,15 @@ from pathlib import Path
 
 import pytest
 
-import reclaimer.adapters.vscode as vscode_module
-from reclaimer.adapters.base import AdapterContext, ProbeStatus
-from reclaimer.adapters.vscode import (
+import devclean.adapters.vscode as vscode_module
+from devclean.adapters.base import AdapterContext, ProbeStatus
+from devclean.adapters.vscode import (
     VSCodeExtensionAdapter,
     discover_extension_roots,
     parse_extension_manifest,
 )
-from reclaimer.core.models import ProvenanceClass, RiskTier, SemanticType
-from reclaimer.evidence.store import EvidenceStore
+from devclean.core.models import ProvenanceClass, RiskTier, SemanticType
+from devclean.evidence.store import EvidenceStore
 
 FIXTURES = Path(__file__).parent / "transcripts" / "vscode"
 

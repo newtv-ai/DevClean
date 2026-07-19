@@ -7,15 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from reclaimer.adapters.base import AdapterContext, ProbeStatus
-from reclaimer.adapters.conda import (
+from devclean.adapters.base import AdapterContext, ProbeStatus
+from devclean.adapters.conda import (
     CondaCacheAdapter,
     parse_clean_preview,
     read_conda_metadata_version,
 )
-from reclaimer.core.models import SemanticType
-from reclaimer.evidence.store import EvidenceStore
-from reclaimer.platform.windows.process import (
+from devclean.core.models import SemanticType
+from devclean.evidence.store import EvidenceStore
+from devclean.platform.windows.process import (
     BoundedProcessResult,
     ProcessTermination,
 )
@@ -120,6 +120,7 @@ def test_conda_adapter_uses_only_no_plugin_dry_run_categories(tmp_path: Path) ->
     assert all("--yes" not in command for command in commands)
     assert all("--all" not in command for command in commands)
     assert all("--force-pkgs-dirs" not in command for command in commands)
+    assert all(command[2] == "clean" for command in commands[3:])
 
 
 def test_conda_missing_metadata_never_launches_unknown_cli(tmp_path: Path) -> None:

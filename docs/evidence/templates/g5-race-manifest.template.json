@@ -5,7 +5,7 @@
   "run_id": "gate_run_g5_template",
   "captured_at": "2026-07-11T00:00:00Z",
   "product": {
-    "version": "0.1.0",
+    "version": "0.2.0a1",
     "source_revision": "REPLACE_WITH_REVISION",
     "artifact_kind": "WHEEL",
     "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
@@ -27,7 +27,7 @@
   "scope": {
     "adapters": ["direct_fs_fixture"],
     "available_adapters": [],
-    "required_process_names": ["reclaimer-race-fixture.exe"],
+    "required_process_names": ["DevClean-race-fixture.exe"],
     "managed_root_labels": ["approved_fixture_root"],
     "protected_asset_labels": ["random_canary", "hardcoded_deny_assets"],
     "allowed_write_root_labels": ["race_fixture_control"]

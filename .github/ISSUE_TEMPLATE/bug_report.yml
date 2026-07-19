@@ -1,0 +1,37 @@
+name: Bug report
+description: Report a reproducible non-security defect
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "可能造成数据损失、路径逃逸或权限问题时，请不要公开提交，改用 SECURITY.md。"
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Actual and expected result
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Remove credentials and personal paths.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DevClean version or commit
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Windows version and relevant filesystem/tool details
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted logs or screenshots

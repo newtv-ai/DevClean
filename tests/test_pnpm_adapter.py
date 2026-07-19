@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reclaimer.adapters.base import AdapterContext, ProbeStatus
-from reclaimer.adapters.pnpm import PnpmStoreAdapter, discover_store_roots
-from reclaimer.core.models import RiskTier, SemanticType
-from reclaimer.evidence.store import EvidenceStore
+from devclean.adapters.base import AdapterContext, ProbeStatus
+from devclean.adapters.pnpm import PnpmStoreAdapter, discover_store_roots
+from devclean.core.models import RiskTier, SemanticType
+from devclean.evidence.store import EvidenceStore
 
 
 def test_pnpm_root_discovery_deduplicates_conventional_locations(tmp_path: Path) -> None:

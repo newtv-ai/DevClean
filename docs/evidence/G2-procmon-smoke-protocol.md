@@ -10,10 +10,10 @@ G2 是第一行清理执行代码之前的硬门槛。本协议只观测 v0.1 in
 
 ## 每台机器的前置条件
 
-1. Windows 11，标准完整性测试账户；ProcMon 自身可由管理员运行，但 Reclaimer 及厂商 CLI 必须由标准用户进程树启动。
+1. Windows 11，标准完整性测试账户；ProcMon 自身可由管理员运行，但 DevClean 及厂商 CLI 必须由标准用户进程树启动。
 2. 从同一 wheel/source artifact 安装，记录 artifact SHA-256、源码 revision 和版本。三份清单的三元组必须完全一致；`source_revision` 必须是完整的 40 或 64 位小写 Git object ID，不能使用分支名、标签、缩写 SHA 或未提交工作树标记。
 3. 建立本机私有证据目录；PML/CSV 可能含路径、registry 和命令行，默认 `contains_sensitive_data=true`，不得提交公共仓库。
-4. 为每个实际受管 cache root、随机用户资产金丝雀和允许的 Reclaimer/vendor operational sandbox 分配不含真实路径的唯一标签。允许写入根不得与受管根或用户资产根重叠，也不得扩大到用户 profile、盘符根或临时目录总根。
+4. 为每个实际受管 cache root、随机用户资产金丝雀和允许的 devclean/vendor operational sandbox 分配不含真实路径的唯一标签。允许写入根不得与受管根或用户资产根重叠，也不得扩大到用户 profile、盘符根或临时目录总根。
 5. 已知厂商查询写入必须被重定向到专用 sandbox 或作为最小根逐项声明。没有证据的写入不能事后追加宽泛白名单。
 
 ## ProcMon 捕获完整性
@@ -31,7 +31,7 @@ G2 是第一行清理执行代码之前的硬门槛。本协议只观测 v0.1 in
 
 ```powershell
 powershell -NoProfile -File scripts/capture_service_state.ps1 -Label before -Output <evidence-dir>\service-before.json
-# 在 ProcMon 捕获窗口内，由标准用户运行固定的 reclaimer scan/report smoke。
+# 在 ProcMon 捕获窗口内，由标准用户运行固定的 DevClean scan/report smoke。
 powershell -NoProfile -File scripts/capture_service_state.ps1 -Label after -Output <evidence-dir>\service-after.json
 ```
 
@@ -56,7 +56,7 @@ uv run --frozen python scripts/validate_procmon_csv.py <filtered.csv> `
   --required-process python.exe `
   --protected-root hf_cache=G:\isolated\hf-cache `
   --protected-root random_canary=G:\isolated\protected-canary `
-  --allowed-write-root reclaimer_data=G:\isolated\reclaimer-data `
+  --allowed-write-root devclean_data=G:\isolated\DevClean-data `
   --allowed-write-root vendor_sandbox=G:\isolated\vendor-sandbox `
   --output <evidence-dir>\procmon-validation.json
 ```

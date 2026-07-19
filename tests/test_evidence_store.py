@@ -11,16 +11,16 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator
 
-from reclaimer.core.models import EffectClass
-from reclaimer.core.reporting import render_markdown
-from reclaimer.evidence import redaction
-from reclaimer.evidence.models import LoopbackOutcome, TranscriptStorage
-from reclaimer.evidence.store import EvidenceStore
-from reclaimer.platform.windows.process import (
+from devclean.core.models import EffectClass
+from devclean.core.reporting import render_markdown
+from devclean.evidence import redaction
+from devclean.evidence.models import LoopbackOutcome, TranscriptStorage
+from devclean.evidence.store import EvidenceStore
+from devclean.platform.windows.process import (
     BoundedProcessResult,
     ProcessTermination,
 )
-from reclaimer.platform.windows.security import audit_private_directory
+from devclean.platform.windows.security import audit_private_directory
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -163,8 +163,8 @@ def test_evidence_store_uses_markers_for_non_utf8_and_unsafe_text(tmp_path: Path
     stored_stderr = (tmp_path / "scan_fixture" / evidence.stderr_file).read_bytes()
     assert evidence.stdout_storage is TranscriptStorage.NON_UTF8_MARKER
     assert evidence.stderr_storage is TranscriptStorage.UNSAFE_TEXT_MARKER
-    assert stored_stdout.startswith(b"[RECLAIMER_TRANSCRIPT_WITHHELD ")
-    assert stored_stderr.startswith(b"[RECLAIMER_TRANSCRIPT_WITHHELD ")
+    assert stored_stdout.startswith(b"[DevClean_TRANSCRIPT_WITHHELD ")
+    assert stored_stderr.startswith(b"[DevClean_TRANSCRIPT_WITHHELD ")
     assert stdout not in stored_stdout
     assert stderr not in stored_stderr
     assert evidence.stdout_sha256.encode("ascii") in stored_stdout
@@ -213,7 +213,7 @@ def test_evidence_store_redaction_failure_never_falls_back_to_source(
     stored = (tmp_path / "scan_fixture" / evidence.stdout_file).read_bytes()
     assert evidence.stdout_storage is TranscriptStorage.REDACTION_ERROR_MARKER
     assert source not in stored
-    assert stored.startswith(b"[RECLAIMER_TRANSCRIPT_WITHHELD ")
+    assert stored.startswith(b"[DevClean_TRANSCRIPT_WITHHELD ")
 
 
 def test_evidence_store_oversized_source_is_replaced_by_bounded_marker(

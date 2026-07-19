@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from reclaimer.evidence.redaction import redact_argument, redact_path, redact_text
+from devclean.evidence.redaction import redact_argument, redact_path, redact_text
 
 
 def test_redact_path_replaces_home_case_insensitively() -> None:

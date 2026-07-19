@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from jsonschema import Draft202012Validator
 
-from reclaimer.scanner import BoundaryReason, ScanRecord, ScanRecordKind
-from reclaimer.scanner.resources import file_record_to_resource, record_to_scan_error
+from devclean.scanner import BoundaryReason, ScanRecord, ScanRecordKind
+from devclean.scanner.resources import file_record_to_resource, record_to_scan_error
 
 
 def test_file_record_maps_to_red_unknown_non_actionable_resource() -> None:
@@ -57,6 +58,37 @@ def test_hardlink_raw_allocation_and_aggregate_uncertainty_are_kept_separate() -
     assert any("identity accounting" in warning for warning in resource.warnings)
 
 
+def test_file_resource_without_identity_keeps_unknown_allocation() -> None:
+    record = ScanRecord(
+        root=r"C:\fixture",
+        path=r"C:\fixture\payload.bin",
+        kind=ScanRecordKind.FILE,
+        depth=1,
+        logical_size=7,
+        allocated_size=None,
+        raw_allocated_size=None,
+        hardlink_duplicate=True,
+    )
+
+    resource = file_record_to_resource(record)
+
+    assert resource.allocated_size.value is None
+    assert resource.identity is None
+    assert any("duplicate hard-link" in warning for warning in resource.warnings)
+
+
+def test_non_file_record_cannot_become_resource() -> None:
+    record = ScanRecord(
+        root=r"C:\fixture",
+        path=r"C:\fixture",
+        kind=ScanRecordKind.DIRECTORY,
+        depth=0,
+    )
+
+    with pytest.raises(ValueError, match="only file"):
+        file_record_to_resource(record)
+
+
 def test_boundary_becomes_durable_non_traversal_entry() -> None:
     record = ScanRecord(
         root=r"C:\fixture",
@@ -71,6 +103,37 @@ def test_boundary_becomes_durable_non_traversal_entry() -> None:
     assert error is not None
     assert error[0] == "BOUNDARY_REPARSE_POINT"
     assert "not read" in error[1]
+
+
+def test_error_and_default_boundary_are_normalized() -> None:
+    error_record = ScanRecord(
+        root=r"C:\fixture",
+        path=r"C:\fixture\denied",
+        kind=ScanRecordKind.ERROR,
+        depth=1,
+    )
+    boundary_record = ScanRecord(
+        root=r"C:\fixture",
+        path=r"C:\fixture\link",
+        kind=ScanRecordKind.BOUNDARY,
+        depth=1,
+    )
+    directory_record = ScanRecord(
+        root=r"C:\fixture",
+        path=r"C:\fixture",
+        kind=ScanRecordKind.DIRECTORY,
+        depth=0,
+    )
+
+    assert record_to_scan_error(error_record) == (
+        "FILESYSTEM_ERROR",
+        "filesystem observation failed (code=unknown)",
+        error_record.path,
+    )
+    boundary = record_to_scan_error(boundary_record)
+    assert boundary is not None
+    assert boundary[0] == "BOUNDARY_REPARSE_POINT"
+    assert record_to_scan_error(directory_record) is None
 
 
 def test_mapped_resource_validates_against_schema() -> None:

@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-import reclaimer.core.state as state_module
-from reclaimer.core.models import (
+import devclean.core.state as state_module
+from devclean.core.models import (
     Confidence,
     EffectClass,
     Evidence,
@@ -21,11 +21,11 @@ from reclaimer.core.models import (
     SizeValue,
     new_id,
 )
-from reclaimer.core.policy import build_inventory_plan
-from reclaimer.core.state import StateStore
-from reclaimer.evidence.models import CommandEvidence, EvidenceKind, TranscriptStorage
-from reclaimer.evidence.store import EvidenceStore
-from reclaimer.platform.windows.security import (
+from devclean.core.policy import build_inventory_plan
+from devclean.core.state import StateStore
+from devclean.evidence.models import CommandEvidence, EvidenceKind, TranscriptStorage
+from devclean.evidence.store import EvidenceStore
+from devclean.platform.windows.security import (
     audit_private_directory,
     audit_private_file,
 )
@@ -46,7 +46,7 @@ def make_resource() -> Resource:
 
 
 def test_state_store_round_trip(tmp_path: Path) -> None:
-    database = tmp_path / "state" / "reclaimer.db"
+    database = tmp_path / "state" / "DevClean.db"
     with StateStore(database) as store:
         scan_id = store.create_scan([r"C:\fixture"])
         resource = make_resource()
@@ -242,7 +242,7 @@ def test_batched_resources_and_errors_are_atomic(tmp_path: Path) -> None:
 
 def test_state_store_rejects_unc_paths() -> None:
     with pytest.raises(ValueError, match="local filesystem"):
-        StateStore(Path(r"\\server\share\reclaimer.db"))
+        StateStore(Path(r"\\server\share\DevClean.db"))
 
 
 def test_state_store_rejects_non_fixed_or_redirected_location(

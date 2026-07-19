@@ -59,7 +59,7 @@ jobs:
           uv run --frozen python -m pip_audit --local --skip-editable --progress-spinner off --format json --output artifacts/ci/dependency-audit-py${{ matrix.python-version }}.json
 
       - name: Test
-        run: uv run --frozen pytest --cov=reclaimer --cov-report=term-missing --cov-report=xml:artifacts/ci/coverage-py${{ matrix.python-version }}.xml --junitxml=artifacts/ci/junit-py${{ matrix.python-version }}.xml
+        run: uv run --frozen pytest --cov=devclean --cov-report=term-missing --cov-report=xml:artifacts/ci/coverage-py${{ matrix.python-version }}.xml --junitxml=artifacts/ci/junit-py${{ matrix.python-version }}.xml
 
       - name: Lint
         run: uv run --frozen ruff check .
@@ -76,7 +76,7 @@ jobs:
         if: matrix.python-version == '3.13'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: reclaimer-wheel-and-sbom
+          name: DevClean-wheel-and-sbom
           path: |
             artifacts/release/*
             artifacts/release-validation.json

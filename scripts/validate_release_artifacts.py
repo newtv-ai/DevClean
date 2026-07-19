@@ -1,8 +1,9 @@
-"""Fail-closed validation for the v0.1 wheel, CycloneDX SBOM, and checksums."""
+"""Fail-closed validation for the controlled-cleanup wheel, SBOM, and checksums."""
 
 from __future__ import annotations
 
 import argparse
+import ast
 import base64
 import csv
 import hashlib
@@ -24,7 +25,7 @@ from packaging.tags import Tag
 from packaging.utils import canonicalize_name, parse_wheel_filename
 
 ROOT = Path(__file__).resolve().parents[1]
-SBOM_NAME = "reclaimer.cdx.json"
+SBOM_NAME = "DevClean.cdx.json"
 CHECKSUM_NAME = "SHA256SUMS.txt"
 CHECKSUM_RE = re.compile(r"^(?P<digest>[a-f0-9]{64})  (?P<name>[^/\\]+)$")
 WINDOWS_RESERVED_NAMES = frozenset(
@@ -40,6 +41,71 @@ EXPECTED_LICENSE_FILES = ("LICENSE", "THIRD_PARTY_NOTICES.md")
 CANONICAL_GPLV3_BYTES = 35_149
 CANONICAL_GPLV3_SHA256 = (
     "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+)
+FORBIDDEN_RUNTIME_MEMBERS = frozenset(
+    {
+        "devclean/core/ai_review.py",
+        "devclean/core/auto_clean.py",
+        "devclean/core/recycle.py",
+        "devclean/platform/windows/permanent_delete.py",
+        "devclean/platform/windows/recycle_bin.py",
+    }
+)
+FORBIDDEN_IMPORT_PREFIXES = (
+    "devclean.core.ai_review",
+    "devclean.core.auto_clean",
+    "devclean.core.recycle",
+    "devclean.platform.windows.permanent_delete",
+    "devclean.platform.windows.recycle_bin",
+)
+RAW_EXECUTION_SYMBOLS = frozenset(
+    {
+        "DeleteFileW",
+        "CreateDirectoryW",
+        "FileDispositionInfo",
+        "SetFileInformationByHandle",
+        "SHFileOperationW",
+        "permanently_delete_verified_file",
+        "permanently_clean_deterministic_record",
+        "permanently_clean_model_approved_record",
+        "recycle_file",
+        "recycle_targets",
+    }
+)
+RAW_EXECUTION_ALLOWLIST = frozenset(
+    {
+        "devclean/platform/windows/exact_cleanup.py",
+        "devclean/platform/windows/security.py",
+    }
+)
+# ``from os import remove`` / ``from shutil import rmtree`` would evade the
+# dotted-call check below, so the bare names must never be imported at all.
+FORBIDDEN_MUTATION_IMPORTS = frozenset({"remove", "rmtree", "unlink"})
+# Any ``*.unlink(...)``/``*.rmtree(...)`` attribute call (``Path.unlink``,
+# aliased ``shutil``) is a generic deleter; only the private-state writers may
+# clean up their own atomic-replace temporaries.
+MUTATION_ATTRIBUTE_NAMES = frozenset({"rmtree", "unlink"})
+MUTATION_ATTRIBUTE_ALLOWLIST = frozenset(
+    {
+        "devclean/core/reporting.py",
+        "devclean/core/state.py",
+    }
+)
+EXECUTION_IMPORT_PREFIXES = (
+    "devclean.core.cleanup_journal",
+    "devclean.core.postscan_cleanup",
+    "devclean.platform.windows.exact_cleanup",
+)
+OBSERVATION_ONLY_MEMBERS = frozenset(
+    {
+        "devclean/core/ai_review_contract.py",
+        "devclean/core/incremental.py",
+        "devclean/core/triage.py",
+    }
+)
+OBSERVATION_ONLY_PREFIXES = ("devclean/scanner/",)
+FORBIDDEN_CLI_COMMANDS = frozenset(
+    {"apply", "clean", "delete", "execute", "prune", "recycle", "remove"}
 )
 
 
@@ -102,6 +168,110 @@ def _validate_wheel_member_name(name: str) -> str:
         if part.split(".", 1)[0].upper() in WINDOWS_RESERVED_NAMES:
             _fail(f"wheel member uses a reserved Windows name: {name!r}")
     return canonical.casefold()
+
+
+def _attribute_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        owner = _attribute_name(node.value)
+        return node.attr if owner is None else f"{owner}.{node.attr}"
+    return None
+
+
+def _validate_layered_runtime_python(member_name: str, payload: bytes) -> None:
+    """Enforce scan/review/execution layering in a controlled-cleanup wheel."""
+
+    try:
+        source = payload.decode("utf-8")
+        tree = ast.parse(source, filename=member_name)
+    except (UnicodeDecodeError, SyntaxError) as error:
+        _fail(f"wheel Python source is not valid UTF-8 syntax: {member_name}: {error}")
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported = tuple(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imported = (() if node.module is None else (node.module,))
+            member_names = {alias.name for alias in node.names}
+            if member_names & FORBIDDEN_MUTATION_IMPORTS:
+                _fail(
+                    "wheel imports a raw mutation name that would evade the dotted-call "
+                    f"check: {member_name}"
+                )
+        else:
+            imported = ()
+        if any(
+            name == prefix or name.startswith(f"{prefix}.")
+            for name in imported
+            for prefix in FORBIDDEN_IMPORT_PREFIXES
+        ):
+            _fail(f"wheel imports a withdrawn unsafe module: {member_name}")
+
+        observation_only = member_name in OBSERVATION_ONLY_MEMBERS or member_name.startswith(
+            OBSERVATION_ONLY_PREFIXES
+        )
+        if observation_only and any(
+            name == prefix or name.startswith(f"{prefix}.")
+            for name in imported
+            for prefix in EXECUTION_IMPORT_PREFIXES
+        ):
+            _fail(f"observation-only layer imports execution capability: {member_name}")
+
+        if isinstance(node, (ast.Name, ast.Attribute)):
+            symbol = node.id if isinstance(node, ast.Name) else node.attr
+            if symbol in RAW_EXECUTION_SYMBOLS and member_name not in RAW_EXECUTION_ALLOWLIST:
+                _fail(
+                    f"non-allowlisted module references raw execution symbol {symbol!r}: "
+                    f"{member_name}"
+                )
+
+        if not isinstance(node, ast.Call):
+            continue
+        call_name = _attribute_name(node.func)
+        if call_name in {"os.remove", "os.unlink", "shutil.rmtree"}:
+            _fail(f"wheel contains forbidden generic mutation call {call_name}: {member_name}")
+        if (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in MUTATION_ATTRIBUTE_NAMES
+            and member_name not in MUTATION_ATTRIBUTE_ALLOWLIST
+        ):
+            _fail(
+                f"non-allowlisted module calls generic deleter attribute "
+                f"{node.func.attr!r}: {member_name}"
+            )
+        if (
+            call_name is not None
+            and call_name.endswith(".add_parser")
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value in FORBIDDEN_CLI_COMMANDS
+        ):
+            _fail(
+                f"CLI wheel exposes an unreviewed execution command {node.args[0].value!r}: "
+                f"{member_name}"
+            )
+
+    if member_name == "devclean/ui/app.py":
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef) or node.name != "DevCleanWindow":
+                continue
+            for child in node.body:
+                if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if child.name != "_scan_worker":
+                    continue
+                for descendant in ast.walk(child):
+                    if not isinstance(descendant, ast.Call):
+                        continue
+                    call_name = _attribute_name(descendant.func) or ""
+                    if call_name.rsplit(".", 1)[-1] in {
+                        "execute_approved_batch",
+                        "purge_exact_file",
+                        "quarantine_exact_file",
+                        "recycle_staged_file",
+                    }:
+                        _fail("UI scan worker directly references an execution primitive")
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -288,6 +458,16 @@ def _validate_wheel(
             if corrupt is not None:
                 _fail(f"wheel ZIP integrity check failed at {corrupt!r}")
 
+            forbidden_members = FORBIDDEN_RUNTIME_MEMBERS.intersection(names)
+            if forbidden_members:
+                _fail(
+                    "wheel contains withdrawn unsafe mutation modules: "
+                    f"{sorted(forbidden_members)}"
+                )
+            for name in names:
+                if name.startswith("devclean/") and name.endswith(".py"):
+                    _validate_layered_runtime_python(name, wheel.read(name))
+
             metadata_names = [name for name in names if name.endswith(".dist-info/METADATA")]
             record_names = [name for name in names if name.endswith(".dist-info/RECORD")]
             wheel_names = [name for name in names if name.endswith(".dist-info/WHEEL")]
@@ -296,8 +476,15 @@ def _validate_wheel(
 
             dist_info_prefix = metadata_names[0].rsplit("/", 1)[0] + "/"
             for name in names:
-                if not name.startswith(("reclaimer/", dist_info_prefix)):
+                if not name.startswith(("devclean/", dist_info_prefix)):
                     _fail(f"wheel contains an unexpected top-level payload: {name!r}")
+
+            entry_points_name = f"{dist_info_prefix}entry_points.txt"
+            if entry_points_name not in names:
+                _fail("wheel must contain the single inventory CLI entry point")
+            entry_points = wheel.read(entry_points_name).decode("utf-8")
+            if entry_points.strip() != "[console_scripts]\nDevClean = devclean.cli.main:main":
+                _fail("wheel entry points must expose only the inventory CLI")
 
             metadata = BytesParser(policy=policy.default).parsebytes(wheel.read(metadata_names[0]))
             if metadata.get_all("Name", []) != [expected_name] or metadata.get_all(

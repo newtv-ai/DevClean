@@ -48,7 +48,7 @@ $artifactsDir = [IO.Path]::GetFullPath((Join-Path $root "artifacts"))
 $releaseDir = Join-Path $root "artifacts\release"
 $runtimeDir = Join-Path $root "artifacts\runtime-venv"
 $runtimePython = Join-Path $runtimeDir "Scripts\python.exe"
-$sbom = Join-Path $releaseDir "reclaimer.cdx.json"
+$sbom = Join-Path $releaseDir "DevClean.cdx.json"
 $checksumManifest = Join-Path $releaseDir "SHA256SUMS.txt"
 if ([string]::IsNullOrWhiteSpace($EvidenceOutput)) {
     $EvidenceOutput = Join-Path $root "artifacts\release-validation.json"
@@ -129,20 +129,20 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "wheel installation into clean runtime failed" }
     & uv pip check --python $runtimePython
     if ($LASTEXITCODE -ne 0) { throw "installed wheel failed dependency validation" }
-    & $runtimePython -c "import importlib.metadata as m; names=sorted(d.metadata['Name'].lower() for d in m.distributions()); assert names == ['reclaimer'], names; import reclaimer; assert reclaimer.__version__ == m.version('reclaimer')"
+    & $runtimePython -c "import importlib.metadata as m; names=sorted(d.metadata['Name'].lower() for d in m.distributions()); assert names == ['devclean'], names; import devclean; assert devclean.__version__ == m.version('DevClean')"
     if ($LASTEXITCODE -ne 0) { throw "clean runtime smoke check failed" }
-    $projectVersion = (& $runtimePython -c "import importlib.metadata as m; print(m.version('reclaimer'))").Trim()
+    $projectVersion = (& $runtimePython -c "import importlib.metadata as m; print(m.version('DevClean'))").Trim()
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($projectVersion)) {
-        throw "unable to read installed Reclaimer version"
+        throw "unable to read installed DevClean version"
     }
-    $cliHelp = (& $runtimePython -m reclaimer.cli.main --help 2>&1) -join "`n"
+    $cliHelp = (& $runtimePython -m devclean.cli.main --help 2>&1) -join "`n"
     if ($LASTEXITCODE -ne 0) { throw "installed CLI help smoke failed" }
-    foreach ($requiredCommand in @("scan", "report", "plan", "recycle")) {
+    foreach ($requiredCommand in @("scan", "report", "plan")) {
         if ($cliHelp -notmatch "\b$requiredCommand\b") {
             throw "installed CLI help is missing $requiredCommand"
         }
     }
-    if ($cliHelp -match "(?m)^\s*(apply|execute|clean|delete)\s") {
+    if ($cliHelp -match "(?m)^\s*(apply|execute|clean|delete|recycle|remove|prune)\s") {
         throw "installed CLI unexpectedly exposes an execution command"
     }
 
@@ -219,7 +219,7 @@ try {
         sbom_reproducible = $true
         schemas_validated = $true
         wheel_record_validated = $true
-        inventory_only_surface_validated = $true
+        controlled_cleanup_surface_validated = $true
         result = "PASS"
     }
     $evidenceJson = $evidence | ConvertTo-Json -Depth 4

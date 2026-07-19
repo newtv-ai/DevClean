@@ -3,15 +3,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from reclaimer.core.cleanup_catalog import (
+from devclean.core.cleanup_catalog import (
     CleanupCategory,
     CleanupPolicy,
     KnownCleanupRoot,
     discover_known_cleanup_roots,
     known_root_for_path,
 )
-from reclaimer.core.triage import ReviewLane, triage_file
-from reclaimer.scanner import ScanRecord, ScanRecordKind
+from devclean.core.triage import Actionability, ExecutionPolicy, ReviewLane, triage_file
+from devclean.scanner import ScanRecord, ScanRecordKind
 
 
 def _record(path: Path, *, last_write_time_ns: int | None = 0) -> ScanRecord:
@@ -55,8 +55,10 @@ def test_catalog_prefers_the_most_specific_known_root(tmp_path: Path) -> None:
     target = nested / "wheel.bin"
     nested.mkdir(parents=True)
     catalog = (
-        KnownCleanupRoot(root, CleanupCategory.OTHER, CleanupPolicy.AI_REVIEW, "generic"),
-        KnownCleanupRoot(nested, CleanupCategory.PIP_CACHE, CleanupPolicy.AI_REVIEW, "pip"),
+        KnownCleanupRoot(root, CleanupCategory.OTHER, CleanupPolicy.REPORT_ONLY, "generic"),
+        KnownCleanupRoot(
+            nested, CleanupCategory.PIP_CACHE, CleanupPolicy.VENDOR_MANAGED, "pip"
+        ),
     )
 
     matched = known_root_for_path(target, catalog)
@@ -79,6 +81,7 @@ def test_catalog_discovers_browser_cache_but_not_browser_profile_data(tmp_path: 
     assert any(
         root.path == cache and root.category is CleanupCategory.BROWSER_CACHE for root in roots
     )
+    assert next(root for root in roots if root.path == cache).policy is CleanupPolicy.MANUAL_REVIEW
     assert not any(root.path == profile for root in roots)
 
 
@@ -109,11 +112,13 @@ def test_known_cache_and_old_crash_dump_have_distinct_cleanup_lanes(tmp_path: Pa
     pip_root.mkdir(parents=True)
     dump_root.mkdir()
     catalog = (
-        KnownCleanupRoot(pip_root, CleanupCategory.PIP_CACHE, CleanupPolicy.AI_REVIEW, "pip 缓存"),
+        KnownCleanupRoot(
+            pip_root, CleanupCategory.PIP_CACHE, CleanupPolicy.VENDOR_MANAGED, "pip 缓存"
+        ),
         KnownCleanupRoot(
             dump_root,
             CleanupCategory.CRASH_DUMPS,
-            CleanupPolicy.AUTO_AFTER_AGE,
+            CleanupPolicy.AGE_BASED_REVIEW,
             "用户崩溃转储",
         ),
     )
@@ -123,6 +128,8 @@ def test_known_cache_and_old_crash_dump_have_distinct_cleanup_lanes(tmp_path: Pa
     dump_item = triage_file(_record(dump_root / "app.dmp"), now=now, known_roots=catalog)
 
     assert pip_item.lane is ReviewLane.AI_REVIEW
+    assert pip_item.actionability is Actionability.AI_REVIEW
+    assert pip_item.execution_policy is ExecutionPolicy.RECYCLE_ONLY
     assert pip_item.category is CleanupCategory.PIP_CACHE
-    assert dump_item.lane is ReviewLane.AUTO_CLEAN
+    assert dump_item.lane is ReviewLane.DETERMINISTIC_CANDIDATE
     assert dump_item.category is CleanupCategory.CRASH_DUMPS

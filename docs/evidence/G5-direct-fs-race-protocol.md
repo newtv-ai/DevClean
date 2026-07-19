@@ -2,7 +2,7 @@
 
 ## 当前状态与授权边界
 
-本文件是未来 v0.4 的验收规范，不是实现任务，也不授权当前仓库增加删除、回收站、rename、`FileDispositionInfo`、`DeleteFileW`、`shutil.rmtree`、shell 删除或 `apply` 路径。
+本文件最初是未来 v0.4 验收规范；当前 ADR-004 已另行授权受控句柄执行器。本文仍不授权新增旁路：回收站桥、`DeleteFileW`、`shutil.rmtree`、Shell 删除或未经 ADR/测试的 `apply` 路径都属于拒绝项；允许的 rename/`FileDispositionInfo` 仅限 `platform/windows/exact_cleanup.py` 的精确隔离后流程。
 
 只有以下前置条件全部具备后，才可另行批准编写专用测试执行器：
 

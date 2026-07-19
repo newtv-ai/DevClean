@@ -25,7 +25,7 @@
 ## 安全准备
 
 1. 构建一个固定 wheel/source archive，记录 SHA-256 和源码 revision；整个验收期间不重新构建。最终清单的 `source_revision` 必须是完整的 40 或 64 位小写 Git object ID，分支名、标签、缩写 SHA 和 `WORKTREE_UNCOMMITTED` 都不能作为门槛证据。
-2. 使用标准完整性、非管理员测试账户运行 Reclaimer。若创建 mount point、junction、拒绝访问 ACL 需要管理员，只能在夹具准备阶段使用独立管理员终端；准备完立即退出，记录准备过程，Reclaimer 本身不得触发 UAC。
+2. 使用标准完整性、非管理员测试账户运行 DevClean。若创建 mount point、junction、拒绝访问 ACL 需要管理员，只能在夹具准备阶段使用独立管理员终端；准备完立即退出，记录准备过程，DevClean 本身不得触发 UAC。
 3. 只使用空的专用测试目录、专用测试共享、可丢弃 U 盘/虚拟测试卷和独立 OneDrive 测试文件。禁止把真实仓库、密钥、个人 OneDrive 文件或系统卷目录当夹具。
 4. 在批准根外、每个边界目标内和批准根相邻目录预埋随机命名金丝雀。普通夹具记录内容 SHA-256、卷序列号和 file ID；OneDrive 离线占位文件不得在扫描后读取内容。
 5. 将 [G1 清单模板](templates/g1-physical-manifest.template.json)复制到本机私有证据目录。机器标识只保存带项目盐的 SHA-256，不保存 `MachineGuid`、主机名或用户名原文。
@@ -44,11 +44,11 @@
 | ReFS volume | 专用可丢弃 ReFS 测试卷，不复用系统/用户数据卷 | 只读盘点或明确边界；所有资源 `actionable=false`，无 direct-FS/厂商执行候选 |
 | access denied | 专用子目录对标准测试账户拒绝列举 | 只生成结构化错误，进程保持标准完整性且无 UAC |
 
-mount point 和 ACL 夹具的管理员准备记录属于证据，但不得把管理员终端中的 Reclaimer 运行结果计入 G1。
+mount point 和 ACL 夹具的管理员准备记录属于证据，但不得把管理员终端中的 DevClean 运行结果计入 G1。
 
 ## 执行步骤
 
-1. 在标准用户终端记录 OS product/version/build、locale、CPU 架构、各测试卷 filesystem/drive type 和 Reclaimer artifact SHA-256。
+1. 在标准用户终端记录 OS product/version/build、locale、CPU 架构、各测试卷 filesystem/drive type 和 DevClean artifact SHA-256。
 2. 对夹具运行现有文件系统集成测试，并把退出码、开始/结束时间、命令 argv、测试条目和结果保存成最小 `TEST_REPORT_JSON`。推荐先执行：
 
    ```powershell
@@ -104,7 +104,7 @@ mount point 和 ACL 夹具的管理员准备记录属于证据，但不得把管
 }
 ```
 
-这是证据记录格式，不是产品导入格式；Reclaimer 不得从该文件生成任何动作。
+这是证据记录格式，不是产品导入格式；DevClean 不得从该文件生成任何动作。
 
 ## 失败即停条件
 

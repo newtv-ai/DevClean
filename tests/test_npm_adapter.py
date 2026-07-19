@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from reclaimer.adapters.base import AdapterContext, ProbeStatus
-from reclaimer.adapters.npm import NpmCacheAdapter, parse_cache_keys
-from reclaimer.core.models import SemanticType
-from reclaimer.evidence.store import EvidenceStore
-from reclaimer.platform.windows.process import (
+from devclean.adapters.base import AdapterContext, ProbeStatus
+from devclean.adapters.npm import NpmCacheAdapter, parse_cache_keys
+from devclean.core.models import SemanticType
+from devclean.evidence.store import EvidenceStore
+from devclean.platform.windows.process import (
     BoundedProcessResult,
     ProcessTermination,
 )

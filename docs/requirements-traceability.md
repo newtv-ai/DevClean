@@ -1,35 +1,52 @@
-# Reclaimer 当前需求可追踪矩阵
+# DevClean `0.2.0a1` 需求追踪矩阵
 
-本矩阵描述用户实际运行的 Windows GUI EXE。旧的 SQLite inventory、G0–G6 gate 和 REPORT_ONLY plan 文件是研发兼容资产，不覆盖也不否定本矩阵。
+状态定义：
 
-| 需求 | 当前实现 | 状态 | 测试/限制 |
+- **已实现**：当前工作树存在产品代码和针对性测试；仍需纳入当前发布候选的完整门禁。
+- **部分实现**：核心路径可用，但产品化范围或 UI 仍有限制。
+- **仅报告**：可识别/展示，但当前 capability 明确禁止执行。
+- **未实现**：不应出现在用户承诺或可执行范围中。
+
+| ID | 用户/安全需求 | 当前实现 | 状态与验收证据 |
 |---|---|---|---|
-| 单文件 Windows GUI，无 Python 前置 | `scripts/build_windows_exe.ps1` + PyInstaller | 已实现 | 构建检查 EXE ≤ 50 MB 并执行 `--smoke` |
-| 不创建全盘 SQLite 扫描库 | `ui/app.py` → `scan_roots` → `TriageSession` | 已实现 | GUI 只保留每栏最多 500 条显示记录 |
-| 可停止长扫描 | `CancellationToken` + GUI 停止按钮 | 已实现 | 取消仅停止后续扫描/自动清理 |
-| 旧用户 TEMP 自动清理 | `triage.py` + `auto_clean.py` | 已实现 | 仅当前 `%TEMP%`、7 天、普通文件；失败不删除 |
-| 旧用户崩溃转储自动清理 | `cleanup_catalog.py` + `auto_clean.py` | 已实现 | 仅现有 `%LOCALAPPDATA%\\CrashDumps`、7 天、普通文件；失败不删除 |
-| 常见缓存目录册 | `cleanup_catalog.py` | 已实现 | 只扫描存在的固定本地根；浏览器/缩略图和 pip/uv/npm/pnpm/HF/Gradle/Yarn/Ollama/VS Code 默认进入 AI 审查 |
-| 删除抗路径替换 | `permanent_delete.py` | 已实现 | 扫描快照 + 最终句柄路径 + 句柄元数据复核；Windows canary 覆盖 |
-| 硬保护用户资产 | `triage.py`、`recycle.py` | 已实现 | 开发仓库、凭据、编辑器历史、reparse/Cloud、目录、硬链接拒绝 |
-| AI 逐项解释候选缓存 | `ai_review.py` + GUI 粘贴流程 | 已实现 | 50 条批次、严格 JSON、固定 review/item ID；不传文件内容 |
-| AI 不确定时用户决定 | GUI USER_REVIEW + Windows Recycle Bin | 已实现 | 最多 32 条、完整路径确认、执行前重验 |
-| AI/自动删除轻量历史 | `action_history.py` + GUI 历史页 | 已实现 | 脱敏 JSONL ≤ 1 MiB，自动轮换；不是恢复机制 |
-| 浏览器/系统/IDE 等通用分类清理 | 无 GUI 执行器 | 未实现 | 不得以路径猜测替代专用分类器 |
-| HF/Conda/pip/uv/npm/pnpm/Docker/Ollama/IDE 语义清理 | 仅保留早期只读 adapter | 未实现 | GUI 未连接这些 adapter；后续需逐工具适配器 |
-| 卷、类别空间汇总和目录排行 | `scan_insights.py` + GUI 空间概览 | 已实现 | 显示扫描卷可用/总量；类别完整；目录只聚合扫描根下的前 2,000 个首层桶 |
-| 大文件精确重复检测 | `duplicates.py` + GUI 重复文件页 | 已实现 | ≥1 MiB、SHA-256、仅有限最大同尺寸组；每组自动保留一个基准 |
-| 空目录、相似媒体、卷仪表盘/treemap | 无 | 未实现 | 后续专项功能，不可用路径猜测代替 |
-| 系统维护、注册表、提权、应用卸载 | 无 | 明确非当前范围 | 需另立 ADR、预览、恢复与 Windows 专项验证 |
-| BleachBit / Winapp2 执行 | 无 | 明确非当前范围 | 不 fork、不调用 `--clean`，第三方规则不能绕过本机复核 |
+| R-01 | 扫描时绝不删除、移动或回收 | `scanner/*` 与 `core/triage.py` 是观察层；发布静态检查禁止导入执行器；GUI `_scan_worker` 单独检查 | **已实现**；`test_controlled_cleanup_closed_loop.py`、`test_release_engineering.py` |
+| R-02 | 扫描完成后分类清晰、默认不选择 | 来源域、类别、队列、风险、证据、恢复能力、执行策略分列；每队列有完整汇总和最大 500 个可见项 | **已实现**；`test_triage.py`、UI 流程测试 |
+| R-03 | 可删除项由用户明确选择后执行 | 选择集与扫描结果分离；批次只接受完成扫描中的密封候选；最终键入口令 | **已实现**；`test_postscan_cleanup.py`、闭环测试 |
+| R-04 | 不确定项可导出给 AI | 当前扫描中用户标记的 `AI_REVIEW` 项生成有界脱敏 JSON，最多 100 项 | **已实现**；`test_ai_review_contract.py` |
+| R-05 | AI 结果可导回但不能直接删除 | 导入严格绑定包摘要/随机 ID；输出只有惰性建议，`execution_authority=NONE`；导入不修改选择 | **已实现**；AI 合同和闭环测试 |
+| R-06 | 用户可显式采纳 AI 建议再处理 | GUI “采纳 AI 建议”是独立事件；只采纳 `RECOMMEND_RECYCLE`（产品语义为私有隔离建议），随后仍需最终选择模式与确认 | **已实现**；闭环测试与 GUI 状态逻辑 |
+| R-07 | 默认动作必须可恢复 | 可执行候选默认精确移动到同卷私有隔离区并停留在 `QUARANTINED`；目录原子私有创建，文件 DACL 保留；不调用 Windows Shell 回收站、不释放空间 | **已实现**；执行单元与 Windows 集成测试 |
+| R-08 | 用户确实需要时可以释放空间 | 对本地已可执行候选提供独立“确认清除”；强口令含文件数/逻辑字节，固定先隔离、核验并持久化 `PURGE_PENDING`，再从隔离区精确处置 | **已实现**；AI 不能选择/升级；源码无原路径直接永久处置分支 |
+| R-09 | 防止路径替换、链接和重解析越界 | 原始扫描根 + 批准根；固定卷、最终句柄路径、128 位 file ID、时间戳、大小、单链接、非 reparse/Cloud 复核 | **已实现**；`test_exact_cleanup.py` 和 Windows canary |
+| R-10 | 用户资产/凭据即使误分类也拒绝 | 分类保护与执行器独立硬 deny-list；执行器规则不能被 AI/选择降级 | **已实现**；安全/执行测试；新资产模式仍需持续扩展 |
+| R-11 | 崩溃后不重复执行不确定动作 | 完整批次意图先持久化；`synchronous=FULL`；无 replay API；对账只观察 | **已实现**；journal、post-scan 和闭环故障测试 |
+| R-12 | 首个失败后停止，避免扩大损失 | 顺序执行；异常记录状态并 `break`；剩余项再次观察后结算为未改动或不确定，不留可重放意图 | **已实现**；闭环故障测试 |
+| R-13 | 扫描像 Git 一样只刷新变化部分 | 同会话 `ReadDirectoryChangesW` + 变化子树重扫 + 未变记录复用；基线期间变化先收敛 | **已实现（同会话）**；增量单元和 Windows 集成测试 |
+| R-14 | 增量不可靠时自动全量 | overflow、序列/令牌、根身份、句柄、容量、轮次、重启等均失效并全量回退 | **已实现**；增量 fallback/oracle 测试 |
+| R-15 | 跨重启也能快速增量 | 持久 USN Journal checkpoint 尚未接入 GUI | **未实现**；当前重启后全量扫描 |
+| R-16 | 扫描结果按常用清理产品方式分类 | AI/模型、包管理、容器、IDE、构建、系统、应用缓存、日志临时、安装下载、通用空间来源域；下设具体类别 | **已实现**；分类测试，后续可扩展规则覆盖率 |
+| R-17 | 重复文件分析不能误删 | 至少 1 MiB 的有界 size + SHA-256 分析页，只报告理论重复量 | **已实现（只读）**；`test_duplicates.py` |
+| R-18 | 系统维护提供价值但 DevClean 不提权 | Windows 维护适配器/CLI 保持盘点与报告；不由 GUI 执行管理员操作 | **仅报告**；不属于删除闭环 |
+| R-19 | 厂商缓存优先使用官方语义清理 | 适配器可查询/盘点 pip、uv、npm/pnpm、Conda、HF、Docker、Ollama、VS Code 等；普通文件可走通用精确隔离/强确认清除，但厂商 CLI/API 动作尚未实现 | **部分实现**；未来权威 API 降级只能增加保留项 |
+| R-20 | 删除不能依赖宽范围 API fallback | 原始 Win32 写入只 allowlist 到 `exact_cleanup.py`；禁止 `os.remove`、`unlink`、`rmtree`，Shell 回收桥已删除 | **已实现**；发布静态验证和测试 |
+| R-21 | 运行时保持标准用户、零提权 | GUI 启动时拒绝已提升 token；无服务、broker、UAC 或注册表写入 | **已实现**；系统维护类仍仅报告 |
+| R-22 | 可恢复与真实释放量分开说明 | 私有隔离释放量为 0；确认清除只累计已验证 `PURGED` 文件的逻辑字节，并明确不是卷空闲空间实测 | **已实现**；结果模型/测试 |
+| R-23 | 生成用户可直接运行的 Windows EXE | `build_windows_exe.ps1` 使用 PyInstaller onefile/windowed，50 MB 限制和 smoke | **部分实现**；当前发布候选仍需重新构建、哈希和真机验收 |
+| R-24 | 构建可复现且可审计 | 锁定 uv/Hatchling；清洁运行时；CycloneDX 1.6；两次 wheel/SBOM 字节一致；许可证/RECORD/校验清单验证 | **已实现（流程）**；当前工作树的构建证据待生成 |
+| R-25 | CLI 不提供绕过 GUI 的删除入口 | 入口点只含 `scan`、`report`、`plan`；发布验证拒绝删除类子命令 | **已实现**；`test_cli.py`、发布工程测试 |
+| R-26 | 内置 AI API 与凭据管理 | 当前仅支持用户手工导出/导入；无 API Key 存储和自动上传 | **未实现（有意）**；不是本轮发布阻塞项 |
+| R-27 | GUI 管理隔离恢复 | 启动时只读对账；GUI 可列出可证明 `QUARANTINED` 的项目并逐项恢复，拒绝覆盖原路径 | **已实现（基础页）**；历史筛选和保留策略仍待完善 |
+| R-28 | 大缓存不应受低层批次限制 | 一次精确计划最多 256 文件/1 TiB，自动拆成 32 文件/256 GiB 日志批次；任一批异常停止后续批次 | **已实现**；计划分片/确认测试 |
 
-## 研发兼容层
+## 版本验收规则
 
-`core/state.py`、CLI、报告、Schema 和九个 adapter 仍可用于只读盘点研究；它们不向 GUI 提供删除授权。任何未来复用都必须把结果重新转成 GUI 的精确扫描快照，并经过当前威胁模型规定的保护和复核。
+“已实现”不能直接推导为“已发布”。一个带删除能力的具体构建至少还要满足：
 
-## 不允许的快捷方式
+1. 当前 source revision 的 Ruff、Mypy、完整 pytest 与覆盖率门禁；
+2. Windows 11 标准用户下的扫描零副作用、精确隔离/恢复/隔离后清除 canary；
+3. 增量结果对独立全量 oracle 的一致性与所有 failover 场景；
+4. wheel、SBOM、校验清单和 GUI EXE 成功构建、验证与 SHA-256 固化；
+5. 人工 GUI walkthrough、非管理员 token 验证和独立安全复核；
+6. 文档中的能力、限制、私有隔离零释放口径与实际构建一致。
 
-- 不用单纯路径后缀或通配符把任意目录变成“安全垃圾”。
-- 不允许 AI 返回路径、命令或未经扫描的项目。
-- 不用 SQLite 保存全盘候选后再删除。
-- 不通过 UAC、注册表清理、厂商 CLI 或 BleachBit 扩大当前清理范围。
+架构规范见 [ADR-004](adr/ADR-004-controlled-cleanup-workflow.md)，威胁与残余风险见[威胁模型](threat-model.md)。

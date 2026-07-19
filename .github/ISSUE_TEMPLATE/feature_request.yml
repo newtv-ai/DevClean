@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose a bounded product improvement
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed workflow
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Paths, tools, privileges, and write surface
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Evidence, recovery, and failure-closed behavior
+    validations:
+      required: true

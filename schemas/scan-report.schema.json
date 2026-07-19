@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://reclaimer.dev/schemas/scan-report.schema.json",
-  "title": "Reclaimer ScanReport",
+  "$id": "https://DevClean.dev/schemas/scan-report.schema.json",
+  "title": "DevClean ScanReport",
   "description": "A one-way, inventory-only report. It is not accepted as plan or execution input.",
   "type": "object",
   "additionalProperties": false,

@@ -63,7 +63,7 @@ def _rules() -> tuple[tuple[Any, ...], tuple[Any, ...]]:
         parse_root_rule(r"managed_cache=C:\fixture\managed"),
         parse_root_rule(r"user_assets=C:\fixture\protected"),
     )
-    allowed = (parse_root_rule(r"reclaimer_data=C:\fixture\state"),)
+    allowed = (parse_root_rule(r"devclean_data=C:\fixture\state"),)
     return protected, allowed
 
 
@@ -120,14 +120,14 @@ def test_procmon_pass_allows_only_declared_write_and_loopback_network(tmp_path: 
             _row(
                 "Process Create",
                 r"C:\Python\python.exe",
-                "Command line: python.exe -m reclaimer scan",
+                "Command line: python.exe -m DevClean scan",
             ),
             _row(
                 "CreateFile",
                 r"C:\fixture\managed\cache.bin",
                 "Desired Access: Read Data/List Directory, Synchronize, Disposition: Open",
             ),
-            _row("WriteFile", r"C:\fixture\state\reclaimer.db"),
+            _row("WriteFile", r"C:\fixture\state\DevClean.db"),
             _row("TCP Send", "10.0.0.2:52000 -> 127.0.0.1:11434"),
         ],
     )
@@ -142,7 +142,7 @@ def test_procmon_pass_allows_only_declared_write_and_loopback_network(tmp_path: 
     assert result["non_loopback_network_count"] == 0
     assert result["allowed_write_summary"] == [
         {
-            "matched_root": "reclaimer_data",
+            "matched_root": "devclean_data",
             "operation": "WriteFile",
             "result": "SUCCESS",
             "count": 1,

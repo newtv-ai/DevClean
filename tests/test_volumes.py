@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from reclaimer.platform.windows.volumes import (
+from devclean.platform.windows.volumes import (
     DriveType,
     drive_type,
     has_reparse_ancestor,

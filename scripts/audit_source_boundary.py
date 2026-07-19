@@ -110,7 +110,7 @@ def audit_source_boundary(root: Path, source_revision: str) -> dict[str, object]
         )
     )
     runtime_plugin_groups = sorted(str(key) for key in entry_points)
-    expected_scripts = {"reclaimer": "reclaimer.cli.main:main"}
+    expected_scripts = {"DevClean": "devclean.cli.main:main"}
     mechanical_pass = bool(
         not dependencies
         and scripts == expected_scripts

@@ -4,7 +4,7 @@
 
 ## 目的
 
-本矩阵是范围控制与证据索引，不是“可删除清单”。只有 `ADAPTER_INVENTORY` 和 `REPORT_ONLY` 会进入 v0.1；所有执行能力仍未实现。状态含义如下：
+本矩阵是 2026-07-12 阶段的 adapter 范围研究与证据索引，不是当前“可删除清单”。其中“仅进入 v0.1 盘点、所有执行未实现”只描述当时基线；当前通用精确文件闭环以 ADR-004 和实施状态为准，厂商命令/API capability 仍未实现。历史状态含义如下：
 
 - `ADAPTER_INVENTORY`：通过受支持的厂商接口或只读扫描生成结构化资源；
 - `REPORT_ONLY`：只报告占用，不能生成动作；
@@ -48,7 +48,7 @@
 1. 记录 BleachBit 精确版本，最低不得低于 6.0.2；
 2. 运行经该版本 `--help` 确认的 list/preview 命令；
 3. 保存脱敏 transcript 和 SHA-256；
-4. 将每个 option 标为“上游已有 / Reclaimer adapter / protected / forbidden”；
+4. 将每个 option 标为“上游已有 / DevClean adapter / protected / forbidden”；
 5. 不调用 clean，不从 preview 自动生成执行计划。
 
 来源：[BleachBit 6.0.2 发布说明](https://www.bleachbit.org/news/bleachbit-602)。

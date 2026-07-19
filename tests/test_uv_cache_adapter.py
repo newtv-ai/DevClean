@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from reclaimer.adapters.base import AdapterContext, ProbeStatus
-from reclaimer.adapters.uv_cache import UvCacheAdapter, parse_cache_size
-from reclaimer.core.models import Confidence, SemanticType
-from reclaimer.evidence.store import EvidenceStore
-from reclaimer.platform.windows.process import (
+from devclean.adapters.base import AdapterContext, ProbeStatus
+from devclean.adapters.uv_cache import UvCacheAdapter, parse_cache_size
+from devclean.core.models import Confidence, SemanticType
+from devclean.evidence.store import EvidenceStore
+from devclean.platform.windows.process import (
     BoundedProcessResult,
     ProcessTermination,
 )

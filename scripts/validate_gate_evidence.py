@@ -1,6 +1,6 @@
 """Validate G0/G1/G2/G5 external evidence manifests and machine matrices.
 
-The validator reads and hashes evidence artifacts but never invokes Reclaimer,
+The validator reads and hashes evidence artifacts but never invokes DevClean,
 vendor tools, services, or cleanup actions.  A valid individual G2 run is not a
 G2 gate pass: use ``--matrix G2`` with two physical-machine manifests and one
 disposable-VM manifest bound to the same product artifact.
@@ -1739,7 +1739,7 @@ def _validate_g0_artifacts(
                 or source.get("runtime_plugin_groups") != []
                 or source.get("prohibited_vendored_paths") != []
                 or source.get("console_scripts")
-                != {"reclaimer": "reclaimer.cli.main:main"}
+                != {"DevClean": "devclean.cli.main:main"}
                 or source.get("owner_license_decision_proven") is not False
                 or source.get("originality_proven") is not False
             ):
@@ -2002,7 +2002,7 @@ def _validate_completion(
         completion_errors.append("one or more checks explicitly failed")
     environment = payload["environment"]
     if gate in {"G1", "G2", "G5"} and environment["user_integrity"] != "STANDARD":
-        completion_errors.append("gate runs must use a standard-integrity Reclaimer process")
+        completion_errors.append("gate runs must use a standard-integrity DevClean process")
     if gate in {"G1", "G2", "G5"}:
         if not environment["os_product"].casefold().startswith("windows 11"):
             completion_errors.append("gate runs must use Windows 11")

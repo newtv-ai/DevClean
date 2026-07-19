@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from reclaimer.core.models import (
+from devclean.core.models import (
     Action,
     ActionKind,
     Confidence,
@@ -25,7 +25,7 @@ from reclaimer.core.models import (
     UndoCapability,
     new_id,
 )
-from reclaimer.core.policy import build_inventory_plan
+from devclean.core.policy import build_inventory_plan
 
 
 def test_size_value_rejects_negative_values() -> None:

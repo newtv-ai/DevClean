@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reclaimer.core.cleanup_catalog import CleanupCategory
-from reclaimer.core.triage import TriageItem, TriageSession, triage_file
-from reclaimer.scanner import ScanRecord, ScanRecordKind
+from devclean.core.cleanup_catalog import CleanupCategory
+from devclean.core.triage import TriageItem, TriageSession, triage_file
+from devclean.scanner import ScanRecord, ScanRecordKind
 
 
 def _item(path: Path, *, size: int, category_root: Path) -> TriageItem:

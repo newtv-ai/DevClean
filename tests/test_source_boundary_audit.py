@@ -48,12 +48,12 @@ def test_prohibited_vendor_segment_is_reported_without_claiming_originality(
     (tmp_path / "pyproject.toml").write_text(
         """
 [project]
-name = "reclaimer"
+name = "DevClean"
 version = "0.0.1"
 dependencies = []
 
 [project.scripts]
-reclaimer = "reclaimer.cli.main:main"
+DevClean = "devclean.cli.main:main"
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -77,14 +77,14 @@ def test_short_license_notice_cannot_pass_as_complete_gplv3(tmp_path: Path) -> N
     (tmp_path / "pyproject.toml").write_text(
         """
 [project]
-name = "reclaimer"
+name = "DevClean"
 version = "0.0.1"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 dependencies = []
 
 [project.scripts]
-reclaimer = "reclaimer.cli.main:main"
+DevClean = "devclean.cli.main:main"
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -111,14 +111,14 @@ def test_release_revision_is_bound_to_matching_clean_git_head(tmp_path: Path) ->
     (tmp_path / "pyproject.toml").write_text(
         """
 [project]
-name = "reclaimer"
+name = "DevClean"
 version = "0.0.1"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 dependencies = []
 
 [project.scripts]
-reclaimer = "reclaimer.cli.main:main"
+DevClean = "devclean.cli.main:main"
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -129,7 +129,7 @@ reclaimer = "reclaimer.cli.main:main"
             [
                 "git",
                 "-c",
-                "user.name=Reclaimer Test",
+                "user.name=DevClean Test",
                 "-c",
                 "user.email=test@example.invalid",
                 *arguments,

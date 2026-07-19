@@ -8,14 +8,14 @@ from threading import Event, Thread
 
 import pytest
 
-import reclaimer.scanner.filesystem as scanner_module
-from reclaimer.platform.windows import (
+import devclean.scanner.filesystem as scanner_module
+from devclean.platform.windows import (
     FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS,
     FileSystemMetadata,
     is_cloud_reparse_tag,
     read_file_metadata,
 )
-from reclaimer.scanner import (
+from devclean.scanner import (
     BoundaryReason,
     CancellationToken,
     ScanOptions,
@@ -285,7 +285,7 @@ def test_cancellation_stops_new_traversal_within_two_seconds_under_slow_metadata
             failure.append(error)
 
     monkeypatch.setattr(scanner_module, "read_file_metadata", slow_reader)
-    worker = Thread(target=run_scan, name="reclaimer-slow-cancellation-test")
+    worker = Thread(target=run_scan, name="DevClean-slow-cancellation-test")
     worker.start()
     assert fifth_read_started.wait(timeout=2), "slow fixture did not reach its cancellation point"
     cancelled_at = time.monotonic()

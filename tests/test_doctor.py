@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from reclaimer.core.doctor import classify_execution_platform
+from devclean.core.doctor import classify_execution_platform
 
 
 @pytest.mark.parametrize(

@@ -2,24 +2,18 @@ from __future__ import annotations
 
 import os
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
 import pytest
 
-from reclaimer.core.auto_clean import (
-    permanently_clean_model_approved_record,
-    permanently_clean_temp_record,
-)
-from reclaimer.core.triage import ReviewLane, triage_file
-from reclaimer.platform.windows.filesystem import (
+from devclean.core.triage import ReviewLane, triage_file
+from devclean.platform.windows.filesystem import (
     FILE_ATTRIBUTE_COMPRESSED,
     FILE_ATTRIBUTE_SPARSE_FILE,
     read_file_metadata,
 )
-from reclaimer.platform.windows.permanent_delete import PermanentDeleteRefusal
-from reclaimer.scanner import BoundaryReason, ScanOptions, ScanRecordKind, scan_roots
+from devclean.scanner import BoundaryReason, ScanOptions, ScanRecordKind, scan_roots
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows junction integration test")
@@ -96,72 +90,27 @@ def test_windows_regular_file_has_no_reparse_tag(tmp_path: Path) -> None:
     assert metadata.reparse_tag is None
 
 
-@pytest.mark.skipif(os.name != "nt", reason="Windows handle-delete integration test")
-def test_windows_old_temp_canary_is_permanently_cleaned_after_handle_revalidation() -> None:
-    """Only a unique test file under the active user Temp root is deleted."""
+@pytest.mark.skipif(os.name != "nt", reason="Windows read-only scan integration test")
+def test_windows_old_temp_scan_and_classification_never_mutate_canary(tmp_path: Path) -> None:
+    temp_root = tmp_path / "DevClean-read-only-temp"
+    temp_root.mkdir()
+    target = temp_root / "DevClean-canary.tmp"
+    payload = "this old canary must survive every scan"
+    target.write_text(payload, encoding="utf-8")
+    old_time = time.time() - (8 * 24 * 60 * 60)
+    os.utime(target, (old_time, old_time))
+    before = read_file_metadata(target)
 
-    with tempfile.TemporaryDirectory(
-        prefix="reclaimer-auto-clean-", dir=tempfile.gettempdir()
-    ) as temporary_directory:
-        temp_root = Path(temporary_directory)
-        target = temp_root / "reclaimer-canary.tmp"
-        target.write_text("delete this test canary", encoding="utf-8")
-        old_time = time.time() - (8 * 24 * 60 * 60)
-        os.utime(target, (old_time, old_time))
-        record = next(
-            record
-            for record in scan_roots((temp_root,), ScanOptions(include_directories=False))
-            if record.path == str(target)
-        )
+    records = list(scan_roots((temp_root,), ScanOptions(include_directories=False)))
+    record = next(record for record in records if record.path == str(target))
+    item = triage_file(record, temp_root=temp_root)
+    after = read_file_metadata(target)
 
-        assert triage_file(record, temp_root=temp_root).lane is ReviewLane.AUTO_CLEAN
-        permanently_clean_temp_record(record, temp_root=temp_root)
-
-        assert not target.exists()
-
-
-@pytest.mark.skipif(os.name != "nt", reason="Windows handle-delete integration test")
-def test_windows_changed_temp_canary_is_refused_and_kept() -> None:
-    with tempfile.TemporaryDirectory(
-        prefix="reclaimer-auto-clean-", dir=tempfile.gettempdir()
-    ) as temporary_directory:
-        temp_root = Path(temporary_directory)
-        target = temp_root / "changed-canary.tmp"
-        target.write_text("before scan", encoding="utf-8")
-        old_time = time.time() - (8 * 24 * 60 * 60)
-        os.utime(target, (old_time, old_time))
-        record = next(
-            record
-            for record in scan_roots((temp_root,), ScanOptions(include_directories=False))
-            if record.path == str(target)
-        )
-        target.write_text("changed after scan", encoding="utf-8")
-
-        with pytest.raises(PermanentDeleteRefusal, match="changed since classification"):
-            permanently_clean_temp_record(record, temp_root=temp_root)
-
-        assert target.read_text(encoding="utf-8") == "changed after scan"
-
-
-@pytest.mark.skipif(os.name != "nt", reason="Windows AI-approved delete integration test")
-def test_windows_model_approved_cache_canary_is_permanently_cleaned() -> None:
-    with tempfile.TemporaryDirectory(
-        prefix="reclaimer-ai-review-", dir=tempfile.gettempdir()
-    ) as temporary_directory:
-        cache_root = Path(temporary_directory) / "pip"
-        cache_root.mkdir()
-        target = cache_root / "cache-canary.whl"
-        target.write_text("delete this exact reviewed cache canary", encoding="utf-8")
-        record = next(
-            record
-            for record in scan_roots((cache_root,), ScanOptions(include_directories=False))
-            if record.path == str(target)
-        )
-
-        assert triage_file(record, temp_root=cache_root.parent).lane is ReviewLane.AI_REVIEW
-        permanently_clean_model_approved_record(record)
-
-        assert not target.exists()
+    assert item.lane is ReviewLane.DETERMINISTIC_CANDIDATE
+    assert target.read_text(encoding="utf-8") == payload
+    assert after.identity == before.identity
+    assert after.logical_size == before.logical_size
+    assert after.last_write_time_ns == before.last_write_time_ns
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows sparse-file integration test")
@@ -194,7 +143,7 @@ def test_windows_sparse_file_keeps_logical_and_allocated_sizes_distinct(
 @pytest.mark.skipif(os.name != "nt", reason="Windows compression integration test")
 def test_windows_compressed_file_reports_compressed_metadata(tmp_path: Path) -> None:
     compressed = tmp_path / "compressed-fixture.txt"
-    compressed.write_bytes(b"reclaimer-compression-fixture\n" * 131_072)
+    compressed.write_bytes(b"DevClean-compression-fixture\n" * 131_072)
     compact = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "compact.exe"
     result = subprocess.run(
         [str(compact), "/C", "/I", "/Q", str(compressed)],

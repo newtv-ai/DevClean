@@ -36,7 +36,7 @@ reconstruction: EXACT | REDOWNLOAD_BEST_EFFORT | REBUILD_BEST_EFFORT | NONE
 | `conda` | 分别运行 `conda clean --index-cache/--tarballs/--logfiles/--packages --dry-run --json` | probe `conda clean --help` 并记录版本 | v0.2 仅 index/tarballs/logfiles；v0.3 packages | JSON + dry-run | 不用 `--all` 混淆档位；永久禁止 `--force-pkgs-dirs` |
 | `npm` | 直接 `node.exe + npm-cli.js` 运行 `npm config get cache`、`npm cache ls`，随后安全扫描 cache root | 当前实现接受 npm `>=8,<12`，并核验 node/npm 同一安装树 | v0.3 `npm cache verify` 作为执行型 GC；不自动串联 clean | 文本；无 dry-run、无 JSON | verify 会写并清垃圾，绝不能用于 inventory |
 | `pnpm` | 只扫描当前用户约定的 v10/v11 store 根；不调用 pnpm CLI | 目录主版本 10/11 可分类；旧/未知根保持 RED/UNKNOWN | v0.3 `pnpm store prune`（需另做 CLI 版本门控） | 当前 inventory 为纯文件元数据；prune 无 dry-run/JSON | `store path` 会做链接能力探测写入，`status` 可能读写 SQLite index，二者均未进入默认 inventory |
-| `docker` | daemon 已在线时，经固定本机 named pipe 运行 `docker system df --format json` | 当前实现接受 client/server `>=24,<31`；不得启动 Docker Desktop | v0.2 仅精确 dangling image ID；v0.3 才考虑带保留期的 builder/image policy prune | df 为四条严格 JSONL；prune 无 dry-run | 使用空的 Reclaimer 配置沙箱，属 operational writes；不读取用户 context/credential；不使用 `-a`、volume、force；宿主物理释放未知 |
+| `docker` | daemon 已在线时，经固定本机 named pipe 运行 `docker system df --format json` | 当前实现接受 client/server `>=24,<31`；不得启动 Docker Desktop | v0.2 仅精确 dangling image ID；v0.3 才考虑带保留期的 builder/image policy prune | df 为四条严格 JSONL；prune 无 dry-run | 使用空的 DevClean 配置沙箱，属 operational writes；不读取用户 context/credential；不使用 `-a`、volume、force；宿主物理释放未知 |
 | `vscode` | 直接只读扫描 stable、Insiders 和安全显式自定义用户扩展根，解析有上限的 `package.json`；不调用 `code` CLI | 未发现扩展根即 unavailable；其他产品与 portable/profile 变体 deferred | v0.1–v0.3 无清理动作 | 文件元数据与严格 JSON；无官方只读清理 API | `code --list-extensions` 初始化扩展管理时可能清理旧 VSIX/签名归档/`.trash`，属于 MAINTENANCE，禁止用于 inventory |
 | `windows_maint` | v0.1 只探测 Windows build/卷能力并生成 REPORT_ONLY 指引 | DISM 必须管理员运行，因此不属于普通权限 inventory | v0.5 签名 broker 后才可 Analyze/StartComponentCleanup、DO cleanup | DISM 英文稳定文本；DO 无 WhatIf | 当前只显示命令而不执行；DISM 写日志；永不 ResetBase、IncludePinnedFiles 或裸删系统目录 |
 
@@ -102,18 +102,18 @@ v0.2 未来执行必须使用与预览相同的类别集合，再把 `--dry-run`
 
 ### npm/pnpm
 
-`npm cache verify` 会验证并垃圾回收，因此是 execute；Reclaimer 不把它自动串联到 `npm cache clean --force`。`pnpm store path` 在部分版本会通过临时文件、目录和硬链接探测存储位置，`pnpm store status` 又依赖当前项目且部分版本会读写 store SQLite index；因此当前 pnpm inventory 两者都不调用，只按已核验的用户级约定根做文件系统盘点。`pnpm store prune` 没有 preview。
+`npm cache verify` 会验证并垃圾回收，因此是 execute；DevClean 不把它自动串联到 `npm cache clean --force`。`pnpm store path` 在部分版本会通过临时文件、目录和硬链接探测存储位置，`pnpm store status` 又依赖当前项目且部分版本会读写 store SQLite index；因此当前 pnpm inventory 两者都不调用，只按已核验的用户级约定根做文件系统盘点。`pnpm store prune` 没有 preview。
 
 ### Docker
 
 ```text
-[docker.exe, --config, <RECLAIMER_EMPTY_CONFIG>, --host,
+[docker.exe, --config, <DevClean_EMPTY_CONFIG>, --host,
  npipe:////./pipe/docker_engine, system, df, --format, json]
 [docker.exe, builder, prune, --filter, until=168h]
 [docker.exe, image, prune, --filter, until=168h]
 ```
 
-未来执行时具体保留周期是用户可见策略，不得硬编码为安全事实。不得传 `-a`、`--volumes` 或 `--force` 绕过 Reclaimer 的确认。Docker Desktop/WSL 后端中，daemon 内部释放不保证 VHDX 自动缩小；verify 必须分别记录 vendor logical 与 host physical。
+未来执行时具体保留周期是用户可见策略，不得硬编码为安全事实。不得传 `-a`、`--volumes` 或 `--force` 绕过 DevClean 的确认。Docker Desktop/WSL 后端中，daemon 内部释放不保证 VHDX 自动缩小；verify 必须分别记录 vendor logical 与 host physical。
 
 ### Windows
 
@@ -121,9 +121,9 @@ v0.5 通过签名 broker 门槛后，64 位 broker 才可使用固定 argv：
 
 ```text
 [dism.exe, /Online, /Cleanup-Image, /AnalyzeComponentStore, /English,
- /LogPath:<reclaimer-evidence-log>, /LogLevel:1]
+ /LogPath:<DevClean-evidence-log>, /LogLevel:1]
 [dism.exe, /Online, /Cleanup-Image, /StartComponentCleanup, /English,
- /NoRestart, /LogPath:<reclaimer-evidence-log>, /LogLevel:1]
+ /NoRestart, /LogPath:<DevClean-evidence-log>, /LogLevel:1]
 ```
 
 `AnalyzeComponentStore` 是报告，不是列出精确删除文件的 dry-run。`StartComponentCleanup` 立即移除 superseded component versions，必须是不可逆红档。Delivery Optimization 的删除 cmdlet没有 `WhatIf`；不传 `-IncludePinnedFiles`。

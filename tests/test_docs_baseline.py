@@ -13,7 +13,7 @@ from jsonschema.exceptions import ValidationError
 from referencing import Registry
 from referencing import Resource as SchemaResource
 
-from reclaimer.core.models import (
+from devclean.core.models import (
     Confidence,
     Evidence,
     ProvenanceClass,
@@ -23,7 +23,7 @@ from reclaimer.core.models import (
     SizeValue,
     new_id,
 )
-from reclaimer.core.policy import build_inventory_plan
+from devclean.core.policy import build_inventory_plan
 
 ROOT = Path(__file__).resolve().parents[1]
 RESOURCE_SCHEMA_PATH = ROOT / "schemas" / "resource.schema.json"

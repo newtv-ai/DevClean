@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from reclaimer.adapters.base import AdapterContext, ProbeStatus
-from reclaimer.adapters.ollama import (
+from devclean.adapters.base import AdapterContext, ProbeStatus
+from devclean.adapters.ollama import (
     LoopbackRequestError,
     LoopbackResponse,
     OllamaAdapter,
@@ -16,8 +16,8 @@ from reclaimer.adapters.ollama import (
     parse_tags_response,
     parse_version_response,
 )
-from reclaimer.core.models import Confidence, RiskTier
-from reclaimer.evidence.store import EvidenceStore
+from devclean.core.models import Confidence, RiskTier
+from devclean.evidence.store import EvidenceStore
 
 FIXTURES = Path(__file__).parent / "transcripts" / "ollama"
 
@@ -217,7 +217,7 @@ def test_ollama_http_is_fixed_to_ipv4_loopback_and_does_not_follow_redirects(
             request["closed"] = True
 
     monkeypatch.setattr(
-        "reclaimer.adapters.ollama.http.client.HTTPConnection", FakeConnection
+        "devclean.adapters.ollama.http.client.HTTPConnection", FakeConnection
     )
 
     response = get_loopback("/api/version")
@@ -264,7 +264,7 @@ def test_ollama_http_rejects_oversized_content_length_before_read(
             closed = True
 
     monkeypatch.setattr(
-        "reclaimer.adapters.ollama.http.client.HTTPConnection", FakeConnection
+        "devclean.adapters.ollama.http.client.HTTPConnection", FakeConnection
     )
 
     with pytest.raises(LoopbackRequestError, match="ResponseLimitExceeded") as captured:

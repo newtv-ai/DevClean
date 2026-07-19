@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from reclaimer.adapters.base import AdapterContext, ProbeStatus
-from reclaimer.adapters.command import QueryCommand
-from reclaimer.adapters.docker import DockerAdapter, parse_system_df_jsonl
-from reclaimer.core.models import Confidence, RiskTier
-from reclaimer.evidence.store import EvidenceStore
-from reclaimer.platform.windows.process import (
+from devclean.adapters.base import AdapterContext, ProbeStatus
+from devclean.adapters.command import QueryCommand
+from devclean.adapters.docker import DockerAdapter, parse_system_df_jsonl
+from devclean.core.models import Confidence, RiskTier
+from devclean.evidence.store import EvidenceStore
+from devclean.platform.windows.process import (
     BoundedProcessResult,
     ProcessTermination,
 )
