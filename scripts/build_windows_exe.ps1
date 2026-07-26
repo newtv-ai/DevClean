@@ -57,8 +57,10 @@ try {
         --clean `
         --onefile `
         --windowed `
+        --uac-admin `
         --name DevClean `
         --paths src `
+        --collect-data devclean `
         --distpath $dist `
         --workpath $work `
         --specpath $spec `
@@ -74,8 +76,31 @@ try {
         throw "DevClean.exe is $size bytes, exceeding the $MaximumMegabytes MB product limit"
     }
 
-    & $executable --ui-smoke
-    if ($LASTEXITCODE -ne 0) { throw "bundled GUI construction smoke failed" }
+    # DevClean.exe is built --windowed, so it runs in the GUI subsystem and the
+    # call operator returns without waiting and without setting $LASTEXITCODE.
+    # Reading $LASTEXITCODE here would observe the previous native command's 0
+    # and pass unconditionally, so wait for the process and read its real code.
+    $smoke = Start-Process -FilePath $executable -ArgumentList "--ui-smoke" -PassThru -Wait
+    if ($null -eq $smoke.ExitCode -or $smoke.ExitCode -ne 0) {
+        throw "bundled GUI construction smoke failed with exit code $($smoke.ExitCode)"
+    }
+    # The first GUI launch intentionally materializes the three editable rule
+    # files beside the packaged EXE. The smoke launch is only a build check, so
+    # remove that build-generated state before validating the public payload.
+    $smokeDataDirectory = [IO.Path]::GetFullPath(
+        (Join-Path $distFull "DevClean-data")
+    )
+    if (
+        -not [IO.Path]::GetDirectoryName($smokeDataDirectory).Equals(
+            $distFull,
+            [StringComparison]::OrdinalIgnoreCase
+        )
+    ) {
+        throw "GUI smoke data directory escaped the Windows EXE dist directory"
+    }
+    if (Test-Path -LiteralPath $smokeDataDirectory) {
+        Remove-Item -LiteralPath $smokeDataDirectory -Recurse -Force
+    }
 
     $pythonBasePrefix = & uv run --frozen --python $Python python -c `
         "import sys; print(sys.base_prefix)"
@@ -92,7 +117,6 @@ try {
     }
     $licenseSources = [ordered]@{
         "DevClean-GPL-3.0.txt" = (Join-Path $root "LICENSE")
-        "THIRD_PARTY_NOTICES.md" = (Join-Path $root "THIRD_PARTY_NOTICES.md")
         "CPython-LICENSE.txt" = (Join-Path $pythonBasePrefix "LICENSE.txt")
         "Tcl-Tk-license.terms" = (
             Join-Path $pythonBasePrefix "tcl\tk8.6\license.terms"
@@ -107,6 +131,28 @@ try {
     [void](New-Item -ItemType Directory -Path $licenseDirectory -Force)
     foreach ($notice in $licenseSources.GetEnumerator()) {
         Copy-Item -LiteralPath $notice.Value -Destination (Join-Path $licenseDirectory $notice.Key) -Force
+    }
+
+    # The public payload is deliberately tiny. Reject scan databases, AI review
+    # exports, logs, or any other machine-local file accidentally copied here.
+    $allowedPayloadFiles = @(
+        "DevClean.exe"
+        "licenses\CPython-LICENSE.txt"
+        "licenses\DevClean-GPL-3.0.txt"
+        "licenses\PyInstaller-COPYING.txt"
+        "licenses\Tcl-Tk-license.terms"
+    ) | Sort-Object
+    $actualPayloadFiles = @(
+        Get-ChildItem -LiteralPath $distFull -File -Recurse |
+            ForEach-Object {
+                $_.FullName.Substring($distFull.Length + 1)
+            }
+    ) | Sort-Object
+    $payloadDifference = @(
+        Compare-Object -ReferenceObject $allowedPayloadFiles -DifferenceObject $actualPayloadFiles
+    )
+    if ($payloadDifference.Count -ne 0) {
+        throw "Windows EXE payload does not match the public release file allowlist"
     }
 
     $hash = (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant()

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 import subprocess
 import sys
@@ -29,23 +28,11 @@ _validate_layered_runtime_python = cast(
     Callable[[str, bytes], None], MODULE._validate_layered_runtime_python
 )
 
-_GATE_TEMPLATES = (
-    "g0-release-manifest.template.json",
-    "g1-physical-manifest.template.json",
-    "g2-machine-manifest.template.json",
-    "g5-race-manifest.template.json",
-)
-
-
 def test_product_version_is_single_sourced_across_release_contracts() -> None:
     """Prevent divergent public release and gate-evidence version labels."""
 
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert project["project"]["version"] == __version__ == "0.2.0a1"
-    for template_name in _GATE_TEMPLATES:
-        template_path = ROOT / "docs" / "evidence" / "templates" / template_name
-        template = json.loads(template_path.read_text(encoding="utf-8"))
-        assert template["product"]["version"] == __version__
+    assert project["project"]["version"] == __version__ == "1.0.0"
 
 
 def test_all_checked_in_schemas_pass_offline_validator() -> None:
@@ -125,7 +112,6 @@ def test_windows_exe_builder_packages_required_license_sidecars() -> None:
     script = (ROOT / "scripts" / "build_windows_exe.ps1").read_text(encoding="utf-8")
     for required_notice in (
         "DevClean-GPL-3.0.txt",
-        "THIRD_PARTY_NOTICES.md",
         "CPython-LICENSE.txt",
         "Tcl-Tk-license.terms",
         "PyInstaller-COPYING.txt",
@@ -136,6 +122,8 @@ def test_windows_exe_builder_packages_required_license_sidecars() -> None:
     assert "python_required_by_user = $false" in script
     assert "dist must be a direct child of its dedicated artifacts directory" in script
     assert "Remove-Item -LiteralPath $distFull -Recurse -Force" in script
+    assert "public release file allowlist" in script
+    assert "Compare-Object -ReferenceObject $allowedPayloadFiles" in script
 
 
 def test_layered_validator_checks_every_runtime_source() -> None:
@@ -245,10 +233,7 @@ def test_build_backend_is_exactly_pinned_in_project_and_lockfile() -> None:
     assert "hatchling==1.28.0" in development_requirements
     assert project["tool"]["uv"]["required-version"] == "==0.11.6"
     assert project["project"]["license"] == "GPL-3.0-or-later"
-    assert project["project"]["license-files"] == [
-        "LICENSE",
-        "THIRD_PARTY_NOTICES.md",
-    ]
+    assert project["project"]["license-files"] == ["LICENSE"]
     assert not any(
         classifier.startswith("License ::")
         for classifier in project["project"]["classifiers"]

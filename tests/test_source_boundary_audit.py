@@ -26,7 +26,7 @@ def test_current_source_tree_meets_mechanical_g0_boundary() -> None:
     assert result["mechanical_result"] == "PASS"
     assert result["runtime_dependencies"] == []
     assert result["declared_license_expression"] == "GPL-3.0-or-later"
-    assert result["declared_license_files"] == ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+    assert result["declared_license_files"] == ["LICENSE"]
     assert result["license_sha256"] == (
         "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
     )
@@ -80,7 +80,7 @@ def test_short_license_notice_cannot_pass_as_complete_gplv3(tmp_path: Path) -> N
 name = "DevClean"
 version = "0.0.1"
 license = "GPL-3.0-or-later"
-license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+license-files = ["LICENSE"]
 dependencies = []
 
 [project.scripts]
@@ -114,7 +114,7 @@ def test_release_revision_is_bound_to_matching_clean_git_head(tmp_path: Path) ->
 name = "DevClean"
 version = "0.0.1"
 license = "GPL-3.0-or-later"
-license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+license-files = ["LICENSE"]
 dependencies = []
 
 [project.scripts]

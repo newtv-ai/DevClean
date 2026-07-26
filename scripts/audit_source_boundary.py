@@ -68,7 +68,7 @@ def audit_source_boundary(root: Path, source_revision: str) -> dict[str, object]
 
     observations = tuple(_iter_source_files(root))
     by_path = {item.relative_path: item for item in observations}
-    required = {"LICENSE", "THIRD_PARTY_NOTICES.md", "pyproject.toml"}
+    required = {"LICENSE", "pyproject.toml"}
     missing = sorted(required - by_path.keys())
     if missing:
         raise ValueError("source root lacks required project files: " + ", ".join(missing))
@@ -77,9 +77,6 @@ def audit_source_boundary(root: Path, source_revision: str) -> dict[str, object]
         root / "pyproject.toml", by_path["pyproject.toml"]
     )
     license_bytes = _read_observed_file(root / "LICENSE", by_path["LICENSE"])
-    notices_bytes = _read_observed_file(
-        root / "THIRD_PARTY_NOTICES.md", by_path["THIRD_PARTY_NOTICES.md"]
-    )
     pyproject = tomllib.loads(pyproject_bytes.decode("utf-8", errors="strict"))
     project = pyproject.get("project")
     if not isinstance(project, dict):
@@ -100,7 +97,6 @@ def audit_source_boundary(root: Path, source_revision: str) -> dict[str, object]
     if not isinstance(entry_points, dict):
         raise ValueError("project entry-points table is malformed")
 
-    notices_text = notices_bytes.decode("utf-8", errors="strict")
     prohibited_paths = sorted(
         observation.relative_path
         for observation in observations
@@ -115,12 +111,11 @@ def audit_source_boundary(root: Path, source_revision: str) -> dict[str, object]
         not dependencies
         and scripts == expected_scripts
         and declared_license_expression == "GPL-3.0-or-later"
-        and declared_license_files == ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+        and declared_license_files == ["LICENSE"]
         and not runtime_plugin_groups
         and not prohibited_paths
         and len(license_bytes) == CANONICAL_GPLV3_BYTES
         and by_path["LICENSE"].sha256 == CANONICAL_GPLV3_SHA256
-        and "BleachBit" in notices_text
     )
 
     tree_digest = hashlib.sha256()
@@ -140,7 +135,6 @@ def audit_source_boundary(root: Path, source_revision: str) -> dict[str, object]
         "checked_file_count": len(observations),
         "checked_total_bytes": sum(item.bytes for item in observations),
         "license_sha256": by_path["LICENSE"].sha256,
-        "third_party_notices_sha256": by_path["THIRD_PARTY_NOTICES.md"].sha256,
         "pyproject_sha256": by_path["pyproject.toml"].sha256,
         "runtime_dependencies": dependencies,
         "declared_license_expression": declared_license_expression,

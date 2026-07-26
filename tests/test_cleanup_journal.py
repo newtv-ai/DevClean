@@ -8,12 +8,14 @@ import pytest
 
 import devclean.core.cleanup_journal as cleanup_journal_module
 from devclean.core.cleanup_journal import (
+    JOURNAL_SCHEMA_VERSION,
     ActionState,
     BatchState,
     CleanupIntent,
     CleanupJournal,
     CleanupJournalError,
     CleanupMode,
+    JournalTargetKind,
 )
 from devclean.platform.windows.exact_cleanup import ExactFileSnapshot
 from devclean.platform.windows.security import audit_private_directory, audit_private_file
@@ -142,12 +144,16 @@ def test_schema_v2_journal_migrates_without_losing_actions(tmp_path: Path) -> No
     journal = CleanupJournal(path)
     journal.record_batch("batch_a", CleanupMode.RECYCLE, (_intent(tmp_path),))
     with closing(sqlite3.connect(path)) as connection:
-        connection.execute(
-            "ALTER TABLE cleanup_actions DROP COLUMN volume_serial_u64"
-        )
-        connection.execute(
-            "ALTER TABLE cleanup_actions DROP COLUMN root_volume_serial_u64"
-        )
+        # Strip every column added after v2 so the fixture is a real v2
+        # database, not a current one wearing an old version number.
+        for column in (
+            "volume_serial_u64",
+            "root_volume_serial_u64",
+            "target_kind",
+            "subtree_files",
+            "subtree_bytes",
+        ):
+            connection.execute(f"ALTER TABLE cleanup_actions DROP COLUMN {column}")
         connection.execute(
             "UPDATE cleanup_meta SET value = '2' WHERE key = 'schema_version'"
         )
@@ -155,7 +161,10 @@ def test_schema_v2_journal_migrates_without_losing_actions(tmp_path: Path) -> No
 
     migrated = CleanupJournal(path)
 
-    assert migrated.action("action_a").snapshot.volume_serial == 42
+    action = migrated.action("action_a")
+    assert action.snapshot.volume_serial == 42
+    # An action journaled before whole-tree cleanup existed is still a file.
+    assert action.target_kind is JournalTargetKind.FILE
     with closing(sqlite3.connect(path)) as connection:
         version = connection.execute(
             "SELECT value FROM cleanup_meta WHERE key = 'schema_version'"
@@ -164,8 +173,34 @@ def test_schema_v2_journal_migrates_without_losing_actions(tmp_path: Path) -> No
             """SELECT volume_serial_u64, root_volume_serial_u64
                FROM cleanup_actions WHERE action_id = 'action_a'"""
         ).fetchone()
-    assert version == ("3",)
+    assert version == (str(JOURNAL_SCHEMA_VERSION),)
     assert serials == ("42", "42")
+
+
+def test_schema_v3_journal_gains_target_kind_without_losing_actions(tmp_path: Path) -> None:
+    path = tmp_path / "state" / "cleanup.db"
+    journal = CleanupJournal(path)
+    journal.record_batch("batch_a", CleanupMode.RECYCLE, (_intent(tmp_path),))
+    with closing(sqlite3.connect(path)) as connection:
+        for column in ("target_kind", "subtree_files", "subtree_bytes"):
+            connection.execute(f"ALTER TABLE cleanup_actions DROP COLUMN {column}")
+        connection.execute(
+            "UPDATE cleanup_meta SET value = '3' WHERE key = 'schema_version'"
+        )
+        connection.commit()
+
+    migrated = CleanupJournal(path)
+
+    action = migrated.action("action_a")
+    assert action.target_kind is JournalTargetKind.FILE
+    assert action.subtree_files == 0
+    assert action.subtree_bytes == 0
+    assert action.snapshot.volume_serial == 42
+    with closing(sqlite3.connect(path)) as connection:
+        version = connection.execute(
+            "SELECT value FROM cleanup_meta WHERE key = 'schema_version'"
+        ).fetchone()
+    assert version == (str(JOURNAL_SCHEMA_VERSION),)
 
 
 @pytest.mark.parametrize("version", [None, "invalid", "99"])

@@ -1,0 +1,219 @@
+{
+  "schema_version": 2,
+  "document_type": "devclean.delete_rules",
+  "_help": "DevClean 只从本文件读取可删除分类数据和用户/AI 删除规则。KEEP 规则始终优先。",
+  "_ai_editing_contract": {
+    "contract_version": 1,
+    "output_format": "FULL_JSON_OBJECT_ONLY",
+    "instructions": [
+      "返回完整 JSON 对象，不要使用 Markdown 代码块、注释或省略号。",
+      "不得修改 schema_version、document_type 或 _ai_editing_contract。",
+      "不得增加、删除或改名字段；只修改现有字段的值或数组内容。",
+      "rules 中每条 DELETE 规则必须保留 id、group、enabled、match、value、source、reason、updated_at 全部字段，id 必须唯一。",
+      "只能使用 match_help 中列出的 match；正则必须能编译。",
+      "没有充分把握时不要新增规则；UNSURE 不得写成 DELETE 或 KEEP。"
+    ]
+  },
+  "thresholds": {
+    "old_temp_days": 1,
+    "large_file_bytes": 1073741824,
+    "stale_metadata_days": 90
+  },
+  "classification": {
+    "development_cache_segments": [
+      "huggingface",
+      "pip",
+      "uv",
+      "npm-cache",
+      "pnpm-store",
+      "yarn",
+      "gradle"
+    ],
+    "regenerable_tool_directories": [
+      "cache",
+      "caches",
+      ".cache",
+      "node_modules",
+      "__pycache__",
+      ".mypy_cache",
+      ".pytest_cache",
+      ".ruff_cache"
+    ],
+    "byproduct_suffixes": [
+      ".log",
+      ".log1",
+      ".old",
+      ".bak",
+      ".tmp",
+      ".temp",
+      ".dmp",
+      ".mdmp",
+      ".etl",
+      ".pdb",
+      ".trace",
+      ".crash",
+      ".stackdump",
+      ".partial",
+      ".crdownload",
+      ".download"
+    ],
+    "cache_directory_names": [
+      "cache",
+      "caches",
+      ".cache",
+      "cachestorage",
+      "cacheddata",
+      "gpucache",
+      "dxcache",
+      "glcache",
+      "shadercache",
+      "grshadercache",
+      "code cache",
+      "codecache",
+      "component_crx_cache",
+      "cachedextensionvsixs",
+      "pub_cache",
+      "safe browsing"
+    ],
+    "byproduct_segments": [
+      "log",
+      "logs",
+      "crashpad",
+      "crashdumps",
+      "dumps",
+      "diagnostics",
+      "diagoutputdir"
+    ],
+    "build_segments": [
+      "__pycache__",
+      ".mypy_cache",
+      ".pytest_cache",
+      ".ruff_cache",
+      "node_modules",
+      "target",
+      "dist",
+      "build",
+      "out"
+    ],
+    "ide_segments": [
+      "code",
+      "cursor",
+      "windsurf",
+      "jetbrains",
+      "pycharm",
+      "intellijidea",
+      "vscodium",
+      "trae",
+      "antigravity",
+      "kiro"
+    ],
+    "version_name_regex": "v?\\d+(?:\\.\\d+)+(?:[-+][0-9A-Za-z.]+)?",
+    "version_separators_regex": "[.\\-+v]",
+    "self_updater_parents": [
+      "versions",
+      "application",
+      "claude-code-vm",
+      "app",
+      "update"
+    ],
+    "cache_segments": ["cache", "cacheddata", "gpucache", "caches"],
+    "container_segments": ["docker", "podman", "containers", "wsl", "wsl2"],
+    "container_suffixes": [".vhd", ".vhdx"],
+    "windows_update_segments": ["windows.old", "winsxs"],
+    "windows_update_segment_groups": [
+      ["softwaredistribution", "download"]
+    ],
+    "conda_segments": [".conda", "conda-meta"],
+    "downloads_segments": ["downloads"],
+    "inferred_ai_review_categories": [
+      "PROJECT_BUILD_OUTPUT",
+      "INSTALLERS_DOWNLOADS",
+      "SYSTEM_LOGS"
+    ],
+    "inferred_report_only_categories": ["WINDOWS_UPDATE"],
+    "permanent_approved_categories": ["USER_TEMP", "CRASH_DUMPS"],
+    "system_log_suffixes": [".dmp", ".log", ".etl", ".evtx", ".tmp"],
+    "installer_suffixes": [
+      ".msi",
+      ".msix",
+      ".msixbundle",
+      ".appx",
+      ".appxbundle",
+      ".iso"
+    ],
+    "category_source_domains": {
+      "USER_TEMP": "LOGS_DUMPS_TEMP",
+      "CRASH_DUMPS": "LOGS_DUMPS_TEMP",
+      "PIP_CACHE": "PACKAGE_MANAGERS",
+      "UV_CACHE": "PACKAGE_MANAGERS",
+      "NPM_CACHE": "PACKAGE_MANAGERS",
+      "PNPM_STORE": "PACKAGE_MANAGERS",
+      "CONDA_CACHE": "PACKAGE_MANAGERS",
+      "HUGGINGFACE_CACHE": "AI_MODELS",
+      "GRADLE_CACHE": "PACKAGE_MANAGERS",
+      "YARN_CACHE": "PACKAGE_MANAGERS",
+      "BUN_CACHE": "PACKAGE_MANAGERS",
+      "MAVEN_REPOSITORY": "PACKAGE_MANAGERS",
+      "NUGET_CACHE": "PACKAGE_MANAGERS",
+      "GO_MODULE_CACHE": "PACKAGE_MANAGERS",
+      "CARGO_REGISTRY": "PACKAGE_MANAGERS",
+      "OLLAMA_MODELS": "AI_MODELS",
+      "LOCAL_MODEL_STORE": "AI_MODELS",
+      "TEST_BROWSER_BINARIES": "APPLICATION_CACHE",
+      "ANDROID_SDK_PAYLOAD": "APPLICATION_CACHE",
+      "VSCODE_CACHE": "IDE_EDITORS",
+      "BROWSER_CACHE": "APPLICATION_CACHE",
+      "THUMBNAIL_CACHE": "WINDOWS_SYSTEM",
+      "CONTAINER_STORAGE": "CONTAINERS_VIRTUALIZATION",
+      "IDE_CACHE": "IDE_EDITORS",
+      "PROJECT_BUILD_OUTPUT": "PROJECT_BUILD",
+      "WINDOWS_UPDATE": "WINDOWS_SYSTEM",
+      "SYSTEM_LOGS": "LOGS_DUMPS_TEMP",
+      "INSTALLERS_DOWNLOADS": "INSTALLERS_DOWNLOADS",
+      "OTHER": "GENERAL_STORAGE"
+    }
+  },
+  "classification_groups": {
+    "file_outputs": [
+      "byproduct_suffixes",
+      "byproduct_segments",
+      "system_log_suffixes",
+      "installer_suffixes"
+    ],
+    "cache_and_developer_tools": [
+      "development_cache_segments",
+      "regenerable_tool_directories",
+      "cache_directory_names",
+      "cache_segments",
+      "build_segments",
+      "ide_segments",
+      "conda_segments",
+      "downloads_segments"
+    ],
+    "containers": ["container_segments", "container_suffixes"],
+    "stale_versions": [
+      "version_name_regex",
+      "version_separators_regex",
+      "self_updater_parents"
+    ],
+    "windows_update": [
+      "windows_update_segments",
+      "windows_update_segment_groups"
+    ],
+    "workflow": [
+      "inferred_ai_review_categories",
+      "inferred_report_only_categories",
+      "permanent_approved_categories"
+    ],
+    "presentation": ["category_source_domains"]
+  },
+  "match_help": {
+    "exact_path": "仅匹配一个完整路径",
+    "path_prefix": "匹配目录或路径及其全部后代",
+    "path_glob": "按完整路径匹配 * 和 ?",
+    "filename_glob": "只按文件名匹配 * 和 ?",
+    "path_regex": "正则搜索完整路径，路径分隔符统一写成 /",
+    "filename_regex": "正则搜索文件名"
+  },
+  "rules": []
+}

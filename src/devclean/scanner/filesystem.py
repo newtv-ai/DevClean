@@ -16,6 +16,12 @@ from threading import Event
 from typing import TypeAlias
 
 from devclean.platform.windows import FileSystemMetadata, read_file_metadata
+from devclean.platform.windows.filesystem import (
+    FILE_ATTRIBUTE_OFFLINE,
+    FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS,
+    FILE_ATTRIBUTE_RECALL_ON_OPEN,
+    FILE_ATTRIBUTE_REPARSE_POINT,
+)
 
 PathLike: TypeAlias = str | os.PathLike[str]
 
@@ -44,12 +50,39 @@ class ScanOptions:
     deduplicate_hardlinks: bool = True
     progress_interval: int = 256
     max_hardlink_identities: int = 100_000
+    # Opening every file to read its 128-bit identity, link count, and physical
+    # allocation costs about 21x the walk itself: measured on one real package
+    # cache, 2,461 files/s with the open versus 52,347 files/s from the
+    # directory enumeration alone.  A profile-wide scan is the difference
+    # between 19 minutes and 1.  When this is False, ordinary files are recorded
+    # from the enumeration data the kernel already returned, and their exact
+    # identity is captured later, when a user actually selects one.  Directories
+    # and reparse points are always read in full: descent safety depends on
+    # directory identity, and a boundary record needs the reparse tag.
+    exact_file_identity: bool = True
+    # Directory names the walk refuses to descend into, compared casefolded
+    # against the directory's own name.  Pruning at the boundary is the only
+    # cheap way to skip work: filtering records afterwards has already paid for
+    # the enumeration.  A ``.git`` object store or an installed environment can
+    # hold hundreds of thousands of entries that no rule here will ever offer.
+    skip_directory_names: frozenset[str] = frozenset()
+    # Absolute directory roots configured by the user as excluded.  Unlike a
+    # name rule, this prunes only that exact subtree.
+    skip_paths: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if self.progress_interval < 1:
             raise ValueError("progress_interval must be at least 1")
         if self.max_hardlink_identities < 1:
             raise ValueError("max_hardlink_identities must be at least 1")
+        object.__setattr__(
+            self,
+            "skip_paths",
+            frozenset(
+                os.path.normcase(os.path.normpath(os.path.abspath(path)))
+                for path in self.skip_paths
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,12 +280,80 @@ def _base_record(
     )
 
 
+_DIRECTORY_ATTRIBUTE = 0x00000010
+_CLOUD_ATTRIBUTES = (
+    FILE_ATTRIBUTE_OFFLINE
+    | FILE_ATTRIBUTE_RECALL_ON_OPEN
+    | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
+)
+
+
+def _enumerated_file_record(
+    root: str,
+    path: str,
+    depth: int,
+    entry: os.DirEntry[str],
+) -> ScanRecord | None:
+    """Build a file record from directory-enumeration data, or decline.
+
+    Returns ``None`` for anything that is not unambiguously an ordinary local
+    file, so the caller falls back to the authoritative per-object read.  The
+    record deliberately carries no identity: ``allocated_size`` is unknown
+    rather than guessed, and ``allocation_uncertain`` says so.
+    """
+
+    try:
+        status = entry.stat(follow_symlinks=False)
+    except OSError:
+        return None
+    attributes = getattr(status, "st_file_attributes", None)
+    if attributes is None:
+        return None
+    if attributes & (FILE_ATTRIBUTE_REPARSE_POINT | _DIRECTORY_ATTRIBUTE):
+        return None
+    if attributes & _CLOUD_ATTRIBUTES:
+        # A placeholder must become a boundary record, which needs the full read.
+        return None
+    return ScanRecord(
+        root=root,
+        path=path,
+        kind=ScanRecordKind.FILE,
+        depth=depth,
+        logical_size=status.st_size,
+        allocated_size=None,
+        raw_allocated_size=None,
+        attributes=attributes,
+        # Creation time is free here and matches the full read exactly, verified
+        # by probe.  It matters because the file-system timestamp granularity is
+        # coarse enough that two files written back to back share a modification
+        # time, so size and mtime alone cannot tell a replacement from the
+        # original.  Creation time does.
+        creation_time_ns=_enumerated_creation_time(status),
+        last_write_time_ns=status.st_mtime_ns,
+        allocation_uncertain=True,
+    )
+
+
+def _enumerated_creation_time(status: os.stat_result) -> int | None:
+    birth = getattr(status, "st_birthtime_ns", None)
+    if isinstance(birth, int):
+        return birth
+    # Windows reports creation time as st_ctime; elsewhere it is a change time
+    # and therefore not an identity signal, so it is left out.
+    return status.st_ctime_ns if os.name == "nt" else None
+
+
 def _prepare_path(
     root: str,
     path: str,
     depth: int,
     options: ScanOptions,
+    entry: os.DirEntry[str] | None = None,
 ) -> tuple[list[ScanRecord], _Frame | None]:
+    if entry is not None and not options.exact_file_identity:
+        enumerated = _enumerated_file_record(root, path, depth, entry)
+        if enumerated is not None:
+            return ([enumerated], None)
     try:
         metadata = read_file_metadata(path)
     except OSError as error:
@@ -375,12 +476,20 @@ def scan_roots(
                 break
 
             root = os.path.abspath(os.fspath(raw_root))
+            if _is_skipped_path(root, active_options.skip_paths):
+                continue
             stats.roots_seen += 1
             records, root_frame = _prepare_path(root, root, 0, active_options)
             for record in records:
                 yield emit(record)
             if root_frame is not None:
-                frames.append(root_frame)
+                if (
+                    os.path.basename(root_frame.path).casefold()
+                    in active_options.skip_directory_names
+                ):
+                    root_frame.close()
+                else:
+                    frames.append(root_frame)
 
             while frames:
                 if token.is_cancelled():
@@ -400,16 +509,27 @@ def scan_roots(
                     yield emit(_error_record(root, frame.path, frame.depth, error))
                     continue
 
+                if _is_skipped_path(entry.path, active_options.skip_paths):
+                    continue
                 records, child_frame = _prepare_path(
                     root,
                     entry.path,
                     frame.depth + 1,
                     active_options,
+                    entry,
                 )
                 for record in records:
                     yield emit(record)
                 if child_frame is not None:
-                    frames.append(child_frame)
+                    if (
+                        os.path.basename(child_frame.path).casefold()
+                        in active_options.skip_directory_names
+                    ):
+                        # Closed immediately: the directory was observed and
+                        # reported, but nothing beneath it is read.
+                        child_frame.close()
+                    else:
+                        frames.append(child_frame)
 
             if stats.cancelled:
                 break
@@ -421,6 +541,15 @@ def scan_roots(
         stats.completed = finished_normally
         if progress is not None:
             progress(stats.snapshot())
+
+
+def _is_skipped_path(path: str, excluded: frozenset[str]) -> bool:
+    normalized = os.path.normcase(os.path.normpath(os.path.abspath(path)))
+    return any(
+        normalized == root
+        or normalized.startswith(root.rstrip(os.sep) + os.sep)
+        for root in excluded
+    )
 
 
 __all__ = [

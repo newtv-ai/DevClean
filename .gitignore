@@ -16,3 +16,10 @@ htmlcov/
 *.db-shm
 *.db-wal
 reports/
+
+# Only the public Windows payload may be checked in from release/.
+!release/
+release/*
+!release/DevClean.exe
+!release/licenses/
+!release/licenses/*.txt

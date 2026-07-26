@@ -4,12 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "DevClean"
-version = "0.2.0a1"
+version = "1.0.0"
 description = "Controlled AI and developer-tool disk cleanup workbench for Windows 11"
-readme = "README.md"
 requires-python = ">=3.11,<3.14"
 license = "GPL-3.0-or-later"
-license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+license-files = ["LICENSE"]
 authors = [{ name = "DevClean contributors" }]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",

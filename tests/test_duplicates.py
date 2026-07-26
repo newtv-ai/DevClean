@@ -30,12 +30,34 @@ def test_large_duplicate_scan_hashes_exact_matching_regular_files(tmp_path: Path
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows file-ID duplicate integration test")
-def test_duplicate_scan_excludes_protected_paths(tmp_path: Path) -> None:
-    protected = tmp_path / ".git"
-    protected.mkdir()
-    payload = b"DevClean-protected-canary" * 64
-    (protected / "first.bin").write_bytes(payload)
-    (protected / "second.bin").write_bytes(payload)
+def test_duplicate_scan_covers_ordinary_user_directories(tmp_path: Path) -> None:
+    """Duplicate analysis is read-only reporting, so it should not skip content.
+
+    It used to exclude everything a path-shape deny-list matched, which meant
+    duplicated photos and repository payloads -- some of the most useful things
+    to report on a full disk -- were silently left out of the report.
+    """
+
+    directory = tmp_path / "Pictures"
+    directory.mkdir()
+    payload = b"DevClean-duplicate-canary" * 64
+    (directory / "first.bin").write_bytes(payload)
+    (directory / "second.bin").write_bytes(payload)
+
+    result = find_large_duplicates((tmp_path,), minimum_size=1)
+
+    assert len(result.groups) == 1
+    assert len(result.groups[0].records) == 2
+
+
+def test_duplicate_scan_skips_the_tools_own_quarantine(tmp_path: Path) -> None:
+    """A quarantined object is a copy of its source by construction."""
+
+    staging = tmp_path / ".DevClean-quarantine-v1-batch_abc123"
+    staging.mkdir()
+    payload = b"DevClean-quarantine-canary" * 64
+    (staging / "first.bin").write_bytes(payload)
+    (staging / "second.bin").write_bytes(payload)
 
     result = find_large_duplicates((tmp_path,), minimum_size=1)
 

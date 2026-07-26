@@ -38,16 +38,19 @@ AI_REVIEW_SCHEMA_VERSION: Final = 1
 AI_REVIEW_REQUEST_TYPE: Final = "DevClean_AI_REVIEW_REQUEST"
 AI_REVIEW_RESPONSE_TYPE: Final = "DevClean_AI_REVIEW_RESPONSE"
 AI_REVIEW_IMPORT_TYPE: Final = "DevClean_AI_REVIEW_RECOMMENDATIONS"
-MAX_AI_REVIEW_ITEMS: Final = 100
-MAX_AI_REQUEST_BYTES: Final = 512 * 1024
-MAX_AI_RESPONSE_BYTES: Final = 256 * 1024
+# Only the *import* side is bounded: a response file is untrusted input.  What
+# DevClean exports is bounded by how much the receiving model can read, which
+# is why the UI splits a large selection into volumes instead of refusing it.
+MAX_AI_REQUEST_BYTES: Final = 64 * 1024 * 1024
+# An answered volume of 300 items ran to 133 KB, so the old 256 KB ceiling
+# was one busy volume away from rejecting real work.
+MAX_AI_RESPONSE_BYTES: Final = 512 * 1024
 MAX_AI_REASON_CHARS: Final = 500
 MAX_AI_JSON_DEPTH: Final = 32
 MAX_SOURCE_REASON_CHARS: Final = 700
 MAX_PATH_CHARS: Final = 32_767
 MAX_TAGS_PER_ITEM: Final = 24
 MAX_TAG_CHARS: Final = 64
-MAX_TTL: Final = timedelta(hours=24)
 DEFAULT_TTL: Final = timedelta(hours=2)
 
 _SAFE_SCAN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}")
@@ -148,6 +151,7 @@ class AiReviewPackage:
     expires_at: datetime
     entries: tuple[AiReviewEntry, ...]
     package_digest: str
+    disclose_full_paths: bool = False
 
     def payload(self) -> dict[str, object]:
         """Return the closed, model-facing JSON document."""
@@ -186,18 +190,25 @@ def build_ai_review_package(
     scan_session_id: str,
     now: datetime | None = None,
     ttl: timedelta = DEFAULT_TTL,
+    disclose_full_paths: bool = False,
 ) -> AiReviewPackage:
-    """Build a bounded packet from explicitly supplied current-scan items."""
+    """Build a bounded packet from explicitly supplied current-scan items.
+
+    ``disclose_full_paths`` puts the real absolute path of every candidate in the
+    exported document.  It is the caller's decision because only the caller knows
+    where the file is going: a local model needs the path to say anything useful,
+    while a hosted one would receive the user's directory layout.  Either way the
+    choice is recorded in the document as ``path_disclosure`` and covered by the
+    package digest, so an importer cannot be misled about what was sent.
+    """
 
     selected = tuple(candidates)
-    if not selected or len(selected) > MAX_AI_REVIEW_ITEMS:
-        raise AiReviewContractError(
-            f"AI review requires 1 to {MAX_AI_REVIEW_ITEMS} explicitly selected items"
-        )
+    if not selected:
+        raise AiReviewContractError("AI review requires at least one selected item")
     if not isinstance(scan_session_id, str) or _SAFE_SCAN_ID.fullmatch(scan_session_id) is None:
         raise AiReviewContractError("scan_session_id must be a bounded opaque identifier")
-    if not isinstance(ttl, timedelta) or ttl <= timedelta(0) or ttl > MAX_TTL:
-        raise AiReviewContractError("AI review ttl must be positive and at most 24 hours")
+    if not isinstance(disclose_full_paths, bool):
+        raise TypeError("disclose_full_paths must be a bool")
 
     issued_at = _aware_utc(now or datetime.now(UTC), "now")
     expires_at = issued_at + ttl
@@ -224,7 +235,9 @@ def build_ai_review_package(
                 item=item,
                 snapshot_identity_digest=snapshot_digest,
                 hard_protected=hard_protected,
-                model_metadata=_model_metadata(item, hard_protected, snapshot_digest),
+                model_metadata=_model_metadata(
+                    item, hard_protected, snapshot_digest, disclose_full_paths
+                ),
             )
         )
 
@@ -236,6 +249,7 @@ def build_ai_review_package(
         expires_at=expires_at,
         entries=tuple(entries),
         package_digest="0" * 64,
+        disclose_full_paths=disclose_full_paths,
     )
     digest = _digest_json(_unsigned_request_payload(provisional))
     package = AiReviewPackage(
@@ -246,17 +260,15 @@ def build_ai_review_package(
         expires_at=expires_at,
         entries=tuple(entries),
         package_digest=digest,
+        disclose_full_paths=disclose_full_paths,
     )
-    serialized = serialize_ai_review_package(package)
-    if len(serialized.encode("utf-8")) > MAX_AI_REQUEST_BYTES:
-        raise AiReviewContractError("AI review request exceeds the byte limit")
     return package
 
 
 def serialize_ai_review_package(package: AiReviewPackage) -> str:
     """Serialize one internally valid request; this performs no file I/O."""
 
-    _validate_package_object(package, now=None, check_expiry=False)
+    _validate_package_object(package, now=None)
     return json.dumps(
         package.payload(),
         ensure_ascii=False,
@@ -272,10 +284,10 @@ def validate_ai_review_package_text(
     *,
     now: datetime | None = None,
 ) -> None:
-    """Fail closed if an exported request was changed or has expired."""
+    """Fail closed if an exported request was changed."""
 
     payload = _strict_bounded_json(text, MAX_AI_REQUEST_BYTES, "AI review request")
-    _validate_package_object(package, now=now, check_expiry=True)
+    _validate_package_object(package, now=now)
     if not _json_exact_equal(payload, package.payload()):
         raise AiReviewContractError("AI review request differs from the local package")
     if not isinstance(payload, dict):
@@ -297,7 +309,12 @@ def parse_ai_review_response(
     """Import complete model advice without creating an executable action."""
 
     payload = _strict_bounded_json(text, MAX_AI_RESPONSE_BYTES, "AI review response")
-    _validate_package_object(package, now=now, check_expiry=True)
+    # Expiry is deliberately not enforced here.  Getting answers takes as long as
+    # it takes -- a rate limit alone can outlast any sensible window -- and
+    # refusing the file afterwards throws away work the user paid for while
+    # protecting nothing: importing only moves rows between two lists, and every
+    # object is re-verified against its exact identity at the moment of deletion.
+    _validate_package_object(package, now=now)
     if not isinstance(payload, dict) or set(payload) != {
         "schema_version",
         "document_type",
@@ -373,7 +390,7 @@ def parse_ai_review_response(
 def response_template(package: AiReviewPackage) -> dict[str, object]:
     """Return a closed inert response skeleton for a model or human reviewer."""
 
-    _validate_package_object(package, now=None, check_expiry=False)
+    _validate_package_object(package, now=None)
     return {
         "schema_version": AI_REVIEW_SCHEMA_VERSION,
         "document_type": AI_REVIEW_RESPONSE_TYPE,
@@ -401,8 +418,17 @@ def _unsigned_request_payload(package: AiReviewPackage) -> dict[str, object]:
         "scan_session_digest": package.scan_session_digest,
         "issued_at": _format_utc(package.issued_at),
         "expires_at": _format_utc(package.expires_at),
+        # Stated in the document so a reader always knows what it contains, and
+        # covered by the package digest so it cannot be edited after the fact.
+        "path_disclosure": "FULL" if package.disclose_full_paths else "REDACTED",
         "instructions": [
-            "Use only the supplied metadata; do not infer or emit paths or commands.",
+            (
+                "Judge each candidate from its supplied metadata, including the "
+                "full path."
+                if package.disclose_full_paths
+                else "Use only the supplied metadata; paths are redacted."
+            ),
+            "Say plainly in 'reason' why the file is or is not safe to remove.",
             "Return KEEP, RECOMMEND_RECYCLE, or UNSURE for every candidate exactly once.",
             "RECOMMEND_RECYCLE is advice only and never grants execution authority.",
             "Hard-protected candidates must be KEEP or UNSURE.",
@@ -423,7 +449,10 @@ def _unsigned_request_payload(package: AiReviewPackage) -> dict[str, object]:
 
 
 def _model_metadata(
-    item: TriageItem, hard_protected: bool, snapshot_digest: str
+    item: TriageItem,
+    hard_protected: bool,
+    snapshot_digest: str,
+    disclose_full_paths: bool = False,
 ) -> Mapping[str, object]:
     reason = _bounded_source_text(item.reason, MAX_SOURCE_REASON_CHARS, "reason")
     tags = []
@@ -432,6 +461,10 @@ def _model_metadata(
         if bounded not in tags:
             tags.append(bounded)
     return {
+        # The key set is fixed whether or not paths are disclosed, so the
+        # contract stays closed: ``path`` is null rather than absent when the
+        # package is redacted.
+        "path": _disclosed_path(item.path) if disclose_full_paths else None,
         "redacted_path_hint": _redacted_path_hint(item.path),
         "source_domain": item.source_domain.value,
         "category": item.category.value,
@@ -499,6 +532,29 @@ def _normalized_path(value: str) -> str:
     return os.path.normcase(os.path.normpath(os.path.abspath(value)))
 
 
+def _disclosed_path(value: str) -> str:
+    """Return the real path for a package the user chose to disclose.
+
+    Redaction exists because the exported file may leave the machine.  When the
+    reviewer is a local model that trade is pure loss: a nineteen-segment
+    whitelist plus a suffix is not enough for anyone to judge whether a file is
+    safe to remove, so the honest answer to "is this deletable" becomes UNSURE
+    every time.  Disclosure is therefore the user's call, recorded in the
+    document itself as ``path_disclosure``.
+
+    Bounded and control-character-free all the same: the value still crosses into
+    an untrusted document.
+    """
+
+    if not isinstance(value, str) or not value:
+        raise AiReviewContractError("candidate path must be text")
+    if len(value) > MAX_PATH_CHARS:
+        raise AiReviewContractError("candidate path exceeds the path length limit")
+    if _CONTROL.search(value) is not None:
+        raise AiReviewContractError("candidate path contains control characters")
+    return value
+
+
 def _redacted_path_hint(value: str) -> str:
     """Expose structural cache signals and suffix, never an absolute path or basename."""
 
@@ -516,6 +572,24 @@ def _redacted_path_hint(value: str) -> str:
 
 
 def _validate_model_reason(value: object) -> str:
+    """Bound one model-supplied explanation and otherwise keep it verbatim.
+
+    The reason is display text.  It is shown next to the verdict so the user can
+    see *why* a file was called deletable, which is the whole point of asking.
+    It carries no authority and cannot widen scope: the importer requires an
+    exact one-to-one match against the candidate ids it issued and ignores
+    everything else in the document.
+
+    So the only checks here are the ones that keep the string safe to store and
+    render -- type, length, control characters, valid Unicode.  Paths and command
+    names are deliberately *not* filtered.  Filtering them destroyed the answer:
+    a model explaining that a cache entry is safe to remove naturally writes the
+    path it looked at and the command that regenerates it, and rejecting the batch
+    or blanking the text for that made the explanation useless while protecting
+    nothing -- the path came from this machine and the command is prose in a
+    display field, not something DevClean can run.
+    """
+
     if not isinstance(value, str):
         raise AiReviewContractError("AI recommendation reason must be a string")
     reason = value.strip()
@@ -525,10 +599,6 @@ def _validate_model_reason(value: object) -> str:
         )
     if _CONTROL.search(reason) is not None:
         raise AiReviewContractError("AI recommendation reason contains control characters")
-    if _ABSOLUTE_PATH.search(reason) is not None or _RELATIVE_PATH.search(reason) is not None:
-        raise AiReviewContractError("AI recommendation reason must not contain a path")
-    if _COMMAND.search(reason) is not None:
-        raise AiReviewContractError("AI recommendation reason must not contain a command")
     try:
         reason.encode("utf-8", errors="strict")
     except UnicodeEncodeError as error:
@@ -555,10 +625,11 @@ def _validate_package_object(
     package: AiReviewPackage,
     *,
     now: datetime | None,
-    check_expiry: bool,
 ) -> None:
     if not isinstance(package, AiReviewPackage):
         raise TypeError("package must be an AiReviewPackage")
+    if not isinstance(package.disclose_full_paths, bool):
+        raise AiReviewContractError("local package path disclosure flag is invalid")
     if _SAFE_SESSION_ID.fullmatch(package.review_session_id) is None:
         raise AiReviewContractError("local review session id is invalid")
     if _SAFE_NONCE.fullmatch(package.nonce) is None:
@@ -567,11 +638,11 @@ def _validate_package_object(
         raise AiReviewContractError("local scan session digest is invalid")
     if _SAFE_DIGEST.fullmatch(package.package_digest) is None:
         raise AiReviewContractError("local package digest is invalid")
-    issued_at = _aware_utc(package.issued_at, "issued_at")
-    expires_at = _aware_utc(package.expires_at, "expires_at")
-    if expires_at <= issued_at or expires_at - issued_at > MAX_TTL:
-        raise AiReviewContractError("local package has an invalid validity window")
-    if not package.entries or len(package.entries) > MAX_AI_REVIEW_ITEMS:
+    # Both stamps are still required to be well-formed; nothing compares them
+    # against the clock any more, so neither value is kept.
+    _aware_utc(package.issued_at, "issued_at")
+    _aware_utc(package.expires_at, "expires_at")
+    if not package.entries:
         raise AiReviewContractError("local package has an invalid candidate count")
     ids: set[str] = set()
     paths: set[str] = set()
@@ -592,19 +663,16 @@ def _validate_package_object(
         if _triage_is_hard_protected(entry.item) and not entry.hard_protected:
             raise AiReviewContractError("local package downgraded a hard-protected candidate")
         expected_metadata = _model_metadata(
-            entry.item, entry.hard_protected, entry.snapshot_identity_digest
+            entry.item,
+            entry.hard_protected,
+            entry.snapshot_identity_digest,
+            package.disclose_full_paths,
         )
         if not _json_exact_equal(dict(entry.model_metadata), dict(expected_metadata)):
             raise AiReviewContractError("local candidate metadata mismatch")
     expected_digest = _digest_json(_unsigned_request_payload(package))
     if not hmac.compare_digest(package.package_digest, expected_digest):
         raise AiReviewContractError("local package digest mismatch")
-    if check_expiry:
-        current = _aware_utc(now or datetime.now(UTC), "now")
-        if current < issued_at - timedelta(minutes=5):
-            raise AiReviewContractError("AI review package is not yet valid")
-        if current > expires_at:
-            raise AiReviewContractError("AI review package has expired")
 
 
 def _validate_triage_item(item: TriageItem) -> None:
@@ -794,7 +862,6 @@ __all__ = [
     "MAX_AI_REASON_CHARS",
     "MAX_AI_REQUEST_BYTES",
     "MAX_AI_RESPONSE_BYTES",
-    "MAX_AI_REVIEW_ITEMS",
     "AiRecommendation",
     "AiReviewCandidateInput",
     "AiReviewContractError",

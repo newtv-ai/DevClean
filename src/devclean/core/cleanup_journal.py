@@ -20,7 +20,7 @@ from devclean.platform.windows.exact_cleanup import ExactFileSnapshot
 from devclean.platform.windows.security import secure_private_directory, secure_private_file
 from devclean.platform.windows.volumes import is_local_fixed_path
 
-JOURNAL_SCHEMA_VERSION = 3
+JOURNAL_SCHEMA_VERSION = 4
 MAX_JOURNAL_ERROR_LENGTH = 4_096
 MAX_RETAINED_COMPLETED_BATCHES = 128
 _MAX_SQLITE_INTEGER = (1 << 63) - 1
@@ -37,14 +37,27 @@ class CleanupMode(StrEnum):
     CONFIRMED_PURGE = "CONFIRMED_PURGE"
 
 
+class JournalTargetKind(StrEnum):
+    """Whether a journaled action covers one file or one whole subtree.
+
+    Reconciliation compares an observed object with the recorded snapshot, and
+    the comparison differs by kind, so the durable record has to carry it.  A
+    directory action also reconciles differently in principle: a purge that
+    stopped partway leaves a tree that cannot be restored to a working state.
+    """
+
+    FILE = "FILE"
+    DIRECTORY = "DIRECTORY"
+
+
 class ActionState(StrEnum):
     INTENT_RECORDED = "INTENT_RECORDED"
     EXECUTING = "EXECUTING"
     QUARANTINED = "QUARANTINED"
-    # RECYCLE_PENDING/RECYCLED are retained for schema-v2 compatibility with
-    # journals written before the Shell Recycle Bin bridge was withdrawn; the
-    # current runtime never emits them, and reconciliation still treats
-    # RECYCLE_PENDING as ambiguous (NEEDS_REVIEW), never as a success state.
+    # RECYCLE_PENDING is retained for journals written by the withdrawn private
+    # staging workflow. The current Shell Recycle Bin path emits RECYCLED
+    # directly; reconciliation still treats an old RECYCLE_PENDING row as
+    # ambiguous (NEEDS_REVIEW), never as a success state.
     RECYCLE_PENDING = "RECYCLE_PENDING"
     RECYCLED = "RECYCLED"
     PURGED = "PURGED"
@@ -73,6 +86,9 @@ class CleanupIntent:
     quarantine_path: str | None
     category: str
     snapshot: ExactFileSnapshot
+    target_kind: JournalTargetKind = JournalTargetKind.FILE
+    subtree_files: int = 0
+    subtree_bytes: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +109,9 @@ class JournalAction:
     last_error: str | None
     created_at: str
     updated_at: str
+    target_kind: JournalTargetKind = JournalTargetKind.FILE
+    subtree_files: int = 0
+    subtree_bytes: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +201,9 @@ CREATE TABLE cleanup_actions (
     last_error TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    target_kind TEXT NOT NULL DEFAULT 'FILE' CHECK(target_kind IN ('FILE', 'DIRECTORY')),
+    subtree_files INTEGER NOT NULL DEFAULT 0 CHECK(subtree_files >= 0),
+    subtree_bytes INTEGER NOT NULL DEFAULT 0 CHECK(subtree_bytes >= 0),
     UNIQUE(batch_id, candidate_id),
     UNIQUE(batch_id, source_path)
 ) STRICT;
@@ -224,7 +246,15 @@ class CleanupJournal:
         if not intents or len(intents) > 32:
             raise CleanupJournalError("a cleanup batch must contain between 1 and 32 actions")
         now = _now()
-        logical_bytes = sum(intent.snapshot.logical_size for intent in intents)
+        # A directory intent's snapshot describes the directory entry, which is
+        # zero bytes.  The durable batch total must state what the batch really
+        # covers, so a whole-tree intent contributes its subtree total.
+        logical_bytes = sum(
+            intent.subtree_bytes
+            if intent.target_kind is JournalTargetKind.DIRECTORY
+            else intent.snapshot.logical_size
+            for intent in intents
+        )
         try:
             with self._connect() as connection:
                 connection.execute("BEGIN IMMEDIATE")
@@ -256,7 +286,8 @@ class CleanupJournal:
                             root_volume_serial, root_volume_serial_u64,
                             root_file_id, root_file_id_kind,
                             root_attributes, root_reparse_tag, root_creation_time_ns,
-                            root_last_write_time_ns, last_error, created_at, updated_at
+                            root_last_write_time_ns, last_error, created_at, updated_at,
+                            target_kind, subtree_files, subtree_bytes
                         ) VALUES (
                             :action_id, :batch_id, :candidate_id, :action_ordinal, :mode, :state,
                             :source_path, :scan_root, :approved_root, :quarantine_path, :category,
@@ -266,9 +297,13 @@ class CleanupJournal:
                             :root_volume_serial, :root_volume_serial_u64,
                             :root_file_id, :root_file_id_kind,
                             :root_attributes, :root_reparse_tag, :root_creation_time_ns,
-                            :root_last_write_time_ns, NULL, :created_at, :updated_at
+                            :root_last_write_time_ns, NULL, :created_at, :updated_at,
+                            :target_kind, :subtree_files, :subtree_bytes
                         )""",
                         {
+                            "target_kind": intent.target_kind.value,
+                            "subtree_files": intent.subtree_files,
+                            "subtree_bytes": intent.subtree_bytes,
                             "action_id": intent.action_id,
                             "batch_id": batch_id,
                             "candidate_id": intent.candidate_id,
@@ -496,6 +531,9 @@ class CleanupJournal:
             if current_version == 2:
                 self._migrate_v2_to_v3(connection)
                 current_version = 3
+            if current_version == 3:
+                self._migrate_v3_to_v4(connection)
+                current_version = 4
             if current_version != JOURNAL_SCHEMA_VERSION:
                 raise CleanupJournalError("cleanup journal schema version is unsupported")
             connection.execute("BEGIN IMMEDIATE")
@@ -519,9 +557,38 @@ class CleanupJournal:
                SET volume_serial_u64 = CAST(volume_serial AS TEXT),
                    root_volume_serial_u64 = CAST(root_volume_serial AS TEXT)"""
         )
+        # Each step names the version it actually produces.  Writing the current
+        # constant here would let a v2 journal claim the newest schema while
+        # still missing every column a later step adds.
         connection.execute(
-            "UPDATE cleanup_meta SET value = ? WHERE key = 'schema_version'",
-            (str(JOURNAL_SCHEMA_VERSION),),
+            "UPDATE cleanup_meta SET value = '3' WHERE key = 'schema_version'"
+        )
+        connection.commit()
+
+    @staticmethod
+    def _migrate_v3_to_v4(connection: sqlite3.Connection) -> None:
+        """Record whether an action covers one file or one whole subtree.
+
+        Existing rows predate whole-tree cleanup, so they are all files.  The
+        column defaults say so, which keeps reconciliation of an interrupted
+        pre-upgrade batch behaving exactly as it did before.
+        """
+
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute(
+            "ALTER TABLE cleanup_actions ADD COLUMN target_kind TEXT NOT NULL "
+            "DEFAULT 'FILE' CHECK(target_kind IN ('FILE', 'DIRECTORY'))"
+        )
+        connection.execute(
+            "ALTER TABLE cleanup_actions ADD COLUMN subtree_files INTEGER NOT NULL "
+            "DEFAULT 0 CHECK(subtree_files >= 0)"
+        )
+        connection.execute(
+            "ALTER TABLE cleanup_actions ADD COLUMN subtree_bytes INTEGER NOT NULL "
+            "DEFAULT 0 CHECK(subtree_bytes >= 0)"
+        )
+        connection.execute(
+            "UPDATE cleanup_meta SET value = '4' WHERE key = 'schema_version'"
         )
         connection.commit()
 
@@ -643,6 +710,9 @@ def _row_to_action(row: sqlite3.Row) -> JournalAction:
         last_error=str(row["last_error"]) if row["last_error"] is not None else None,
         created_at=str(row["created_at"]),
         updated_at=str(row["updated_at"]),
+        target_kind=JournalTargetKind(str(row["target_kind"])),
+        subtree_files=int(row["subtree_files"]),
+        subtree_bytes=int(row["subtree_bytes"]),
     )
 
 
@@ -695,4 +765,5 @@ __all__ = [
     "CleanupMode",
     "JournalAction",
     "JournalBatch",
+    "JournalTargetKind",
 ]

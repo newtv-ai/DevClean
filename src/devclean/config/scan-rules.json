@@ -1,0 +1,443 @@
+{
+  "schema_version": 2,
+  "document_type": "devclean.scan_rules",
+  "_help": "DevClean 只从本文件读取扫描范围和已知清理目录。所有路径支持 %环境变量% 和 ~；known_cleanup_roots.patterns 还支持 * 通配符和 {a,b} 组合展开。",
+  "_ai_editing_contract": {
+    "contract_version": 1,
+    "output_format": "FULL_JSON_OBJECT_ONLY",
+    "instructions": [
+      "返回完整 JSON 对象，不要使用 Markdown 代码块、注释或省略号。",
+      "不得修改 schema_version、document_type 或 _ai_editing_contract。",
+      "不得增加、删除或改名字段；只修改现有字段的值或数组内容。",
+      "known_cleanup_roots 每项必须保留全部字段，id 必须唯一，group 用于人工分组。",
+      "不确定的路径不要加入 known_cleanup_roots，先保留原配置。"
+    ]
+  },
+  "include_user_profile": true,
+  "include_known_cleanup_roots": true,
+  "additional_paths": [],
+  "excluded_paths": [],
+  "skip_directory_groups": {
+    "version_control": [".git", ".hg", ".svn"],
+    "user_content": [
+      "documents",
+      "desktop",
+      "pictures",
+      "music",
+      "videos",
+      "onedrive",
+      "favorites",
+      "contacts",
+      "links",
+      "searches",
+      "saved games",
+      "3d objects"
+    ],
+    "credentials": [".ssh", ".aws", ".azure", ".gnupg", ".kube"],
+    "installed_payload": [
+      "program files",
+      "program files (x86)",
+      "programs",
+      "site-packages",
+      "windowsapps",
+      "assembly",
+      "winsxs",
+      "servicing",
+      "installer"
+    ],
+    "system_areas": [
+      "$recycle.bin",
+      "system volume information",
+      "config.msi",
+      "boot",
+      "recovery",
+      "perflogs"
+    ],
+    "devclean_state": [
+      ".devclean-quarantine-v1",
+      "DevClean-data"
+    ]
+  },
+  "known_cleanup_roots": [
+    {
+      "id": "user-temp",
+      "group": "windows_temporary_files",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%TEMP%"],
+      "category": "USER_TEMP",
+      "policy": "AGE_BASED_REVIEW",
+      "label": "当前用户临时文件"
+    },
+    {
+      "id": "windows-temp",
+      "group": "windows_temporary_files",
+      "enabled": true,
+      "allow_inside_system_anchor": true,
+      "patterns": ["%SYSTEMROOT%\\Temp", "%SYSTEMROOT%\\SystemTemp"],
+      "category": "USER_TEMP",
+      "policy": "AGE_BASED_REVIEW",
+      "label": "Windows 临时文件"
+    },
+    {
+      "id": "user-crash-dumps",
+      "group": "windows_diagnostics",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%LOCALAPPDATA%\\CrashDumps"],
+      "category": "CRASH_DUMPS",
+      "policy": "AGE_BASED_REVIEW",
+      "label": "当前用户崩溃转储"
+    },
+    {
+      "id": "system-crash-dumps",
+      "group": "windows_diagnostics",
+      "enabled": true,
+      "allow_inside_system_anchor": true,
+      "patterns": [
+        "%SYSTEMROOT%\\LiveKernelReports",
+        "%SYSTEMROOT%\\Minidump",
+        "%PROGRAMDATA%\\Microsoft\\Windows\\WER\\ReportQueue",
+        "%PROGRAMDATA%\\Microsoft\\Windows\\WER\\ReportArchive",
+        "%LOCALAPPDATA%\\Microsoft\\Windows\\WER"
+      ],
+      "category": "CRASH_DUMPS",
+      "policy": "VENDOR_MANAGED",
+      "label": "Windows 错误报告和崩溃转储"
+    },
+    {
+      "id": "windows-maintenance",
+      "group": "windows_maintenance",
+      "enabled": true,
+      "allow_inside_system_anchor": true,
+      "patterns": [
+        "%SYSTEMROOT%\\Prefetch",
+        "%SYSTEMROOT%\\Logs",
+        "%SYSTEMROOT%\\CbsTemp"
+      ],
+      "category": "SYSTEM_LOGS",
+      "policy": "VENDOR_MANAGED",
+      "label": "Windows 可重建维护数据"
+    },
+    {
+      "id": "windows-update-downloads",
+      "group": "windows_update",
+      "enabled": true,
+      "allow_inside_system_anchor": true,
+      "patterns": [
+        "%SYSTEMROOT%\\SoftwareDistribution\\Download",
+        "%SYSTEMDRIVE%\\Windows.old"
+      ],
+      "category": "WINDOWS_UPDATE",
+      "policy": "VENDOR_MANAGED",
+      "label": "Windows 更新下载或旧系统"
+    },
+    {
+      "id": "windows-internet-cache",
+      "group": "windows_application_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%LOCALAPPDATA%\\Microsoft\\Windows\\INetCache"],
+      "category": "BROWSER_CACHE",
+      "policy": "VENDOR_MANAGED",
+      "label": "Windows Internet 临时文件"
+    },
+    {
+      "id": "thumbnail-cache",
+      "group": "windows_application_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer"],
+      "category": "THUMBNAIL_CACHE",
+      "policy": "MANUAL_REVIEW",
+      "label": "Windows 缩略图与图标缓存"
+    },
+    {
+      "id": "pip-cache",
+      "group": "package_manager_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": [
+        "%PIP_CACHE_DIR%",
+        "%LOCALAPPDATA%\\pip\\Cache",
+        "%APPDATA%\\pip\\Cache",
+        "%LOCALAPPDATA%\\pip-tools\\Cache"
+      ],
+      "category": "PIP_CACHE",
+      "policy": "VENDOR_MANAGED",
+      "label": "Python 包缓存"
+    },
+    {
+      "id": "uv-cache",
+      "group": "package_manager_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%UV_CACHE_DIR%", "%LOCALAPPDATA%\\uv\\cache"],
+      "category": "UV_CACHE",
+      "policy": "VENDOR_MANAGED",
+      "label": "uv 包缓存"
+    },
+    {
+      "id": "npm-cache",
+      "group": "package_manager_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": [
+        "%NPM_CONFIG_CACHE%",
+        "%LOCALAPPDATA%\\npm-cache",
+        "%APPDATA%\\npm-cache"
+      ],
+      "category": "NPM_CACHE",
+      "policy": "VENDOR_MANAGED",
+      "label": "npm 包缓存"
+    },
+    {
+      "id": "pnpm-store",
+      "group": "package_manager_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%PNPM_HOME%\\store", "%LOCALAPPDATA%\\pnpm\\store"],
+      "category": "PNPM_STORE",
+      "policy": "VENDOR_MANAGED",
+      "label": "pnpm 包存储"
+    },
+    {
+      "id": "conda-cache",
+      "group": "package_manager_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": [
+        "%USERPROFILE%\\.conda\\pkgs",
+        "%USERPROFILE%\\miniconda3\\pkgs",
+        "%USERPROFILE%\\anaconda3\\pkgs"
+      ],
+      "category": "CONDA_CACHE",
+      "policy": "VENDOR_MANAGED",
+      "label": "Conda 包缓存"
+    },
+    {
+      "id": "huggingface-cache",
+      "group": "ai_model_storage",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": [
+        "%HF_HOME%",
+        "%HF_HUB_CACHE%",
+        "%USERPROFILE%\\.cache\\huggingface"
+      ],
+      "category": "HUGGINGFACE_CACHE",
+      "policy": "VENDOR_MANAGED",
+      "label": "Hugging Face 缓存"
+    },
+    {
+      "id": "gradle-cache",
+      "group": "package_manager_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": [
+        "%USERPROFILE%\\.gradle\\caches",
+        "%USERPROFILE%\\.gradle\\wrapper\\dists"
+      ],
+      "category": "GRADLE_CACHE",
+      "policy": "VENDOR_MANAGED",
+      "label": "Gradle 缓存和下载"
+    },
+    {
+      "id": "yarn-cache",
+      "group": "package_manager_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%LOCALAPPDATA%\\Yarn\\Cache"],
+      "category": "YARN_CACHE",
+      "policy": "VENDOR_MANAGED",
+      "label": "Yarn 包缓存"
+    },
+    {
+      "id": "bun-cache",
+      "group": "package_manager_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%USERPROFILE%\\.bun\\install\\cache"],
+      "category": "BUN_CACHE",
+      "policy": "VENDOR_MANAGED",
+      "label": "Bun 安装缓存"
+    },
+    {
+      "id": "maven-cache",
+      "group": "package_manager_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": [
+        "%USERPROFILE%\\.m2\\repository",
+        "%USERPROFILE%\\.m2\\wrapper\\dists"
+      ],
+      "category": "MAVEN_REPOSITORY",
+      "policy": "VENDOR_MANAGED",
+      "label": "Maven 本地仓库和下载"
+    },
+    {
+      "id": "nuget-cache",
+      "group": "package_manager_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%USERPROFILE%\\.nuget\\packages"],
+      "category": "NUGET_CACHE",
+      "policy": "VENDOR_MANAGED",
+      "label": "NuGet 包缓存"
+    },
+    {
+      "id": "go-module-cache",
+      "group": "package_manager_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": [
+        "%GOMODCACHE%",
+        "%GOPATH%\\pkg\\mod",
+        "%USERPROFILE%\\go\\pkg\\mod"
+      ],
+      "category": "GO_MODULE_CACHE",
+      "policy": "VENDOR_MANAGED",
+      "label": "Go 模块缓存"
+    },
+    {
+      "id": "cargo-cache",
+      "group": "package_manager_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%USERPROFILE%\\.cargo\\registry"],
+      "category": "CARGO_REGISTRY",
+      "policy": "VENDOR_MANAGED",
+      "label": "Cargo registry 缓存"
+    },
+    {
+      "id": "test-browser-binaries",
+      "group": "developer_tool_downloads",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": [
+        "%LOCALAPPDATA%\\ms-playwright",
+        "%USERPROFILE%\\.cache\\puppeteer"
+      ],
+      "category": "TEST_BROWSER_BINARIES",
+      "policy": "VENDOR_MANAGED",
+      "label": "测试浏览器下载"
+    },
+    {
+      "id": "android-images",
+      "group": "developer_tool_downloads",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%LOCALAPPDATA%\\Android\\Sdk\\system-images"],
+      "category": "ANDROID_SDK_PAYLOAD",
+      "policy": "VENDOR_MANAGED",
+      "label": "Android SDK 系统镜像"
+    },
+    {
+      "id": "ollama",
+      "group": "ai_model_storage",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%USERPROFILE%\\.ollama\\models"],
+      "category": "OLLAMA_MODELS",
+      "policy": "VENDOR_MANAGED",
+      "label": "Ollama 模型存储"
+    },
+    {
+      "id": "ollama-updates",
+      "group": "installer_downloads",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%LOCALAPPDATA%\\Ollama\\updates_v2"],
+      "category": "INSTALLERS_DOWNLOADS",
+      "policy": "VENDOR_MANAGED",
+      "label": "Ollama 更新安装包"
+    },
+    {
+      "id": "lmstudio",
+      "group": "ai_model_storage",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%USERPROFILE%\\.lmstudio\\models"],
+      "category": "LOCAL_MODEL_STORE",
+      "policy": "VENDOR_MANAGED",
+      "label": "LM Studio 模型存储"
+    },
+    {
+      "id": "editor-caches",
+      "group": "application_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": [
+        "%APPDATA%\\{Code,Code - Insiders,VSCodium,Cursor,Windsurf,Trae,Trae CN,TRAE SOLO,TRAE SOLO CN,Antigravity,Kiro}\\{Cache,CachedData,Code Cache,GPUCache,logs}"
+      ],
+      "category": "VSCODE_CACHE",
+      "policy": "MANUAL_REVIEW",
+      "label": "编辑器可重建缓存"
+    },
+    {
+      "id": "jetbrains-cache",
+      "group": "application_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%LOCALAPPDATA%\\JetBrains"],
+      "category": "IDE_CACHE",
+      "policy": "MANUAL_REVIEW",
+      "label": "JetBrains IDE 缓存"
+    },
+    {
+      "id": "browser-caches",
+      "group": "application_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": [
+        "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\*\\{Cache,Code Cache,GPUCache}",
+        "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\*\\{Cache,Code Cache,GPUCache}",
+        "%LOCALAPPDATA%\\BraveSoftware\\Brave-Browser\\User Data\\*\\{Cache,Code Cache,GPUCache}",
+        "%APPDATA%\\Mozilla\\Firefox\\Profiles\\*\\{cache2,startupCache}"
+      ],
+      "category": "BROWSER_CACHE",
+      "policy": "MANUAL_REVIEW",
+      "label": "浏览器可重建缓存"
+    },
+    {
+      "id": "ide-working-caches",
+      "group": "application_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": [
+        "%LOCALAPPDATA%\\skylot",
+        "%LOCALAPPDATA%\\Microsoft\\TypeScript",
+        "%LOCALAPPDATA%\\.dartServer"
+      ],
+      "category": "IDE_CACHE",
+      "policy": "VENDOR_MANAGED",
+      "label": "开发工具可重建缓存"
+    },
+    {
+      "id": "claude-plugin-cache",
+      "group": "application_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": ["%USERPROFILE%\\.claude\\plugins\\cache"],
+      "category": "VSCODE_CACHE",
+      "policy": "VENDOR_MANAGED",
+      "label": "Claude 插件缓存"
+    },
+    {
+      "id": "general-tool-caches",
+      "group": "application_cache",
+      "enabled": true,
+      "allow_inside_system_anchor": false,
+      "patterns": [
+        "%USERPROFILE%\\.cache",
+        "%USERPROFILE%\\.puro\\shared\\caches",
+        "%USERPROFILE%\\.puro\\shared\\pub_cache",
+        "%LOCALAPPDATA%\\NVIDIA\\DXCache",
+        "%LOCALAPPDATA%\\NVIDIA\\GLCache"
+      ],
+      "category": "OTHER",
+      "policy": "VENDOR_MANAGED",
+      "label": "工具可重建缓存"
+    }
+  ]
+}

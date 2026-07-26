@@ -195,6 +195,24 @@ def _filetime_to_unix_ns(value: wintypes.FILETIME) -> int | None:
     return None if unix_100ns < 0 else unix_100ns * 100
 
 
+def _win32_open_path(path: str) -> str:
+    r"""Return the form of *path* that ``CreateFileW`` can open at any length.
+
+    Package-manager caches already reach 261 characters, and quarantining one
+    appends a batch directory name, so metadata reads must not be capped at the
+    legacy 260-character limit.  Only an absolute, already normalised drive path
+    is prefixed: anything else -- a relative path, a UNC path, or a path that is
+    already extended -- is passed through untouched, because ``\\?\`` suppresses
+    normalisation and must never be applied to input that still needs it.
+    """
+
+    if path.startswith(("\\\\?\\", "\\\\.\\")) or "/" in path:
+        return path
+    if len(path) < 3 or path[1] != ":" or path[2] != "\\":
+        return path
+    return f"\\\\?\\{path}" if path == os.path.normpath(path) else path
+
+
 def _windows_metadata(path: str) -> FileSystemMetadata:
     # WinDLL is absent on non-Windows Python builds, so resolve it lazily.
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -215,7 +233,7 @@ def _windows_metadata(path: str) -> FileSystemMetadata:
     close_handle.restype = wintypes.BOOL
 
     handle = create_file(
-        path,
+        _win32_open_path(path),
         _FILE_READ_ATTRIBUTES,
         _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE,
         None,

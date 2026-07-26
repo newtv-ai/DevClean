@@ -57,6 +57,14 @@ FORBIDDEN_IMPORT_PREFIXES = (
     "devclean.core.recycle",
     "devclean.platform.windows.permanent_delete",
     "devclean.platform.windows.recycle_bin",
+    # Withdrawn with the same-session incremental refresh.  A full scan of a
+    # million-entry profile now costs minutes rather than the twenty it used to,
+    # so a change-notification coordinator and a shadow checkpoint schema were
+    # 2,500 lines of invalidation logic buying nothing.  Listed here so they
+    # cannot quietly return to a wheel.
+    "devclean.core.incremental",
+    "devclean.scanner.change_monitor",
+    "devclean.scanner.incremental_session",
 )
 RAW_EXECUTION_SYMBOLS = frozenset(
     {
@@ -99,7 +107,6 @@ EXECUTION_IMPORT_PREFIXES = (
 OBSERVATION_ONLY_MEMBERS = frozenset(
     {
         "devclean/core/ai_review_contract.py",
-        "devclean/core/incremental.py",
         "devclean/core/triage.py",
     }
 )

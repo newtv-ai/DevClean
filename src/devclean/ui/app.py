@@ -1,2509 +1,1546 @@
-"""Tkinter workbench for scan -> classify -> review -> confirmed cleanup.
+"""DevClean: scan on launch, sort into two buckets, delete.
 
-Scanning and AI import are observation-only.  Filesystem mutation exists only
-behind a completed scan, an explicit local selection, a sealed internal batch,
-and a final typed confirmation.  Model output is inert advice and never calls
-the cleanup executor directly.
+Two buckets, because the tool has exactly two answers about any file: it is sure
+the file can go, or it is not sure and the question goes to a model.  The
+three public rule files define where to scan and what to delete or keep.  There
+is no bucket where the user is expected to adjudicate files one by one.
+
+Mutation lives in ``core.postscan_cleanup`` and nothing here can widen it.
 """
 
+# Chinese UI prose uses fullwidth punctuation.
 # ruff: noqa: RUF001
 
 from __future__ import annotations
 
+import contextlib
 import json
-import queue
-import shutil
+import os
 import sys
-import tempfile
 import threading
+import time
 import tkinter as tk
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime
-from enum import StrEnum
 from pathlib import Path
+from queue import Empty, Queue
 from tkinter import filedialog, messagebox, ttk
-from tkinter.scrolledtext import ScrolledText
-from typing import cast
+from typing import Any, cast
 from uuid import uuid4
 
+from devclean.core import ai_sessions
 from devclean.core.ai_review_contract import (
-    MAX_AI_RESPONSE_BYTES,
     AiRecommendation,
     AiReviewCandidateInput,
     AiReviewContractError,
-    AiReviewImport,
     AiReviewPackage,
     build_ai_review_package,
     parse_ai_review_response,
     serialize_ai_review_package,
 )
 from devclean.core.cleanup_catalog import (
-    CleanupCategory,
     KnownCleanupRoot,
-    SourceDomain,
     discover_known_cleanup_roots,
-    source_domain_for_category,
 )
-from devclean.core.cleanup_journal import (
-    ActionState,
-    CleanupJournal,
-    CleanupMode,
-)
-from devclean.core.duplicates import DuplicateScanResult, find_large_duplicates
-from devclean.core.paths import data_dir
+from devclean.core.cleanup_journal import ActionState, CleanupMode
 from devclean.core.postscan_cleanup import (
-    MAX_CLEANUP_PLAN_FILES,
-    CleanupExecutionApproval,
     CleanupExecutionResult,
     CleanupRefusal,
-    PreparedCleanupBatch,
-    PreparedCleanupPlan,
     ScanCleanupCandidate,
+    candidate_from_directory_item,
     candidate_from_triage_item,
-    confirm_cleanup_plan,
-    execute_approved_batch,
-    issue_cleanup_plan_confirmation,
+    execute_cleanup_batch,
     prepare_cleanup_plan,
-    reconcile_unfinished_actions,
-    restore_quarantined_action,
 )
-from devclean.core.reporting import write_report_stream
 from devclean.core.triage import (
     Actionability,
-    EvidenceKind,
+    CleanupTargetKind,
+    DirectorySubtreeTotals,
     ExecutionPolicy,
-    RecoveryCapability,
     ReviewLane,
     RiskTier,
     TriageItem,
     TriageSession,
+    triage_directory,
     triage_file,
 )
-from devclean.platform.windows.security import is_process_elevated
-from devclean.platform.windows.volumes import is_local_fixed_path
+from devclean.core.user_rules import (
+    RuleConfigError,
+    RuleDecision,
+    UserRules,
+    add_ai_verdicts,
+    add_user_verdicts,
+    clear_ai_rules,
+    default_rules,
+    expanded_scan_paths,
+    load_rules,
+    normalise_path,
+    read_rule_documents,
+)
+from devclean.platform.windows.volumes import fixed_volume_roots
 from devclean.scanner import (
     CancellationToken,
-    IncrementalScanSession,
     ScanOptions,
     ScanRecordKind,
     ScanStats,
-    SessionScanMode,
-    SessionScanStatus,
+    scan_roots,
 )
+from devclean.ui.rule_editor import RuleEditor, open_rule_editor
 
-_FILTER_ALL = "全部"
-_PLAN_DOCUMENT_TYPE = "DevClean_NON_EXECUTABLE_REVIEW_PLAN"
-_PLAN_SCHEMA_VERSION = 1
-_LANE_TITLES: Mapping[ReviewLane, str] = {
-    ReviewLane.DETERMINISTIC_CANDIDATE: "确定性候选",
-    ReviewLane.VENDOR_MANAGED: "厂商管理候选",
-    ReviewLane.AI_REVIEW: "可选 AI / 人工复核",
-    ReviewLane.REPORT_ONLY: "仅报告",
-    ReviewLane.PROTECTED: "受保护",
-}
+_INK = "#1b2942"
+_CANVAS = "#f1f4fa"
+_SURFACE = "#ffffff"
+_GREEN = "#1f9d57"
+_AMBER = "#d98a1f"
+_RED = "#c0392b"
+# Items per export.  Sized so one file stays inside what a model can read in a
+# single pass; the biggest items go first because they carry the most value.
+_AI_VOLUME_ITEMS = 300
+# Rows drawn in the table.  Everything found is kept, selected, exported and
+# deleted; this only bounds how many lines tkinter has to lay out, because
+# rebuilding tens of thousands of rows every 1.5 seconds during a scan makes
+# the window unusable.  The header states the real count next to it.
+_ROWS_DRAWN = 2_000
 
-_DOMAIN_TITLES: Mapping[SourceDomain, str] = {
-    SourceDomain.AI_MODELS: "AI 模型与推理缓存",
-    SourceDomain.PACKAGE_MANAGERS: "开发包管理缓存",
-    SourceDomain.CONTAINERS_VIRTUALIZATION: "容器与虚拟化",
-    SourceDomain.IDE_EDITORS: "IDE 与编辑器",
-    SourceDomain.PROJECT_BUILD: "项目构建产物",
-    SourceDomain.WINDOWS_SYSTEM: "Windows 与系统维护",
-    SourceDomain.APPLICATION_CACHE: "应用缓存",
-    SourceDomain.LOGS_DUMPS_TEMP: "日志、转储与临时文件",
-    SourceDomain.INSTALLERS_DOWNLOADS: "安装包、下载与旧版本",
-    SourceDomain.GENERAL_STORAGE: "通用空间分析",
-}
-
-_CATEGORY_TITLES: Mapping[CleanupCategory, str] = {
-    CleanupCategory.USER_TEMP: "用户临时文件",
-    CleanupCategory.CRASH_DUMPS: "崩溃转储",
-    CleanupCategory.PIP_CACHE: "pip 缓存",
-    CleanupCategory.UV_CACHE: "uv 缓存",
-    CleanupCategory.NPM_CACHE: "npm 缓存",
-    CleanupCategory.PNPM_STORE: "pnpm store",
-    CleanupCategory.CONDA_CACHE: "Conda 缓存",
-    CleanupCategory.HUGGINGFACE_CACHE: "Hugging Face 缓存",
-    CleanupCategory.GRADLE_CACHE: "Gradle 缓存",
-    CleanupCategory.YARN_CACHE: "Yarn 缓存",
-    CleanupCategory.OLLAMA_MODELS: "Ollama 模型",
-    CleanupCategory.VSCODE_CACHE: "VS Code 缓存",
-    CleanupCategory.BROWSER_CACHE: "浏览器缓存",
-    CleanupCategory.THUMBNAIL_CACHE: "缩略图缓存",
-    CleanupCategory.CONTAINER_STORAGE: "容器存储",
-    CleanupCategory.IDE_CACHE: "IDE 通用缓存",
-    CleanupCategory.PROJECT_BUILD_OUTPUT: "项目构建产物",
-    CleanupCategory.WINDOWS_UPDATE: "Windows 更新",
-    CleanupCategory.SYSTEM_LOGS: "系统日志",
-    CleanupCategory.INSTALLERS_DOWNLOADS: "安装包与下载",
-    CleanupCategory.OTHER: "其它 / 未分类",
-}
-
-_RISK_TITLES: Mapping[RiskTier, str] = {
-    RiskTier.LOW: "低",
-    RiskTier.MEDIUM: "中",
-    RiskTier.HIGH: "高",
-    RiskTier.PROTECTED: "受保护",
-}
-
-_EVIDENCE_TITLES: Mapping[EvidenceKind, str] = {
-    EvidenceKind.AGE_AND_APPROVED_ROOT: "已知根目录 + 年龄",
-    EvidenceKind.KNOWN_ROOT_HEURISTIC: "已知根目录线索",
-    EvidenceKind.PATH_HEURISTIC: "路径启发式",
-    EvidenceKind.FILESYSTEM_OBSERVATION: "文件系统观察",
-    EvidenceKind.PROTECTED_RULE: "硬保护规则",
-}
-
-_RECOVERY_TITLES: Mapping[RecoveryCapability, str] = {
-    RecoveryCapability.UNKNOWN: "未知",
-    RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT: "厂商重下（尽力）",
-    RecoveryCapability.NONE: "无恢复承诺",
-}
-
-_EXECUTION_TITLES: Mapping[ExecutionPolicy, str] = {
-    ExecutionPolicy.PERMANENT_APPROVED_CACHE: "批准缓存：可隔离 / 可永久清除",
-    ExecutionPolicy.EXACT_VENDOR: "厂商精确动作",
-    ExecutionPolicy.PREVIEWED_VENDOR: "厂商预览动作",
-    ExecutionPolicy.POLICY_VENDOR: "厂商策略动作",
-    ExecutionPolicy.RECYCLE_ONLY: "可隔离；永久清除需独立强确认",
-    ExecutionPolicy.NONE: "不可执行",
-}
-
-_AI_RECOMMENDATION_TITLES: Mapping[AiRecommendation, str] = {
-    AiRecommendation.KEEP: "AI 建议保留",
-    AiRecommendation.RECOMMEND_RECYCLE: "AI 建议先安全隔离",
-    AiRecommendation.UNSURE: "AI 不确定",
-}
+# (path, size in bytes, is a whole directory)
+Row = tuple[str, int, bool]
 
 
-class WorkbenchState(StrEnum):
-    """UI states; mutations are possible only in EXECUTING."""
+def _system_drive() -> Path | None:
+    """Return the drive Windows is on, which is the one that fills up."""
 
-    READY = "READY"
-    SCANNING = "SCANNING"
-    REVIEW = "REVIEW"
-    EXECUTING = "EXECUTING"
-
-
-def is_review_plan_eligible(item: TriageItem) -> bool:
-    """Return whether a human may mark *item* for a non-executable plan."""
-
-    return is_direct_cleanup_eligible(item)
+    root = os.environ.get("SYSTEMDRIVE")
+    if not root:
+        return None
+    candidate = Path(f"{root}\\")
+    return candidate if candidate in fixed_volume_roots() else None
 
 
-def is_direct_cleanup_eligible(item: TriageItem) -> bool:
-    """Return whether a human may explicitly select an executable file item.
+def _is_vouched_for(item: TriageItem) -> bool:
+    """Return whether something other than a guess says this may be removed.
 
-    AI review is optional assistance.  It is not an authority gate: a user may
-    directly select an uncertain but locally executable item, while protected,
-    report-only, and unsupported vendor-action items remain blocked.
+    The review *lane* is the wrong question.  A file inside a catalog-recognised
+    vendor cache is classified ``AI_REVIEW`` because asking a model about it is
+    *permitted*, not because the tool is unsure -- and reading the lane put
+    2.7 GB of pip cache in the "ask the AI" pile while the confident pile held
+    165 MB of crash dumps.  What matters is whether the catalog or a
+    deterministic rule vouched for it.
     """
 
     return (
-        item.lane not in {ReviewLane.PROTECTED, ReviewLane.REPORT_ONLY}
-        and item.actionability in {Actionability.REVIEW_PLAN, Actionability.AI_REVIEW}
-        and item.execution_policy
-        in {ExecutionPolicy.PERMANENT_APPROVED_CACHE, ExecutionPolicy.RECYCLE_ONLY}
-        and item.risk_tier is not RiskTier.PROTECTED
+        item.lane is ReviewLane.DETERMINISTIC_CANDIDATE
+        or "known_root" in item.tags
+        or "whole_directory" in item.tags
     )
 
 
-def is_low_risk_cleanup_eligible(item: TriageItem) -> bool:
-    """Return whether deterministic policy allows low-risk bulk selection."""
+def is_direct_cleanup_eligible(item: TriageItem) -> bool:
+    """Return whether the tool is confident enough to offer removal."""
 
     return (
-        item.lane is ReviewLane.DETERMINISTIC_CANDIDATE
-        and item.actionability is Actionability.REVIEW_PLAN
-        and item.execution_policy is ExecutionPolicy.PERMANENT_APPROVED_CACHE
-        and item.risk_tier is RiskTier.LOW
+        _is_vouched_for(item)
+        and item.actionability in {Actionability.REVIEW_PLAN, Actionability.AI_REVIEW}
+        and item.execution_policy
+        in {
+            ExecutionPolicy.PERMANENT_APPROVED_CACHE,
+            ExecutionPolicy.USER_CHOICE_DELETE,
+        }
+        and item.risk_tier is not RiskTier.PROTECTED
     )
 
 
 def is_ai_review_eligible(item: TriageItem) -> bool:
-    """Return whether inert metadata may be exported for bounded AI advice."""
+    """Return whether the tool is unsure and a model should be asked.
+
+    Whole directories stay out: the model answers about files, and a tree is not
+    something an adopted single-file recommendation should ever stand for.
+    """
 
     return (
-        item.lane is ReviewLane.AI_REVIEW
+        item.target_kind is CleanupTargetKind.FILE
+        and not _is_vouched_for(item)
+        and item.lane is ReviewLane.AI_REVIEW
         and item.actionability is Actionability.AI_REVIEW
-        and item.execution_policy is ExecutionPolicy.RECYCLE_ONLY
+        and item.execution_policy is ExecutionPolicy.USER_CHOICE_DELETE
         and item.risk_tier is not RiskTier.PROTECTED
     )
 
 
-def cleanup_mode_for_user_choice(
-    candidates: Sequence[ScanCleanupCandidate], *, irreversible: bool
-) -> CleanupMode:
-    """Map an explicit final-page choice to the narrowest execution mode."""
+def _configured_delete_eligible(item: TriageItem) -> bool:
+    """Configured DELETE may promote only an item the executor already accepts."""
 
-    if not candidates:
-        raise ValueError("cleanup mode requires at least one exact candidate")
-    if not irreversible:
-        return CleanupMode.RECYCLE
-    if all(candidate.permanent_eligible for candidate in candidates):
-        return CleanupMode.PERMANENT
-    return CleanupMode.CONFIRMED_PURGE
+    return is_direct_cleanup_eligible(item) or is_ai_review_eligible(item)
 
 
-def _ask_cleanup_mode_choice(
-    parent: tk.Tk,
-    *,
-    file_count: int,
-    total_bytes: int,
-    permanent_count: int,
-) -> bool | None:
-    """Choose quarantine or irreversible purge; quarantine is the default.
+def _rows_of(
+    session: TriageSession, rules: UserRules
+) -> tuple[tuple[Row, ...], tuple[Row, ...]]:
+    """Render the current buckets as immutable rows, safe to cross threads."""
 
-    Returns ``False`` for recoverable quarantine, ``True`` for irreversible
-    purge, and ``None`` for cancel.  The irreversible action is deliberately
-    not the default button and never receives initial focus.
-    """
+    def rows(items: tuple[TriageItem, ...]) -> tuple[Row, ...]:
+        rendered: list[Row] = []
+        for item in items:
+            is_directory = item.target_kind is CleanupTargetKind.DIRECTORY
+            size = (
+                session.subtree_totals(item.path).logical_bytes
+                if is_directory
+                else item.logical_size
+            )
+            rendered.append((item.path, size, is_directory))
+        rendered.sort(key=lambda row: row[1], reverse=True)
+        return tuple(rendered)
 
-    dialog = tk.Toplevel(parent)
-    dialog.title("选择清理方式")
-    dialog.transient(parent)
-    dialog.grab_set()
-    dialog.resizable(False, False)
-    result: list[bool | None] = [None]
-
-    frame = ttk.Frame(dialog, padding=16)
-    frame.pack(fill=tk.BOTH, expand=True)
-    ttk.Label(
-        frame,
-        text=(
-            f"本次由你选择 {file_count} 个文件，共 {_format_bytes(total_bytes)}。"
-        ),
-        style="Section.TLabel",
-        wraplength=640,
-    ).pack(anchor=tk.W)
-    ttk.Label(
-        frame,
-        text=(
-            "· 仅隔离（默认，可恢复）：把同一文件精确移入 DevClean 私有隔离区，"
-            "不释放该卷空间，可随时恢复。\n"
-            "· 不可逆永久清除：先精确隔离并写入 PURGE_PENDING 意图，"
-            "再从隔离区按句柄清除，之后无法恢复。\n\n"
-            f"其中 {permanent_count} 个文件符合本机低风险缓存规则；其余文件即使有 "
-            "AI 建议，也只有你的这次选择和下一页强确认才会授权永久清除。"
-        ),
-        style="Muted.TLabel",
-        wraplength=640,
-        justify=tk.LEFT,
-    ).pack(anchor=tk.W, pady=(8, 14))
-
-    def choose(value: bool | None) -> None:
-        result[0] = value
-        dialog.destroy()
-
-    buttons = ttk.Frame(frame)
-    buttons.pack(fill=tk.X)
-    ttk.Button(
-        buttons,
-        text="不可逆永久清除…",
-        style="Danger.TButton",
-        command=lambda: choose(True),
-    ).pack(side=tk.LEFT)
-    ttk.Button(buttons, text="取消", command=lambda: choose(None)).pack(side=tk.RIGHT)
-    quarantine = ttk.Button(
-        buttons,
-        text="仅移入私有隔离区（推荐）",
-        style="Primary.TButton",
-        command=lambda: choose(False),
-    )
-    quarantine.pack(side=tk.RIGHT, padx=(0, 8))
-    dialog.protocol("WM_DELETE_WINDOW", lambda: choose(None))
-    dialog.bind("<Escape>", lambda _event: choose(None))
-    quarantine.bind("<Return>", lambda _event: choose(False))
-    quarantine.focus_set()
-    parent.wait_window(dialog)
-    return result[0]
+    deletable, unsure = _partition_items(session, rules)
+    return (rows(deletable), rows(unsure))
 
 
-def _ask_typed_cleanup_confirmation(
-    parent: tk.Tk,
-    *,
-    mode_title: str,
-    warning: str,
-    plan: PreparedCleanupPlan,
-    phrase: str,
-) -> str | None:
-    """Show the exact immutable file manifest before collecting typed consent."""
+def _partition_items(
+    session: TriageSession, rules: UserRules
+) -> tuple[tuple[TriageItem, ...], tuple[TriageItem, ...]]:
+    """Apply the one authoritative KEEP/DELETE/AI partition."""
 
-    dialog = tk.Toplevel(parent)
-    dialog.title("最终清理清单与强确认")
-    dialog.geometry("900x650")
-    dialog.minsize(720, 500)
-    dialog.transient(parent)
-    dialog.grab_set()
-    result: list[str | None] = [None]
-
-    frame = ttk.Frame(dialog, padding=16)
-    frame.pack(fill=tk.BOTH, expand=True)
-    ttk.Label(
-        frame,
-        text=f"方式：{mode_title}",
-        style="Title.TLabel",
-    ).pack(anchor=tk.W)
-    ttk.Label(
-        frame,
-        text=warning,
-        style="Muted.TLabel",
-        wraplength=840,
-    ).pack(anchor=tk.W, pady=(6, 10))
-
-    manifest = ScrolledText(frame, height=20, wrap=tk.NONE, font=("Consolas", 9))
-    manifest.pack(fill=tk.BOTH, expand=True)
-    manifest_lines = [
-        f"plan_digest: {plan.digest}",
-        f"journal_batches: {len(plan.batches)}",
-        f"files: {len(plan.actions)}",
-        "",
-    ]
-    manifest_lines.extend(
-        f"{index:02d}. {_format_bytes(action.candidate.snapshot.logical_size):>12}  "
-        f"{action.candidate.path}"
-        for index, action in enumerate(plan.actions, start=1)
-    )
-    manifest.insert("1.0", "\n".join(manifest_lines))
-    manifest.configure(state=tk.DISABLED)
-
-    ttk.Label(
-        frame,
-        text=f"请完整输入：{phrase}",
-        style="Section.TLabel",
-        wraplength=840,
-    ).pack(anchor=tk.W, pady=(12, 5))
-    typed = tk.StringVar()
-    entry = ttk.Entry(frame, textvariable=typed)
-    entry.pack(fill=tk.X)
-
-    buttons = ttk.Frame(frame)
-    buttons.pack(fill=tk.X, pady=(12, 0))
-
-    def accept() -> None:
-        result[0] = typed.get()
-        dialog.destroy()
-
-    def cancel() -> None:
-        result[0] = None
-        dialog.destroy()
-
-    ttk.Button(buttons, text="取消", command=cancel).pack(side=tk.RIGHT)
-    ttk.Button(
-        buttons,
-        text="确认此精确清单",
-        style="Primary.TButton",
-        command=accept,
-    ).pack(side=tk.RIGHT, padx=(0, 8))
-    dialog.protocol("WM_DELETE_WINDOW", cancel)
-    entry.bind("<Return>", lambda _event: accept())
-    entry.focus_set()
-    parent.wait_window(dialog)
-    return result[0]
+    deletable: list[TriageItem] = []
+    unsure: list[TriageItem] = []
+    for item in session.all_items():
+        decision = rules.decision_for(item.path)
+        if decision is RuleDecision.KEEP:
+            continue
+        if is_direct_cleanup_eligible(item) or (
+            decision is RuleDecision.DELETE
+            and _configured_delete_eligible(item)
+        ):
+            deletable.append(item)
+        elif is_ai_review_eligible(item):
+            unsure.append(item)
+    return (tuple(deletable), tuple(unsure))
 
 
-def build_non_executable_review_plan(
-    items: Sequence[TriageItem],
-    *,
-    scan_roots: Sequence[Path],
-    created_at: datetime | None = None,
-) -> dict[str, object]:
-    """Build a closed review-export shape with explicitly zero authority.
+def _verdicts_from_session_index(text: str) -> dict[str, tuple[str, str]]:
+    """Recover path verdicts from an answer whose export session is long gone."""
 
-    This document is intentionally not compatible with an execution importer.
-    It contains observations and human review marks, not actions or commands.
-    """
-
-    selected = tuple(items)
-    if not selected:
-        raise ValueError("at least one explicitly marked review candidate is required")
-    if any(not is_review_plan_eligible(item) for item in selected):
-        raise ValueError(
-            "protected, report-only, or unsupported observations cannot enter this plan"
-        )
-
-    normalized_paths: set[str] = set()
-    candidates: list[dict[str, object]] = []
-    logical_bytes = 0
-    allocated_bytes = 0
-    allocation_unknown = 0
-    for index, item in enumerate(selected, start=1):
-        path_key = str(Path(item.path).absolute()).casefold()
-        if path_key in normalized_paths:
-            raise ValueError("duplicate review candidate path")
-        normalized_paths.add(path_key)
-        logical_bytes += item.logical_size
-        if item.allocated_size is None:
-            allocation_unknown += 1
-        else:
-            allocated_bytes += item.allocated_size
-        record = item.record
-        candidates.append(
-            {
-                "candidate_id": f"review_{index:04d}",
-                "display_path": item.path,
-                "source_domain": item.source_domain.value,
-                "category": item.category.value,
-                "review_lane": item.lane.value,
-                "risk_tier": item.risk_tier.value,
-                "evidence_kind": item.evidence_kind.value,
-                "recovery_capability": item.recovery.value,
-                "logical_size_bytes": item.logical_size,
-                "allocated_size_bytes": item.allocated_size,
-                "reason": item.reason,
-                "tags": list(item.tags),
-                "observational_snapshot": {
-                    "valid_for_execution": False,
-                    "volume_serial": record.volume_serial,
-                    "file_id": record.file_id,
-                    "file_id_kind": record.file_id_kind,
-                    "creation_time_ns": record.creation_time_ns,
-                    "last_write_time_ns": record.last_write_time_ns,
-                },
-            }
-        )
-
-    timestamp = created_at or datetime.now(UTC)
-    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
-        raise ValueError("created_at must be timezone-aware")
-    return {
-        "schema_version": _PLAN_SCHEMA_VERSION,
-        "document_type": _PLAN_DOCUMENT_TYPE,
-        "execution_authority": "NONE",
-        "import_contract": "UNSUPPORTED",
-        "scan_complete": True,
-        "selection_origin": "EXPLICIT_LOCAL_USER_MARKING",
-        "default_selection_applied": False,
-        "created_at": timestamp.astimezone(UTC).isoformat().replace("+00:00", "Z"),
-        "warning": (
-            "Review export only. It grants no deletion, cleanup, command, elevation, "
-            "or replay authority. DevClean does not import this document for execution."
-        ),
-        "scan_scope": [str(path) for path in scan_roots],
-        "summary": {
-            "candidate_count": len(candidates),
-            "logical_size_bytes": logical_bytes,
-            "known_allocated_size_bytes": allocated_bytes,
-            "allocation_unknown_files": allocation_unknown,
-        },
-        "execution_actions": [],
-        "review_candidates": candidates,
+    try:
+        payload = json.loads(text)
+        session = str(payload["review_session_id"])
+        # "recommendations" is what the exported instructions ask for; some
+        # models answer with "responses" instead, and an answer that names its
+        # verdicts differently is still an answer the user paid for.
+        responses = payload.get("recommendations", payload.get("responses"))
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return {}
+    known = ai_sessions.recall_export(session)
+    if not known or not isinstance(responses, list):
+        return {}
+    recovered: dict[str, tuple[str, str]] = {}
+    allowed = {
+        AiRecommendation.KEEP.value,
+        AiRecommendation.RECOMMEND_RECYCLE.value,
+        AiRecommendation.UNSURE.value,
     }
+    for entry in responses:
+        if not isinstance(entry, dict):
+            continue
+        path = known.get(str(entry.get("candidate_id", "")))
+        verdict = str(entry.get("recommendation", ""))
+        if path and verdict in allowed:
+            recovered[path] = (verdict, str(entry.get("reason", ""))[:500])
+    return recovered
 
 
-def write_non_executable_review_plan(path: Path, plan: Mapping[str, object]) -> None:
-    """Publish a plan as a new local file without overwriting a target."""
+def _reason_of(error: BaseException) -> str:
+    """Name why one object could not be processed, in the user's terms."""
 
-    if plan.get("document_type") != _PLAN_DOCUMENT_TYPE:
-        raise ValueError("unexpected review document type")
-    if plan.get("execution_authority") != "NONE":
-        raise ValueError("review export must have zero execution authority")
-    if plan.get("import_contract") != "UNSUPPORTED":
-        raise ValueError("review export must not declare an import contract")
-    if plan.get("execution_actions") != []:
-        raise ValueError("review export cannot contain execution actions")
-    rendered = json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    write_report_stream(path, (rendered,))
+    winerror = getattr(error, "winerror", None)
+    if isinstance(error, FileNotFoundError) or winerror in {2, 3}:
+        return "扫描后已自行消失"
+    if isinstance(error, PermissionError) or winerror in {5, 32, 33}:
+        return "被程序占用或权限不足"
+    if isinstance(error, CleanupRefusal):
+        return "扫描后内容已改变，安全检查拒绝"
+    return f"其他（{type(error).__name__}）"
+
+
+def _format_bytes(value: int) -> str:
+    size = float(value)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
+def scan_targets(
+    known_roots: Sequence[KnownCleanupRoot],
+    drives: Sequence[Path] = (),
+    rules: UserRules | None = None,
+) -> tuple[Path, ...]:
+    """Return the configured profile, catalog, and additional scan roots.
+
+    Defaults cover every catalog root the machine actually has, plus the profile
+    so project build output is reachable.  User exclusions and additional roots
+    are applied, then the result is reduced to outermost paths so nothing is
+    walked twice.  Whole drives are deliberately not walked.
+    """
+
+    active_rules = rules or default_rules()
+    candidates: list[Path] = []
+    profile = os.environ.get("USERPROFILE")
+    if profile and active_rules.scan.include_user_profile:
+        candidates.append(Path(profile))
+    if active_rules.scan.include_known_cleanup_roots:
+        candidates.extend(root.path for root in known_roots)
+    candidates.extend(expanded_scan_paths(active_rules.scan.additional_paths))
+    excluded = tuple(
+        normalise_path(path)
+        for path in expanded_scan_paths(active_rules.scan.excluded_paths)
+    )
+    if drives:
+        allowed = {str(drive)[:2].casefold() for drive in drives}
+        candidates = [
+            path for path in candidates if str(path)[:2].casefold() in allowed
+        ]
+    resolved: list[Path] = []
+    for path in candidates:
+        normalized_text = normalise_path(path)
+        if any(
+            normalized_text == blocked
+            or normalized_text.startswith(blocked.rstrip(os.sep) + os.sep)
+            for blocked in excluded
+        ):
+            continue
+        try:
+            if not path.is_dir():
+                continue
+        except OSError:
+            continue
+        normalized = Path(os.path.normcase(os.path.normpath(os.path.abspath(path))))
+        if any(normalized.is_relative_to(kept) for kept in resolved):
+            continue
+        resolved = [kept for kept in resolved if not kept.is_relative_to(normalized)]
+        resolved.append(normalized)
+    return tuple(resolved)
 
 
 class DevCleanWindow:
-    """Native controlled-cleanup workbench with a read-only scan phase."""
+    """The whole product: a scan that starts itself and two lists."""
 
     def __init__(self, root: tk.Tk) -> None:
         self._root = root
-        self._root.title("DevClean · AI 与开发工具磁盘清理工作台")
-        self._root.minsize(1050, 700)
-        self._events: queue.Queue[tuple[str, object]] = queue.Queue()
-        self._state = WorkbenchState.READY
-        self._active_task = ""
-        self._scan_complete = False
-        self._session: TriageSession | None = None
-        self._scan_cancel: CancellationToken | None = None
-        self._duplicate_cancel: CancellationToken | None = None
-        self._last_scan_roots: tuple[Path, ...] = ()
-        self._last_scan_label = ""
+        self._events: Queue[tuple[str, Any]] = Queue()
         self._known_roots: tuple[KnownCleanupRoot, ...] = ()
-        self._all_items: tuple[TriageItem, ...] = ()
-        self._displayed_items: dict[str, TriageItem] = {}
-        self._marked_ids: set[str] = set()
-        self._ai_review_ids: set[str] = set()
-        self._ai_package: AiReviewPackage | None = None
-        self._ai_import: AiReviewImport | None = None
-        self._ai_recommendations: dict[str, tuple[AiRecommendation, str]] = {}
-        self._scan_session_id = ""
-        self._active_scan_token = ""
-        self._last_cleanup_results: tuple[CleanupExecutionResult, ...] = ()
-        self._incremental_session: IncrementalScanSession | None = None
-        self._quarantined_count = 0
+        self._session: TriageSession | None = None
+        self._cancel: CancellationToken | None = None
+        self._scan_token = ""
+        self._scan_session_id = uuid4().hex
 
-        self._root_path = tk.StringVar(value=str(Path.home()))
-        self._status = tk.StringVar(
-            value="请选择本地固定磁盘上的目录。扫描阶段不会修改任何文件。"
-        )
-        self._step_text = tk.StringVar(
-            value="1  扫描分类   →   2  选择   →   3  AI 复核   →   4  确认   →   5  删除验证"
-        )
-        self._safety_badge = tk.StringVar(value="扫描零副作用 · 删除需最终确认")
-        self._domain_filter = tk.StringVar(value=_FILTER_ALL)
-        self._lane_filter = tk.StringVar(value=_FILTER_ALL)
-        self._search_filter = tk.StringVar()
-        self._volume_note = tk.StringVar(value="完成扫描后显示所扫描驱动器的可用空间。")
-        self._insight_note = tk.StringVar()
-        self._display_cap_note = tk.StringVar()
-        self._total_card = tk.StringVar(value="0")
-        self._space_card = tk.StringVar(value="0 B")
-        self._eligible_card = tk.StringVar(value="0")
-        self._marked_card = tk.StringVar(value="0 项 · 0 B")
+        self._deletable: list[TriageItem] = []
+        self._unsure: list[TriageItem] = []
+        # Paths whose checkbox is ticked.  Only these are ever deleted.
+        self._checked: set[str] = set()
+        # Every package exported this session, so an answer can be imported
+        # whichever export it came from.
+        self._ai_packages: dict[str, AiReviewPackage] = {}
+        # Only paths an imported answer explicitly left UNSURE may enter the
+        # user's final-decision action.
+        self._ai_unsure_reasons: dict[str, str] = {}
+        self._rule_error = ""
+        try:
+            self._rules = load_rules()
+        except (OSError, RuleConfigError, UnicodeError) as error:
+            # Never overwrite a user-edited invalid file.  The editor can repair
+            # it; until then the packaged current configuration remains active.
+            self._rules = default_rules()
+            self._rule_error = str(error)
+        # Classification data is pinned to the scan that produced the rows.
+        # Editing thresholds later may change the next scan, never the meaning
+        # or execution recheck of an already displayed directory candidate.
+        self._scan_rules = self._rules
+        self._rule_editor: RuleEditor | None = None
+        self._drive_vars: dict[Path, tk.BooleanVar] = {}
+        self._buttons: dict[str, ttk.Button] = {}
+        # None, "scanning", or "deleting".  Every control consults this.
+        self._busy: str | None = None
 
-        self._result_tree: ttk.Treeview | None = None
-        self._category_tree: ttk.Treeview | None = None
-        self._directory_tree: ttk.Treeview | None = None
-        self._duplicates_tree: ttk.Treeview | None = None
-        self._details: ScrolledText | None = None
-        self._scan_button: ttk.Button | None = None
-        self._catalog_button: ttk.Button | None = None
-        self._rescan_button: ttk.Button | None = None
-        self._duplicate_button: ttk.Button | None = None
-        self._cancel_button: ttk.Button | None = None
-        self._mark_button: ttk.Button | None = None
-        self._ai_mark_button: ttk.Button | None = None
-        self._select_low_risk_button: ttk.Button | None = None
-        self._select_filtered_button: ttk.Button | None = None
-        self._clear_marks_button: ttk.Button | None = None
-        self._export_button: ttk.Button | None = None
-        self._import_ai_button: ttk.Button | None = None
-        self._adopt_ai_button: ttk.Button | None = None
-        self._execute_button: ttk.Button | None = None
-        self._recovery_button: ttk.Button | None = None
-        self._progress: ttk.Progressbar | None = None
+        self._status = tk.StringVar(value="勾选盘符后点「开始扫描」。")
+        self._deletable_total = tk.StringVar(value="—")
+        self._unsure_total = tk.StringVar(value="—")
 
-        # Compatibility for older smoke tests; all lanes share the unified table.
-        self._trees: dict[ReviewLane, ttk.Treeview] = {}
-
+        root.title("DevClean")
+        root.geometry("1120x680")
+        root.minsize(900, 560)
         self._build()
-        self._root.protocol("WM_DELETE_WINDOW", self._on_close)
-        self._set_state(WorkbenchState.READY)
-        self._root.after(80, self._drain_events)
-        self._root.after(150, self._start_recovery_reconciliation)
+        self._sync_buttons()
+        if self._rule_error:
+            self._status.set(f"规则文件需要修正：{self._rule_error}")
+        root.after(120, self._drain_events)
+
+    # ---- layout -------------------------------------------------------------
 
     def _configure_style(self) -> None:
-        self._root.configure(background="#f3f6fb")
         style = ttk.Style(self._root)
         if "clam" in style.theme_names():
             style.theme_use("clam")
-        style.configure("App.TFrame", background="#f3f6fb")
-        style.configure("Panel.TFrame", background="#ffffff")
-        style.configure("Panel.TLabelframe", background="#ffffff", borderwidth=1)
-        style.configure("Panel.TLabelframe.Label", background="#ffffff", foreground="#22324a")
-        style.configure("Title.TLabel", font=("Microsoft YaHei UI", 15, "bold"))
-        style.configure("Section.TLabel", font=("Microsoft YaHei UI", 10, "bold"))
-        style.configure("Muted.TLabel", foreground="#5c6b80")
-        style.configure("Primary.TButton", font=("Microsoft YaHei UI", 9, "bold"))
+        self._root.configure(background=_CANVAS)
+
+        style.configure("App.TFrame", background=_CANVAS)
+        style.configure("Card.TFrame", background=_SURFACE)
+        style.configure("Band.TFrame", background=_INK)
         style.configure(
-            "Danger.TButton",
-            font=("Microsoft YaHei UI", 9, "bold"),
-            foreground="#7f1d1d",
+            "Brand.TLabel",
+            background=_INK,
+            foreground="#ffffff",
+            font=("Segoe UI Semibold", 17),
         )
-        style.configure("Treeview", rowheight=27, font=("Microsoft YaHei UI", 9))
-        style.configure("Treeview.Heading", font=("Microsoft YaHei UI", 9, "bold"))
-
-    def _on_close(self) -> None:
-        if self._state is WorkbenchState.EXECUTING:
-            messagebox.showwarning(
-                "清理仍在执行",
-                "请等待当前清理或恢复动作完成。强制终止仍会由 SQLite 意图日志标记为"
-                "待复核，但当前窗口不会主动中断文件操作。",
-                parent=self._root,
-            )
-            return
-        if self._scan_cancel is not None:
-            self._scan_cancel.cancel()
-        if self._duplicate_cancel is not None:
-            self._duplicate_cancel.cancel()
-        session = self._incremental_session
-        if session is not None and self._state is not WorkbenchState.SCANNING:
-            session.close()
-        self._root.destroy()
-
-    @staticmethod
-    def _cleanup_journal_path() -> Path:
-        return data_dir() / "state" / "cleanup-intents-v1.db"
-
-    def _start_recovery_reconciliation(self) -> None:
-        """Observe unfinished durable actions at startup; never replay a mutation."""
-
-        path = self._cleanup_journal_path()
-        if not path.is_file():
-            return
-        threading.Thread(
-            target=self._recovery_reconciliation_worker,
-            args=(path,),
-            daemon=True,
-        ).start()
-
-    def _recovery_reconciliation_worker(self, path: Path) -> None:
-        try:
-            journal = CleanupJournal(path)
-            reconcile_unfinished_actions(journal)
-            unresolved = journal.unresolved_actions()
-            quarantined = sum(
-                action.state is ActionState.QUARANTINED for action in unresolved
-            )
-            indeterminate = sum(
-                action.state
-                in {
-                    ActionState.INTENT_RECORDED,
-                    ActionState.EXECUTING,
-                    ActionState.RECYCLE_PENDING,
-                    ActionState.PURGE_PENDING,
-                    ActionState.UNKNOWN,
-                    ActionState.RESTORE_INTENT,
-                    ActionState.RESTORING,
-                }
-                for action in unresolved
-            )
-        except Exception as error:
-            self._events.put(("recovery_error", str(error)))
-            return
-        self._events.put(("recovery_state", (quarantined, indeterminate)))
-
-    def _show_quarantine_manager(self) -> None:
-        if self._state not in {WorkbenchState.READY, WorkbenchState.REVIEW}:
-            return
-        path = self._cleanup_journal_path()
-        if not path.is_file():
-            messagebox.showinfo("DevClean 隔离区", "当前没有持久化的隔离记录。")
-            return
-        try:
-            journal = CleanupJournal(path)
-            actions = tuple(
-                action
-                for action in journal.unresolved_actions()
-                if action.state is ActionState.QUARANTINED
-            )
-        except Exception as error:
-            messagebox.showerror("无法读取隔离区", str(error))
-            return
-        self._quarantined_count = len(actions)
-        if not actions:
-            messagebox.showinfo(
-                "DevClean 隔离区",
-                "没有可证明仍在私有隔离区中的文件。PURGE_PENDING 或不确定动作不会自动恢复。",
-            )
-            return
-        preview = "\n".join(
-            f"• {action.source_path}（{_format_bytes(action.snapshot.logical_size)}）"
-            for action in actions[:12]
+        style.configure(
+            "Tagline.TLabel", background=_INK, foreground="#93a4c4", font=("Segoe UI", 9)
         )
-        if len(actions) > 12:
-            preview += f"\n…另有 {len(actions) - 12} 项"
-        total = sum(action.snapshot.logical_size for action in actions)
-        restore = messagebox.askyesno(
-            "恢复私有隔离文件",
-            (
-                f"发现 {len(actions)} 个可恢复隔离文件，共 {_format_bytes(total)}。\n\n"
-                f"{preview}\n\n"
-                "选择“是”将逐项恢复到原路径；若原路径已被占用，该项会拒绝覆盖。"
-            ),
-            icon=messagebox.WARNING,
+        style.configure(
+            "Drive.TCheckbutton",
+            background=_INK,
+            foreground="#d7e0f2",
+            font=("Segoe UI", 10),
         )
-        if not restore:
-            return
-        token = f"restore_{uuid4().hex}"
-        self._active_task = token
-        self._set_state(WorkbenchState.EXECUTING)
-        self._status.set("正在按持久化身份逐项恢复私有隔离文件；不会覆盖已存在的原路径…")
-        threading.Thread(
-            target=self._restore_quarantine_worker,
-            args=(token, path, tuple(action.action_id for action in actions)),
-            daemon=True,
-        ).start()
-
-    def _restore_quarantine_worker(
-        self, token: str, path: Path, action_ids: tuple[str, ...]
-    ) -> None:
-        restored: list[tuple[str, ActionState]] = []
-        try:
-            journal = CleanupJournal(path)
-            for action_id in action_ids:
-                restored.append(
-                    (action_id, restore_quarantined_action(journal, action_id))
-                )
-        except Exception as error:
-            self._events.put(("restore_error", (token, str(error), tuple(restored))))
-            return
-        self._events.put(("restore_finished", (token, tuple(restored))))
+        style.map(
+            "Drive.TCheckbutton",
+            background=[("active", _INK)],
+            foreground=[("active", "#ffffff")],
+        )
+        style.configure(
+            "Status.TLabel", background=_CANVAS, foreground="#5b6780", font=("Segoe UI", 9)
+        )
+        style.configure(
+            "CardTitle.TLabel",
+            background=_SURFACE,
+            foreground=_INK,
+            font=("Segoe UI Semibold", 11),
+        )
+        style.configure(
+            "Amount.TLabel",
+            background=_SURFACE,
+            foreground=_INK,
+            font=("Segoe UI Light", 26),
+        )
+        style.configure(
+            "Hint.TLabel", background=_SURFACE, foreground="#78849c", font=("Segoe UI", 9)
+        )
+        for name, tint in (("Go", _GREEN), ("Warn", _RED), ("Muted", "#5d6b85")):
+            style.configure(
+                f"{name}.TButton",
+                background=tint,
+                foreground="#ffffff",
+                font=("Segoe UI Semibold", 10),
+                borderwidth=0,
+                padding=(15, 9),
+            )
+            style.map(
+                f"{name}.TButton", background=[("active", tint), ("disabled", "#c3cad8")]
+            )
+        style.configure(
+            "Rows.Treeview",
+            background=_SURFACE,
+            fieldbackground=_SURFACE,
+            foreground="#243049",
+            borderwidth=0,
+            rowheight=27,
+            font=("Segoe UI", 9),
+        )
+        style.configure(
+            "Rows.Treeview.Heading",
+            background="#eef1f7",
+            foreground="#5b6780",
+            font=("Segoe UI", 9),
+            borderwidth=0,
+            padding=(8, 6),
+        )
+        style.map("Rows.Treeview.Heading", background=[("active", "#e5e9f2")])
+        style.layout("Rows.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
+        style.configure(
+            "Thin.Horizontal.TProgressbar",
+            background=_GREEN,
+            troughcolor="#33415c",
+            borderwidth=0,
+            thickness=5,
+        )
 
     def _build(self) -> None:
         self._configure_style()
-        app = ttk.Frame(self._root, style="App.TFrame", padding=(18, 16))
-        app.pack(fill=tk.BOTH, expand=True)
 
-        hero = tk.Frame(app, background="#15263f", padx=20, pady=10)
-        hero.pack(fill=tk.X)
-        hero_left = tk.Frame(hero, background="#15263f")
-        hero_left.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        tk.Label(
-            hero_left,
-            text="DevClean",
-            background="#15263f",
-            foreground="#ffffff",
-            font=("Microsoft YaHei UI", 17, "bold"),
-        ).pack(anchor=tk.W)
-        tk.Label(
-            hero_left,
-            text="扫描分类、AI 复核、人工确认与可审计删除",
-            background="#15263f",
-            foreground="#b9c8dc",
-            font=("Microsoft YaHei UI", 10),
-        ).pack(anchor=tk.W, pady=(2, 0))
-        tk.Label(
-            hero,
-            textvariable=self._safety_badge,
-            background="#d7f5e9",
-            foreground="#0b6b53",
-            padx=12,
-            pady=6,
-            font=("Microsoft YaHei UI", 9, "bold"),
-        ).pack(side=tk.RIGHT)
+        band = ttk.Frame(self._root, style="Band.TFrame", padding=(20, 14))
+        band.pack(fill=tk.X)
+        titles = ttk.Frame(band, style="Band.TFrame")
+        titles.pack(side=tk.LEFT)
+        ttk.Label(titles, text="DevClean", style="Brand.TLabel").pack(anchor=tk.W)
+        ttk.Label(
+            titles,
+            text="开发工具与 AI 缓存清理 · 扫描与处置规则可编辑",
+            style="Tagline.TLabel",
+        ).pack(anchor=tk.W, pady=(1, 0))
 
-        stepper = tk.Label(
-            app,
-            textvariable=self._step_text,
-            background="#e7eef9",
-            foreground="#24476f",
-            padx=14,
-            pady=6,
-            anchor=tk.W,
-            font=("Microsoft YaHei UI", 9, "bold"),
+        picker = ttk.Frame(band, style="Band.TFrame")
+        picker.pack(side=tk.RIGHT)
+        self._rescan = ttk.Button(
+            picker, text="开始扫描", style="Go.TButton", command=self._start_scan
         )
-        stepper.pack(fill=tk.X, pady=(10, 10))
+        self._rescan.pack(side=tk.RIGHT, padx=(14, 0))
+        self._rule_button = ttk.Button(
+            picker,
+            text="规则设置",
+            style="Muted.TButton",
+            command=self._edit_rules,
+        )
+        self._rule_button.pack(side=tk.RIGHT, padx=(8, 0))
+        preferred = _system_drive()
+        for drive in reversed(fixed_volume_roots()):
+            state = tk.BooleanVar(value=drive == preferred)
+            self._drive_vars[drive] = state
+            ttk.Checkbutton(
+                picker, text=str(drive)[:2], variable=state, style="Drive.TCheckbutton"
+            ).pack(side=tk.RIGHT, padx=(8, 0))
+        ttk.Label(picker, text="盘符", style="Tagline.TLabel").pack(
+            side=tk.RIGHT, padx=(0, 4)
+        )
 
-        controls = ttk.LabelFrame(
-            app, text="扫描范围", style="Panel.TLabelframe", padding=(12, 7)
+        self._progress = ttk.Progressbar(
+            self._root, style="Thin.Horizontal.TProgressbar", mode="indeterminate"
         )
-        controls.pack(fill=tk.X)
-        ttk.Label(controls, text="目录").grid(row=0, column=0, sticky=tk.W)
-        ttk.Entry(controls, textvariable=self._root_path).grid(
-            row=0, column=1, sticky=tk.EW, padx=(8, 8)
-        )
-        controls.columnconfigure(1, weight=1)
-        ttk.Button(controls, text="选择…", command=self._choose_root).grid(row=0, column=2)
-        scan_actions = ttk.Frame(controls, style="Panel.TFrame")
-        scan_actions.grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(6, 0))
-        self._scan_button = ttk.Button(
-            scan_actions,
-            text="开始只读扫描",
-            style="Primary.TButton",
-            command=self._start_scan,
-        )
-        self._scan_button.pack(side=tk.LEFT)
-        self._catalog_button = ttk.Button(
-            scan_actions, text="盘点常见缓存", command=self._start_known_scan
-        )
-        self._catalog_button.pack(side=tk.LEFT, padx=(8, 0))
-        self._rescan_button = ttk.Button(
-            scan_actions, text="重新全量扫描", command=self._rescan_last_scan
-        )
-        self._rescan_button.pack(side=tk.LEFT, padx=(8, 0))
-        self._cancel_button = ttk.Button(scan_actions, text="停止", command=self._cancel_scan)
-        self._cancel_button.pack(side=tk.LEFT, padx=(8, 0))
+        self._progress.pack(fill=tk.X)
 
-        safety = tk.Label(
-            app,
-            text=(
-                "安全边界：扫描、分类和 AI 导入阶段只读；扫描结束默认零选择；"
-                "AI 只能给当前候选提建议；"
-                "用户采用建议并最终确认后，执行器仍会复验批准根与文件身份。"
+        outer = ttk.Frame(self._root, style="App.TFrame", padding=(16, 12, 16, 14))
+        outer.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(outer, textvariable=self._status, style="Status.TLabel").pack(
+            anchor=tk.W, pady=(0, 10)
+        )
+
+        buckets = ttk.Frame(outer, style="App.TFrame")
+        buckets.pack(fill=tk.BOTH, expand=True)
+        buckets.columnconfigure(0, weight=1, uniform="b")
+        buckets.columnconfigure(1, weight=1, uniform="b")
+        buckets.rowconfigure(0, weight=1)
+
+        self._deletable_tree = self._build_bucket(
+            buckets,
+            column=0,
+            accent=_GREEN,
+            title="可以删除",
+            hint="工具已确定是缓存或可再生产物。默认全部勾选，点方框可单独取消。",
+            total=self._deletable_total,
+            buttons=(
+                ("all", "全选", "Muted", lambda: self._check_all(True)),
+                ("none", "全不选", "Muted", lambda: self._check_all(False)),
+                (
+                    "recycle",
+                    "清理（进回收站）",
+                    "Go",
+                    lambda: self._delete(irreversible=False),
+                ),
+                ("purge", "彻底删除", "Warn", lambda: self._delete(irreversible=True)),
             ),
-            background="#fff8dc",
-            foreground="#6f5310",
-            padx=12,
-            pady=6,
-            anchor=tk.W,
-            justify=tk.LEFT,
-            wraplength=960,
+            checkable=True,
         )
-        safety.pack(fill=tk.X, pady=(8, 8))
-        safety.bind(
-            "<Configure>",
-            lambda event: safety.configure(wraplength=max(500, event.width - 32)),
-        )
-
-        cards = ttk.Frame(app, style="App.TFrame")
-        cards.pack(fill=tk.X, pady=(0, 8))
-        for column, (title, variable, accent) in enumerate(
-            (
-                ("扫描文件", self._total_card, "#2b6cb0"),
-                ("已分配空间", self._space_card, "#6b46c1"),
-                ("可处理候选", self._eligible_card, "#0f766e"),
-                ("待清理选择", self._marked_card, "#b45309"),
-            )
-        ):
-            card = tk.Frame(
-                cards,
-                background="#ffffff",
-                highlightthickness=1,
-                highlightbackground="#dce4ef",
-            )
-            card.grid(row=0, column=column, sticky=tk.EW, padx=(0 if column == 0 else 6, 0))
-            cards.columnconfigure(column, weight=1)
-            tk.Frame(card, background=accent, height=4).pack(fill=tk.X)
-            tk.Label(
-                card,
-                text=title,
-                background="#ffffff",
-                foreground="#64748b",
-                font=("Microsoft YaHei UI", 9),
-            ).pack(anchor=tk.W, padx=12, pady=(6, 0))
-            tk.Label(
-                card,
-                textvariable=variable,
-                background="#ffffff",
-                foreground="#172033",
-                font=("Microsoft YaHei UI", 15, "bold"),
-            ).pack(anchor=tk.W, padx=12, pady=(1, 6))
-
-        notebook = ttk.Notebook(app)
-        self._build_results_tab(notebook)
-        self._build_overview_tab(notebook)
-        self._build_duplicates_tab(notebook)
-
-        actions = ttk.Frame(app, style="App.TFrame")
-        actions.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
-        review_actions = ttk.Frame(actions, style="App.TFrame")
-        review_actions.pack(fill=tk.X)
-        execution_actions = ttk.Frame(actions, style="App.TFrame")
-        execution_actions.pack(fill=tk.X, pady=(6, 0))
-        self._mark_button = ttk.Button(
-            review_actions,
-            text="标记清理",
-            command=self._toggle_selected_mark,
-        )
-        self._mark_button.pack(side=tk.LEFT)
-        self._ai_mark_button = ttk.Button(
-            review_actions, text="标记给 AI", command=self._toggle_selected_ai_review
-        )
-        self._ai_mark_button.pack(side=tk.LEFT, padx=(6, 0))
-        self._select_low_risk_button = ttk.Button(
-            review_actions, text="选择低风险项", command=self._select_low_risk_candidates
-        )
-        self._select_low_risk_button.pack(side=tk.LEFT, padx=(6, 0))
-        self._select_filtered_button = ttk.Button(
-            review_actions,
-            text="选择当前筛选",
-            command=self._select_filtered_candidates,
-        )
-        self._select_filtered_button.pack(side=tk.LEFT, padx=(6, 0))
-        self._clear_marks_button = ttk.Button(
-            review_actions, text="清空选择", command=self._clear_marks
-        )
-        self._clear_marks_button.pack(side=tk.LEFT, padx=(6, 0))
-        self._export_button = ttk.Button(
-            review_actions,
-            text="导出 AI 复核包…",
-            command=self._export_ai_review,
-        )
-        self._export_button.pack(side=tk.LEFT, padx=(6, 0))
-        self._import_ai_button = ttk.Button(
-            review_actions, text="导入 AI 建议…", command=self._import_ai_response
-        )
-        self._import_ai_button.pack(side=tk.LEFT, padx=(6, 0))
-        self._adopt_ai_button = ttk.Button(
-            review_actions, text="采用 AI 建议", command=self._adopt_ai_recommendations
-        )
-        self._adopt_ai_button.pack(side=tk.LEFT, padx=(6, 0))
-        self._execute_button = ttk.Button(
-            execution_actions,
-            text="最终确认并删除…",
-            style="Primary.TButton",
-            command=self._confirm_and_execute_cleanup,
-        )
-        self._execute_button.pack(side=tk.RIGHT)
-        self._duplicate_button = ttk.Button(
-            execution_actions, text="只读重复文件分析", command=self._start_duplicate_scan
-        )
-        self._duplicate_button.pack(side=tk.LEFT)
-        self._recovery_button = ttk.Button(
-            execution_actions,
-            text="隔离区 / 恢复…",
-            command=self._show_quarantine_manager,
-        )
-        self._recovery_button.pack(side=tk.LEFT, padx=(6, 0))
-
-        footer = ttk.Frame(app, style="App.TFrame")
-        footer.pack(side=tk.BOTTOM, fill=tk.X, pady=(9, 0))
-        self._progress = ttk.Progressbar(footer, mode="indeterminate", length=170)
-        self._progress.pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Label(
-            footer,
-            textvariable=self._status,
-            style="Muted.TLabel",
-            wraplength=1000,
-        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        # Pack the elastic notebook last so the fixed review actions and status
-        # remain reachable on a 700/800 px-tall display.  Packing it earlier lets
-        # its large tab contents consume the allocation and clips the controls.
-        notebook.pack(fill=tk.BOTH, expand=True)
-
-    def _build_results_tab(self, notebook: ttk.Notebook) -> None:
-        frame = ttk.Frame(notebook, style="Panel.TFrame", padding=10)
-        notebook.add(frame, text="统一复核结果")
-        filters = ttk.Frame(frame, style="Panel.TFrame")
-        filters.pack(fill=tk.X, pady=(0, 8))
-        ttk.Label(filters, text="来源域").pack(side=tk.LEFT)
-        ttk.Combobox(
-            filters,
-            textvariable=self._domain_filter,
-            values=(_FILTER_ALL, *(_DOMAIN_TITLES[value] for value in SourceDomain)),
-            state="readonly",
-            width=22,
-        ).pack(side=tk.LEFT, padx=(6, 12))
-        ttk.Label(filters, text="复核队列").pack(side=tk.LEFT)
-        ttk.Combobox(
-            filters,
-            textvariable=self._lane_filter,
-            values=(_FILTER_ALL, *(_LANE_TITLES[value] for value in ReviewLane)),
-            state="readonly",
-            width=16,
-        ).pack(side=tk.LEFT, padx=(6, 12))
-        ttk.Label(filters, text="搜索").pack(side=tk.LEFT)
-        search = ttk.Entry(filters, textvariable=self._search_filter, width=34)
-        search.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 8))
-        search.bind("<Return>", lambda _event: self._apply_filters())
-        ttk.Button(filters, text="应用筛选", command=self._apply_filters).pack(side=tk.LEFT)
-        ttk.Button(filters, text="清除", command=self._clear_filters).pack(
-            side=tk.LEFT, padx=(6, 0)
-        )
-        ttk.Label(
-            frame,
-            textvariable=self._display_cap_note,
-            style="Muted.TLabel",
-            wraplength=1200,
-        ).pack(anchor=tk.W, pady=(0, 6))
-
-        # Evidence details live beside the table.  A vertical split caused the
-        # result rows to collapse on common 125%/150% DPI 720--800 px displays.
-        pane = ttk.Panedwindow(frame, orient=tk.HORIZONTAL)
-        pane.pack(fill=tk.BOTH, expand=True)
-        table_frame = ttk.Frame(pane, style="Panel.TFrame")
-        detail_frame = ttk.Frame(pane, style="Panel.TFrame")
-        pane.add(table_frame, weight=4)
-        pane.add(detail_frame, weight=1)
-
-        columns = (
-            "marked",
-            "source",
-            "category",
-            "lane",
-            "execution",
-            "ai",
-            "risk",
-            "evidence",
-            "recovery",
-            "size",
-            "reason",
-            "path",
-        )
-        tree = ttk.Treeview(table_frame, columns=columns, show="headings", selectmode="browse")
-        headings = {
-            "marked": "计划",
-            "source": "来源域",
-            "category": "细分类",
-            "lane": "复核队列",
-            "execution": "执行上限",
-            "ai": "AI 建议",
-            "risk": "风险",
-            "evidence": "证据",
-            "recovery": "恢复能力",
-            "size": "逻辑大小",
-            "reason": "判定原因",
-            "path": "路径",
-        }
-        widths = {
-            "marked": 58,
-            "source": 170,
-            "category": 135,
-            "lane": 115,
-            "execution": 155,
-            "ai": 105,
-            "risk": 72,
-            "evidence": 140,
-            "recovery": 135,
-            "size": 95,
-            "reason": 300,
-            "path": 520,
-        }
-        for column in columns:
-            tree.heading(column, text=headings[column])
-            tree.column(
-                column,
-                width=widths[column],
-                minwidth=50,
-                stretch=column in {"reason", "path"},
-                anchor=tk.E if column == "size" else tk.W,
-            )
-        vertical = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=tree.yview)
-        horizontal = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=tree.xview)
-        tree.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
-        tree.grid(row=0, column=0, sticky=tk.NSEW)
-        vertical.grid(row=0, column=1, sticky=tk.NS)
-        horizontal.grid(row=1, column=0, sticky=tk.EW)
-        table_frame.rowconfigure(0, weight=1)
-        table_frame.columnconfigure(0, weight=1)
-        tree.tag_configure("marked", background="#e5f5ef")
-        tree.tag_configure("ai_review", background="#eef2ff")
-        tree.tag_configure("protected", background="#f5e9eb", foreground="#7f1d1d")
-        tree.tag_configure("high", background="#fff6e5")
-        tree.bind("<<TreeviewSelect>>", self._show_selected_details)
-        tree.bind("<Double-1>", self._on_result_double_click)
-        self._result_tree = tree
-        self._trees = {lane: tree for lane in ReviewLane}
-
-        ttk.Label(detail_frame, text="选中项证据详情", style="Section.TLabel").pack(
-            anchor=tk.W, padx=(8, 0), pady=(0, 4)
-        )
-        details = ScrolledText(
-            detail_frame,
-            height=5,
-            wrap=tk.WORD,
-            borderwidth=1,
-            relief=tk.SOLID,
-            font=("Microsoft YaHei UI", 9),
-        )
-        details.pack(fill=tk.BOTH, expand=True, padx=(8, 0))
-        details.configure(state=tk.DISABLED)
-        self._details = details
-
-    def _build_overview_tab(self, notebook: ttk.Notebook) -> None:
-        frame = ttk.Frame(notebook, style="Panel.TFrame", padding=10)
-        notebook.add(frame, text="空间概览")
-        ttk.Label(frame, textvariable=self._volume_note, style="Muted.TLabel").pack(
-            anchor=tk.W, pady=(0, 8)
-        )
-        ttk.Label(frame, text="按来源域与细分类", style="Section.TLabel").pack(anchor=tk.W)
-        self._category_tree = ttk.Treeview(
-            frame,
-            columns=("source", "category", "files", "logical", "allocated"),
-            show="headings",
-            height=8,
-        )
-        for column, title, width in (
-            ("source", "来源域", 240),
-            ("category", "细分类", 180),
-            ("files", "文件数", 100),
-            ("logical", "逻辑大小", 130),
-            ("allocated", "已分配空间", 130),
-        ):
-            self._category_tree.heading(column, text=title)
-            self._category_tree.column(
-                column,
-                width=width,
-                anchor=tk.E if column in {"files", "logical", "allocated"} else tk.W,
-            )
-        self._category_tree.pack(fill=tk.X, pady=(5, 12))
-        ttk.Label(frame, text="扫描根目录下占用最多的位置", style="Section.TLabel").pack(
-            anchor=tk.W
-        )
-        self._directory_tree = ttk.Treeview(
-            frame, columns=("path", "files", "logical", "allocated"), show="headings"
-        )
-        for column, title, width in (
-            ("path", "目录", 700),
-            ("files", "文件数", 100),
-            ("logical", "逻辑大小", 130),
-            ("allocated", "已分配空间", 130),
-        ):
-            self._directory_tree.heading(column, text=title)
-            self._directory_tree.column(
-                column, width=width, anchor=tk.E if column != "path" else tk.W
-            )
-        self._directory_tree.pack(fill=tk.BOTH, expand=True, pady=(5, 4))
-        ttk.Label(frame, textvariable=self._insight_note, style="Muted.TLabel").pack(anchor=tk.W)
-
-    def _build_duplicates_tab(self, notebook: ttk.Notebook) -> None:
-        frame = ttk.Frame(notebook, style="Panel.TFrame", padding=10)
-        notebook.add(frame, text="重复文件（只读）")
-        ttk.Label(
-            frame,
-            text=(
-                "独立只读分析：仅对至少 1 MiB 的稳定普通文件计算 SHA-256。每个重复组完整展示，"
-                "不会指定正本、不会标记副本，也不会把结果自动加入复核计划。"
+        self._unsure_tree = self._build_bucket(
+            buckets,
+            column=1,
+            accent=_AMBER,
+            title="不确定，交 AI 判断",
+            hint=(
+                "工具认不出这些是什么。导回结果后可删的会移到左边；"
+                "AI 仍不确定的，选中后由你最后决定。"
             ),
-            wraplength=1080,
-            style="Muted.TLabel",
-        ).pack(fill=tk.X, pady=(0, 8))
+            total=self._unsure_total,
+            buttons=(
+                ("export", "导出给 AI", "Muted", self._export_for_ai),
+                ("import", "导入结果", "Muted", self._import_from_ai),
+                ("decide", "我来决定…", "Muted", self._decide_ai_unsure),
+                ("forget", "清空判决记录", "Muted", self._forget_verdicts),
+            ),
+        )
+        self._unsure_tree.bind("<<TreeviewSelect>>", lambda _event: self._sync_buttons())
+
+    def _build_bucket(
+        self,
+        parent: ttk.Frame,
+        *,
+        column: int,
+        accent: str,
+        title: str,
+        hint: str,
+        total: tk.StringVar,
+        buttons: tuple[tuple[str, str, str, Any], ...],
+        checkable: bool = False,
+    ) -> ttk.Treeview:
+        shell = tk.Frame(parent, background=_SURFACE, highlightthickness=0)
+        shell.grid(
+            row=0, column=column, sticky="nsew", padx=(0, 7) if column == 0 else (7, 0)
+        )
+        shell.rowconfigure(1, weight=1)
+        shell.columnconfigure(1, weight=1)
+        # A 3px colour bar down the left edge is what separates the two cards at a
+        # glance; ttk offers no border colour worth using.
+        tk.Frame(shell, background=accent, width=3).grid(
+            row=0, column=0, rowspan=3, sticky="ns"
+        )
+
+        head = ttk.Frame(shell, style="Card.TFrame", padding=(14, 12, 14, 8))
+        head.grid(row=0, column=1, sticky="ew")
+        ttk.Label(head, text=title, style="CardTitle.TLabel").pack(anchor=tk.W)
+        ttk.Label(head, textvariable=total, style="Amount.TLabel").pack(anchor=tk.W)
+        ttk.Label(head, text=hint, style="Hint.TLabel", wraplength=430).pack(
+            anchor=tk.W, pady=(3, 0)
+        )
+
+        holder = ttk.Frame(shell, style="Card.TFrame", padding=(14, 0, 14, 0))
+        holder.grid(row=1, column=1, sticky="nsew")
+        holder.rowconfigure(0, weight=1)
+        holder.columnconfigure(0, weight=1)
         tree = ttk.Treeview(
-            frame,
-            columns=("copies", "file_size", "duplicate_bytes", "digest", "path"),
-            show="tree headings",
+            holder,
+            columns=("check", "size", "path"),
+            show="headings",
+            style="Rows.Treeview",
+            height=15,
         )
-        tree.heading("#0", text="重复组 / 文件")
-        tree.column("#0", width=170)
-        for column, title, width in (
-            ("copies", "文件数", 80),
-            ("file_size", "单文件大小", 120),
-            ("duplicate_bytes", "理论重复量（非计划）", 160),
-            ("digest", "SHA-256", 190),
-            ("path", "路径 / 说明", 680),
-        ):
-            tree.heading(column, text=title)
-            tree.column(
-                column,
-                width=width,
-                anchor=tk.E if column in {"copies", "file_size", "duplicate_bytes"} else tk.W,
-            )
-        tree.pack(fill=tk.BOTH, expand=True)
-        self._duplicates_tree = tree
+        tree.heading("check", text="", anchor=tk.CENTER)
+        tree.heading("size", text="大小", anchor=tk.E)
+        tree.heading("path", text="位置", anchor=tk.W)
+        tree.column("check", width=32, anchor=tk.CENTER, stretch=False)
+        tree.column("size", width=86, anchor=tk.E, stretch=False)
+        tree.column("path", width=400, anchor=tk.W)
+        tree.tag_configure("odd", background="#fafbfe")
+        tree.grid(row=0, column=0, sticky="nsew")
+        bar = ttk.Scrollbar(holder, orient=tk.VERTICAL, command=tree.yview)
+        tree.configure(yscrollcommand=bar.set)
+        bar.grid(row=0, column=1, sticky="ns")
+        if checkable:
+            # ttk has no checkbox cell, so the first column draws one and a click
+            # inside that column toggles it.  Clicking anywhere else just selects
+            # the row, which never deletes anything on its own.
+            tree.bind("<Button-1>", self._on_row_click)
 
-    def _set_state(self, state: WorkbenchState) -> None:
-        self._state = state
-        scanning = state is WorkbenchState.SCANNING
-        executing = state is WorkbenchState.EXECUTING
-        busy = scanning or executing
-        reviewing = state is WorkbenchState.REVIEW and self._scan_complete
-        for button in (
-            self._scan_button,
-            self._catalog_button,
-            self._rescan_button,
-            self._duplicate_button,
-        ):
-            if button is not None:
-                button.configure(state=tk.DISABLED if busy else tk.NORMAL)
-        if self._rescan_button is not None and not self._last_scan_roots:
-            self._rescan_button.configure(state=tk.DISABLED)
-        if self._rescan_button is not None:
-            incremental_ready = bool(
-                self._incremental_session is not None
-                and self._incremental_session.has_baseline
-                and self._incremental_session.incremental_ready
+        actions = ttk.Frame(shell, style="Card.TFrame", padding=(14, 12, 14, 14))
+        actions.grid(row=2, column=1, sticky="ew")
+        for key, label, kind, command in buttons:
+            button = ttk.Button(
+                actions, text=label, style=f"{kind}.TButton", command=command
             )
-            self._rescan_button.configure(
-                text=("同会话增量刷新" if incremental_ready else "重新全量扫描")
-            )
-        if self._duplicate_button is not None and not reviewing:
-            self._duplicate_button.configure(state=tk.DISABLED)
-        if self._cancel_button is not None:
-            self._cancel_button.configure(state=tk.NORMAL if scanning else tk.DISABLED)
-        if self._progress is not None:
-            if busy:
-                self._progress.start(12)
-            else:
-                self._progress.stop()
-        if scanning:
-            self._step_text.set(
-                "1  扫描分类中   →   2  选择（锁定）   →   3  AI（锁定）"
-                "   →   4  确认   →   5  删除"
-            )
-            self._safety_badge.set("只读扫描中 · 操作锁定")
-        elif executing:
-            self._step_text.set(
-                "1  已扫描   →   2  已选择   →   3  已复核   →   4  已确认   →   5  执行验证中"
-            )
-            self._safety_badge.set("删除执行中 · 计划已锁定")
-        elif reviewing:
-            self._step_text.set(
-                "1  扫描完成   →   2  选择   →   3  可选 AI 复核   →   "
-                "4  最终确认   →   5  删除验证"
-            )
-            self._safety_badge.set("等待选择 · 默认零选择")
-        else:
-            self._step_text.set(
-                "1  扫描分类   →   2  选择   →   3  可选 AI 复核   →   4  确认   →   5  删除验证"
-            )
-            self._safety_badge.set("扫描零副作用 · 删除需最终确认")
-        self._refresh_action_states()
+            button.pack(side=tk.LEFT, padx=(0, 8))
+            self._buttons[key] = button
+        return tree
 
-    def _refresh_action_states(self) -> None:
-        reviewing = self._state is WorkbenchState.REVIEW and self._scan_complete
-        selected_item = self._selected_item()
-        can_mark = (
-            reviewing
-            and selected_item is not None
-            and is_direct_cleanup_eligible(selected_item)
-        )
-        if self._mark_button is not None:
-            self._mark_button.configure(state=tk.NORMAL if can_mark else tk.DISABLED)
-        if self._ai_mark_button is not None:
-            self._ai_mark_button.configure(
-                state=(
-                    tk.NORMAL
-                    if reviewing
-                    and selected_item is not None
-                    and is_ai_review_eligible(selected_item)
-                    else tk.DISABLED
-                )
-            )
-        if self._select_low_risk_button is not None:
-            self._select_low_risk_button.configure(
-                state=(
-                    tk.NORMAL
-                    if reviewing
-                    and any(is_low_risk_cleanup_eligible(item) for item in self._all_items)
-                    else tk.DISABLED
-                )
-            )
-        if self._select_filtered_button is not None:
-            self._select_filtered_button.configure(
-                state=(
-                    tk.NORMAL
-                    if reviewing
-                    and any(
-                        is_direct_cleanup_eligible(item) and self._matches_filters(item)
-                        for item in self._all_items
-                    )
-                    else tk.DISABLED
-                )
-            )
-        if self._clear_marks_button is not None:
-            self._clear_marks_button.configure(
-                state=(
-                    tk.NORMAL
-                    if reviewing and (self._marked_ids or self._ai_review_ids)
-                    else tk.DISABLED
-                )
-            )
-        if self._export_button is not None:
-            self._export_button.configure(
-                state=tk.NORMAL if reviewing and self._ai_review_ids else tk.DISABLED
-            )
-        if self._import_ai_button is not None:
-            self._import_ai_button.configure(
-                state=tk.NORMAL if reviewing and self._ai_package is not None else tk.DISABLED
-            )
-        if self._adopt_ai_button is not None:
-            has_recommendation = any(
-                recommendation is AiRecommendation.RECOMMEND_RECYCLE
-                for recommendation, _reason in self._ai_recommendations.values()
-            )
-            self._adopt_ai_button.configure(
-                state=tk.NORMAL if reviewing and has_recommendation else tk.DISABLED
-            )
-        if self._execute_button is not None:
-            self._execute_button.configure(
-                state=tk.NORMAL if reviewing and self._marked_ids else tk.DISABLED
-            )
-        if self._recovery_button is not None:
-            self._recovery_button.configure(
-                state=(
-                    tk.NORMAL
-                    if self._state in {WorkbenchState.READY, WorkbenchState.REVIEW}
-                    else tk.DISABLED
-                )
-            )
+    def _sync_buttons(self) -> None:
+        """Enable exactly the actions that are valid right now.
 
-    def _choose_root(self) -> None:
-        selected = filedialog.askdirectory(initialdir=self._root_path.get() or str(Path.home()))
-        if selected:
-            self._root_path.set(selected)
+        Scanning and deleting are mutually exclusive, and an action with nothing
+        to act on is disabled rather than left clickable -- a second click during
+        a long delete used to start a second pass over rows the first had already
+        removed.
+        """
+
+        busy = self._busy is not None
+        ticked = len(self._selected_items())
+        ai_unsure_selected = len(self._selected_ai_unsure_items())
+        wanted = {
+            "scan": not busy,
+            "all": not busy and bool(self._deletable),
+            "none": not busy and bool(self._checked),
+            "recycle": not busy and ticked > 0,
+            "purge": not busy and ticked > 0,
+            "export": not busy and bool(self._unsure),
+            # Import also supports an answer from before a restart through its
+            # persisted candidate-id/path session index, so it must not depend on an
+            # in-memory package from this process.
+            "import": not busy,
+            "decide": not busy and ai_unsure_selected > 0,
+            "forget": not busy and self._rules.ai_rule_count > 0,
+        }
+        self._rescan.configure(state=tk.NORMAL if wanted["scan"] else tk.DISABLED)
+        self._rule_button.configure(state=tk.NORMAL if not busy else tk.DISABLED)
+        for key, button in self._buttons.items():
+            button.configure(
+                state=tk.NORMAL if wanted.get(key, not busy) else tk.DISABLED
+            )
+        for state in self._drive_vars.values():
+            del state  # checkbuttons stay usable; the scan button is the gate
+
+    # ---- scan ---------------------------------------------------------------
 
     def _start_scan(self) -> None:
-        root = Path(self._root_path.get()).expanduser()
-        if not root.is_dir():
-            messagebox.showerror("DevClean", "请选择一个存在的目录。")
+        try:
+            self._rules = load_rules()
+        except (OSError, RuleConfigError, UnicodeError) as error:
+            messagebox.showerror(
+                "规则文件有误",
+                f"{error}\n\n请点击“规则设置”修正后再扫描。",
+            )
             return
-        if not is_local_fixed_path(root):
-            messagebox.showerror("DevClean", "只允许扫描本地固定磁盘且不经过重解析点的目录。")
+        drives = tuple(
+            drive for drive, state in self._drive_vars.items() if state.get()
+        )
+        if not drives:
+            messagebox.showinfo("DevClean", "请先勾选至少一个盘符。")
             return
-        self._begin_scan((root,), scan_label="所选目录")
-
-    def _start_known_scan(self) -> None:
-        known_roots = discover_known_cleanup_roots()
-        roots = tuple(item.path for item in known_roots)
+        if self._cancel is not None and not self._cancel.is_cancelled():
+            self._cancel.cancel()
+        self._scan_token = uuid4().hex
+        self._scan_session_id = uuid4().hex
+        self._cancel = CancellationToken()
+        self._deletable.clear()
+        self._unsure.clear()
+        self._checked.clear()
+        self._ai_unsure_reasons.clear()
+        # Completed exports remain recoverable from the bounded session index.
+        # Do not retain every old package and all of its TriageItems in memory
+        # across scans.
+        self._ai_packages.clear()
+        self._deletable_tree.delete(*self._deletable_tree.get_children())
+        self._unsure_tree.delete(*self._unsure_tree.get_children())
+        self._deletable_total.set("—")
+        self._unsure_total.set("—")
+        self._busy = "scanning"
+        self._sync_buttons()
+        self._progress.start(60)
+        self._status.set("正在扫描…")
+        self._scan_rules = self._rules
+        self._known_roots = discover_known_cleanup_roots(self._scan_rules.scan)
+        roots = scan_targets(self._known_roots, drives, self._scan_rules)
         if not roots:
-            messagebox.showinfo("DevClean", "没有发现可盘点的本地常见缓存目录。")
+            self._progress.stop()
+            self._busy = None
+            self._sync_buttons()
+            self._status.set("所选盘符上没有已知的可清理位置。")
             return
-        self._begin_scan(roots, scan_label=f"{len(roots)} 个常见缓存目录")
-
-    def _rescan_last_scan(self) -> None:
-        if not self._last_scan_roots:
-            messagebox.showinfo("DevClean", "还没有可重新扫描的范围。")
-            return
-        if (
-            self._incremental_session is not None
-            and self._incremental_session.has_baseline
-            and self._incremental_session.incremental_ready
-        ):
-            self._begin_incremental_refresh(scan_label=f"增量刷新：{self._last_scan_label}")
-            return
-        self._begin_scan(
-            self._last_scan_roots,
-            scan_label=f"重新全量扫描：{self._last_scan_label}",
-        )
-
-    def _begin_scan(self, roots: tuple[Path, ...], *, scan_label: str) -> None:
-        if self._incremental_session is not None:
-            self._incremental_session.close()
-        incremental_session = IncrementalScanSession(
-            roots,
-            ScanOptions(include_directories=False),
-        )
-        self._incremental_session = incremental_session
-        scan_token = f"scan_{uuid4().hex}"
-        self._active_scan_token = scan_token
-        self._scan_session_id = ""
-        self._scan_complete = False
-        self._session = None
-        self._all_items = ()
-        self._displayed_items.clear()
-        self._marked_ids.clear()
-        self._ai_review_ids.clear()
-        self._ai_package = None
-        self._ai_import = None
-        self._ai_recommendations.clear()
-        self._clear_result_views()
-        self._last_scan_roots = roots
-        self._last_scan_label = scan_label
-        self._known_roots = discover_known_cleanup_roots()
-        cancel = CancellationToken()
-        self._scan_cancel = cancel
-        self._active_task = "scan"
-        self._set_state(WorkbenchState.SCANNING)
-        self._status.set(
-            f"正在只读扫描{scan_label}；不会删除、移动、清理、调用 AI 或执行外部命令…"
-        )
         threading.Thread(
             target=self._scan_worker,
-            args=(scan_token, incremental_session, False, cancel, self._known_roots),
+            args=(
+                self._scan_token,
+                roots,
+                self._cancel,
+                self._scan_rules,
+                self._known_roots,
+            ),
             daemon=True,
         ).start()
-
-    def _begin_incremental_refresh(self, *, scan_label: str) -> None:
-        incremental_session = self._incremental_session
-        if incremental_session is None or not incremental_session.has_baseline:
-            self._begin_scan(self._last_scan_roots, scan_label="全量回退")
-            return
-        scan_token = f"scan_{uuid4().hex}"
-        self._active_scan_token = scan_token
-        self._scan_session_id = ""
-        self._scan_complete = False
-        self._marked_ids.clear()
-        self._ai_review_ids.clear()
-        self._ai_package = None
-        self._ai_import = None
-        self._ai_recommendations.clear()
-        cancel = CancellationToken()
-        self._scan_cancel = cancel
-        self._active_task = "scan"
-        self._set_state(WorkbenchState.SCANNING)
-        self._status.set(
-            f"正在{scan_label}；仅重扫变化的保守父目录。监视失效时会自动回退全量…"
-        )
-        threading.Thread(
-            target=self._scan_worker,
-            args=(scan_token, incremental_session, True, cancel, self._known_roots),
-            daemon=True,
-        ).start()
-
-    def _cancel_scan(self) -> None:
-        token = self._scan_cancel or self._duplicate_cancel
-        if token is None:
-            return
-        token.cancel()
-        if self._cancel_button is not None:
-            self._cancel_button.configure(state=tk.DISABLED)
-        self._status.set("正在停止只读任务；未完成结果不会获得标记或导出权限。")
 
     def _scan_worker(
         self,
-        scan_token: str,
-        incremental_session: IncrementalScanSession,
-        refresh: bool,
+        token: str,
+        roots: tuple[Path, ...],
         cancel: CancellationToken,
+        active_rules: UserRules,
         known_roots: tuple[KnownCleanupRoot, ...],
     ) -> None:
         def progress(stats: ScanStats) -> None:
-            self._events.put(
-                (
-                    "scan_progress",
-                    (
-                        scan_token,
-                        stats.files,
-                        stats.logical_bytes,
-                        stats.allocated_bytes,
-                        stats.errors,
-                        stats.boundaries,
-                    ),
-                )
-            )
-
-        try:
-            result = (
-                incremental_session.refresh(cancel=cancel, progress=progress)
-                if refresh
-                else incremental_session.baseline(cancel=cancel, progress=progress)
-            )
-        except (OSError, RuntimeError, ValueError) as error:
-            self._events.put(("scan_error", (scan_token, str(error))))
-            return
-        if result.status is SessionScanStatus.FAILED:
-            self._events.put(
-                ("scan_error", (scan_token, result.error or "增量扫描协调器失败"))
-            )
-            return
+            self._events.put(("progress", (token, stats.files, stats.logical_bytes)))
 
         session = TriageSession()
-        observed = 0
-        logical_bytes = 0
-        allocated_bytes = 0
-        errors = 0
-        boundaries = 0
-        temp_root = Path(tempfile.gettempdir())
-        for record in result.records:
-            if record.kind is ScanRecordKind.ERROR:
-                errors += 1
-                continue
-            if record.kind is ScanRecordKind.BOUNDARY:
-                boundaries += 1
-                continue
-            if record.kind is not ScanRecordKind.FILE:
-                continue
-            item = triage_file(record, temp_root=temp_root, known_roots=known_roots)
-            session.add(item)
-            observed += 1
-            logical_bytes += record.logical_size
-            if record.allocated_size is not None:
-                allocated_bytes += record.allocated_size
-        fallback_text = "; ".join(report.code for report in result.fallbacks[:4])
-        self._events.put(
-            (
-                "scan_finished",
-                (
-                    scan_token,
-                    session,
-                    observed,
-                    logical_bytes,
-                    allocated_bytes,
-                    errors,
-                    boundaries,
-                    result.status is SessionScanStatus.CANCELLED,
-                    result.mode,
-                    result.stats.incremental_ready,
-                    result.stats.records_reobserved,
-                    result.stats.records_reused,
-                    fallback_text,
-                ),
+        now = datetime.now(UTC)
+        active_known_roots = (
+            known_roots
+            if active_rules.scan.include_known_cleanup_roots
+            else ()
+        )
+        configured_skip_paths = {
+            normalise_path(path)
+            for path in expanded_scan_paths(active_rules.scan.excluded_paths)
+        }
+        if not active_rules.scan.include_known_cleanup_roots:
+            # The profile root contains most user-level package caches.  Merely
+            # omitting those caches as separate roots would still reach them
+            # through the profile walk, so the switch must prune them there too.
+            configured_skip_paths.update(
+                normalise_path(root.path) for root in known_roots
             )
+        # The worker owns the session, so partial updates travel as plain rows.
+        # Handing the live session to the UI thread mid-scan would be a race.
+        next_publish = time.monotonic() + 1.5
+        try:
+            for record in scan_roots(
+                roots,
+                ScanOptions(
+                    include_directories=True,
+                    exact_file_identity=False,
+                    skip_directory_names=frozenset(
+                        name.casefold()
+                        for name in active_rules.scan.skip_directory_names
+                    ),
+                    skip_paths=frozenset(configured_skip_paths),
+                ),
+                cancel,
+                progress,
+            ):
+                if record.kind is ScanRecordKind.FILE:
+                    session.add(
+                        triage_file(
+                            record,
+                            known_roots=active_known_roots,
+                            delete_config=active_rules.delete.classification,
+                            keep_config=active_rules.keep.classification,
+                            now=now,
+                        )
+                    )
+                elif record.kind is ScanRecordKind.DIRECTORY:
+                    item = triage_directory(
+                        record,
+                        known_roots=active_known_roots,
+                        delete_config=active_rules.delete.classification,
+                        keep_config=active_rules.keep.classification,
+                    )
+                    if item is not None:
+                        session.add(item)
+                if time.monotonic() >= next_publish:
+                    next_publish = time.monotonic() + 1.5
+                    self._events.put(
+                        ("scan_partial", (token, _rows_of(session, active_rules)))
+                    )
+        except (OSError, RuntimeError, ValueError) as error:
+            self._events.put(("scan_error", (token, str(error))))
+            return
+        self._events.put(("scan_done", (token, session, cancel.is_cancelled())))
+
+    def _publish(self, session: TriageSession) -> None:
+        self._session = session
+        previous_deletable = {item.path for item in self._deletable}
+        previous_checked = set(self._checked)
+        deletable, unsure = _partition_items(session, self._rules)
+        self._deletable = sorted(deletable, key=self._size_of, reverse=True)
+        self._unsure = sorted(unsure, key=self._size_of, reverse=True)
+        current_deletable = {item.path for item in self._deletable}
+        # Reclassification must not silently re-check rows the user unticked.
+        # Newly promoted rows are selected, matching the existing AI-import UX.
+        self._checked = (
+            previous_checked & current_deletable
+        ) | (current_deletable - previous_deletable)
+        self._fill(self._deletable_tree, self._deletable)
+        self._fill(self._unsure_tree, self._unsure)
+        self._refresh_totals()
+        self._sync_buttons()
+
+    _TICKED = "\u2611"
+    _UNTICKED = "\u2610"
+
+    def _fill(self, tree: ttk.Treeview, items: Sequence[TriageItem]) -> None:
+        self._fill_rows(
+            tree,
+            tuple(
+                (
+                    item.path,
+                    self._size_of(item),
+                    item.target_kind is CleanupTargetKind.DIRECTORY,
+                )
+                for item in items
+            ),
         )
 
-    def _start_duplicate_scan(self) -> None:
-        if not self._scan_complete or not self._last_scan_roots:
-            messagebox.showinfo("DevClean", "请先完成一次只读扫描。")
+    def _fill_rows(self, tree: ttk.Treeview, rows: Sequence[Row]) -> None:
+        tree.delete(*tree.get_children())
+        for index, (item_path, size, is_directory) in enumerate(rows[:_ROWS_DRAWN]):
+            label = f"[整个目录] {item_path}" if is_directory else item_path
+            if tree is not self._deletable_tree:
+                mark = ""  # the AI pane is exported whole; nothing to tick
+            elif item_path in self._checked:
+                mark = self._TICKED
+            else:
+                mark = self._UNTICKED
+            tree.insert(
+                "",
+                tk.END,
+                iid=item_path,
+                values=(mark, _format_bytes(size), label),
+                tags=("odd",) if index % 2 else (),
+            )
+
+    def _on_row_click(self, event: tk.Event) -> str | None:
+        tree = self._deletable_tree
+        if tree.identify_region(event.x, event.y) != "cell":
+            return None
+        if tree.identify_column(event.x) != "#1":
+            return None
+        row = tree.identify_row(event.y)
+        if not row:
+            return None
+        if row in self._checked:
+            self._checked.discard(row)
+            tree.set(row, "check", self._UNTICKED)
+        else:
+            self._checked.add(row)
+            tree.set(row, "check", self._TICKED)
+        self._refresh_totals()
+        self._sync_buttons()
+        return "break"
+
+    def _check_all(self, checked: bool) -> None:
+        tree = self._deletable_tree
+        mark = self._TICKED if checked else self._UNTICKED
+        self._checked = {item.path for item in self._deletable} if checked else set()
+        for row in tree.get_children():
+            tree.set(row, "check", mark)
+        self._refresh_totals()
+        self._sync_buttons()
+
+    def _size_of(self, item: TriageItem) -> int:
+        if item.target_kind is not CleanupTargetKind.DIRECTORY:
+            return item.logical_size
+        session = self._session
+        if session is None:
+            return 0
+        return session.subtree_totals(item.path).logical_bytes
+
+    def _refresh_totals(self) -> None:
+        found = sum(self._size_of(item) for item in self._deletable)
+        chosen = self._selected_items()
+        shown = (
+            f"，表中显示前 {_ROWS_DRAWN:,} 项"
+            if len(self._deletable) > _ROWS_DRAWN
+            else ""
+        )
+        if len(chosen) == len(self._deletable):
+            self._deletable_total.set(
+                f"{_format_bytes(found)}（{len(chosen):,} 项{shown}）"
+            )
+        else:
+            self._deletable_total.set(
+                f"{_format_bytes(sum(self._size_of(item) for item in chosen))}"
+                f" / {_format_bytes(found)}"
+                f"（已勾选 {len(chosen):,} / {len(self._deletable):,}）"
+            )
+        unsure_shown = (
+            f"，表中显示前 {_ROWS_DRAWN:,} 项"
+            if len(self._unsure) > _ROWS_DRAWN
+            else ""
+        )
+        self._unsure_total.set(
+            f"{_format_bytes(sum(self._size_of(item) for item in self._unsure))}"
+            f"（{len(self._unsure):,} 项{unsure_shown}）"
+        )
+
+    # ---- delete -------------------------------------------------------------
+
+    def _selected_items(self) -> tuple[TriageItem, ...]:
+        """Return the ticked rows, with rows another ticked row already covers dropped.
+
+        There is deliberately no "nothing ticked means everything" shortcut: that
+        invisible rule turned one exploratory click into a 2.7 GB deletion.
+
+        Select-all necessarily ticks both a whole-directory row and the files
+        listed beneath it, and the planner refuses a plan containing both.  The
+        directory already removes its contents, so the inner rows are dropped
+        here rather than handed to the user as an error to resolve by hand.
+        """
+
+        ticked = tuple(item for item in self._deletable if item.path in self._checked)
+        enclosing = {
+            os.path.normcase(os.path.normpath(item.path)) + os.sep
+            for item in ticked
+            if item.target_kind is CleanupTargetKind.DIRECTORY
+        }
+        if not enclosing:
+            return ticked
+
+        def covered_by_another(item: TriageItem) -> bool:
+            normalized = os.path.normcase(os.path.normpath(item.path))
+            return any(
+                normalized.startswith(prefix)
+                for prefix in enclosing
+                if normalized + os.sep != prefix
+            )
+
+        return tuple(item for item in ticked if not covered_by_another(item))
+
+    def _selected_ai_unsure_items(self) -> tuple[TriageItem, ...]:
+        """Return selected right-pane rows that an AI explicitly left UNSURE."""
+
+        if not hasattr(self, "_unsure_tree"):
+            return ()
+        selected = set(self._unsure_tree.selection())
+        return tuple(
+            item
+            for item in self._unsure
+            if item.path in selected
+            and normalise_path(item.path) in self._ai_unsure_reasons
+        )
+
+
+    def _delete(self, *, irreversible: bool) -> None:
+        items = self._selected_items()
+        if not items:
+            messagebox.showinfo("DevClean", "没有勾选任何行。点「全选」，或逐行点前面的方框。")
             return
-        if self._state is WorkbenchState.SCANNING:
-            return
-        cancel = CancellationToken()
-        self._duplicate_cancel = cancel
-        self._active_task = "duplicates"
-        self._set_state(WorkbenchState.SCANNING)
-        self._status.set("正在进行只读重复分析；人工标记和导出暂时锁定…")
+        mode = CleanupMode.CONFIRMED_PURGE if irreversible else CleanupMode.RECYCLE
+        self._busy = "deleting"
+        self._sync_buttons()
+        self._progress.configure(mode="determinate", maximum=len(items), value=0)
+        self._status.set(
+            f"正在准备{'彻底删除' if irreversible else '删除（进回收站）'} "
+            f"{len(items):,} 项…"
+        )
+        token = uuid4().hex
+        # Candidate construction opens a handle per object to pin its exact
+        # identity.  Thousands of those on the UI thread freeze the window, so
+        # the whole preparation runs in the worker.
         threading.Thread(
-            target=self._duplicate_worker,
-            args=(self._last_scan_roots, cancel),
+            target=self._delete_worker,
+            args=(token, items, mode),
             daemon=True,
         ).start()
 
-    def _duplicate_worker(self, roots: tuple[Path, ...], cancel: CancellationToken) -> None:
-        try:
-            result = find_large_duplicates(roots, cancel=cancel)
-        except (OSError, RuntimeError, ValueError) as error:
-            self._events.put(("duplicate_error", str(error)))
+    def _delete_worker(
+        self, token: str, items: tuple[TriageItem, ...], mode: CleanupMode
+    ) -> None:
+        candidates: list[ScanCleanupCandidate] = []
+        reasons: dict[str, int] = {}
+        for item in items:
+            try:
+                candidates.append(self._candidate(item))
+            except (CleanupRefusal, OSError, TypeError, ValueError) as error:
+                # "N items could not be processed" answers nothing.  Group by
+                # what actually went wrong so the number is explainable.
+                reasons[_reason_of(error)] = reasons.get(_reason_of(error), 0) + 1
+        if not candidates:
+            detail = "；".join(f"{name} {count:,} 项" for name, count in reasons.items())
+            self._events.put(
+                ("delete_error", (token, f"所有勾选项都无法处理：{detail}", ()))
+            )
             return
-        self._events.put(("duplicates", result))
+        results: list[CleanupExecutionResult] = []
+        try:
+            plan = prepare_cleanup_plan(tuple(candidates))
+        except Exception as error:
+            self._events.put(("delete_error", (token, str(error), ())))
+            return
+        done = 0
+        for batch in plan.batches:
+            try:
+                results.append(
+                    execute_cleanup_batch(
+                        batch,
+                        mode,
+                        known_roots=self._known_roots,
+                        delete_config=self._scan_rules.delete.classification,
+                        keep_config=self._scan_rules.keep.classification,
+                    )
+                )
+            except Exception as error:
+                # One batch failing says nothing about the next.  Record why and
+                # carry on; stopping here is what made a single changed cache
+                # file end a 7,000-item run.
+                reasons[_reason_of(error)] = reasons.get(_reason_of(error), 0) + 1
+            done += len(batch.actions)
+            self._events.put(("delete_progress", (token, done, len(plan.actions))))
+        self._events.put(("delete_done", (token, tuple(results), reasons)))
+
+    def _candidate(self, item: TriageItem) -> ScanCleanupCandidate:
+        if item.target_kind is CleanupTargetKind.DIRECTORY:
+            session = self._session
+            totals = (
+                session.subtree_totals(item.path)
+                if session is not None
+                else DirectorySubtreeTotals()
+            )
+            return candidate_from_directory_item(
+                item,
+                totals,
+                known_roots=self._known_roots,
+                delete_config=self._scan_rules.delete.classification,
+                keep_config=self._scan_rules.keep.classification,
+            )
+        return candidate_from_triage_item(
+            item,
+            known_roots=self._known_roots,
+            delete_config=self._scan_rules.delete.classification,
+            keep_config=self._scan_rules.keep.classification,
+        )
+
+    # ---- AI -----------------------------------------------------------------
+
+    def _export_for_ai(self) -> None:
+        if not self._unsure:
+            messagebox.showinfo("DevClean", "没有需要 AI 判断的项。")
+            return
+        # Everything is exported.  A model cannot read hundreds of KB in one
+        # pass, so the export is split into numbered volumes rather than
+        # truncated: a silent "largest 300" leaves the user with no idea which
+        # 300 they got.  Import binds to whichever volume an answer came from.
+        volumes = [
+            self._unsure[offset : offset + _AI_VOLUME_ITEMS]
+            for offset in range(0, len(self._unsure), _AI_VOLUME_ITEMS)
+        ]
+        built: list[tuple[AiReviewPackage, str]] = []
+        try:
+            for chunk in volumes:
+                package = build_ai_review_package(
+                    tuple(
+                        AiReviewCandidateInput(item=item, hard_protected=False)
+                        for item in chunk
+                    ),
+                    scan_session_id=self._scan_session_id,
+                    disclose_full_paths=True,
+                )
+                built.append((package, serialize_ai_review_package(package) + "\n"))
+        except (AiReviewContractError, TypeError, ValueError) as error:
+            messagebox.showerror("导出失败", str(error))
+            return
+
+        chosen = filedialog.asksaveasfilename(
+            title="导出给 AI 判断",
+            defaultextension=".json",
+            initialfile=f"devclean-ai-{len(self._unsure)}.json",
+            filetypes=(("JSON", "*.json"),),
+        )
+        if not chosen:
+            return
+        base = Path(chosen)
+        written: list[Path] = []
+        try:
+            for index, (_package, rendered) in enumerate(built, start=1):
+                target = (
+                    base
+                    if len(built) == 1
+                    else base.with_name(
+                        f"{base.stem}-{index}of{len(built)}{base.suffix}"
+                    )
+                )
+                target.write_text(rendered, encoding="utf-8", newline="\n")
+                written.append(target)
+        except OSError as error:
+            messagebox.showerror("导出失败", str(error))
+            return
+
+        for package, _rendered in built:
+            self._ai_packages[package.review_session_id] = package
+            # Losing the index entry only costs the restart-proof import path.
+            with contextlib.suppress(OSError):
+                ai_sessions.remember_export(
+                    package.review_session_id,
+                    {entry.candidate_id: entry.item.path for entry in package.entries},
+                )
+        self._sync_buttons()
+        if len(written) == 1:
+            self._status.set(
+                f"已导出全部 {len(self._unsure):,} 项到 {written[0]}。"
+                "让 AI 按文件里的说明回答，然后点「导入结果」。"
+            )
+        else:
+            self._status.set(
+                f"全部 {len(self._unsure):,} 项已分成 {len(written)} 卷导出到 "
+                f"{base.parent}，文件名 {base.stem}-1of{len(written)} 起。"
+                "每卷分别让 AI 回答，回答完的逐份导入即可。"
+            )
+
+    def _import_from_ai(self) -> None:
+        source = filedialog.askopenfilename(
+            title="导入 AI 结果", filetypes=(("JSON", "*.json"),)
+        )
+        if not source:
+            return
+        try:
+            text = Path(source).read_text(encoding="utf-8")
+        except OSError as error:
+            messagebox.showerror("导入失败", str(error))
+            return
+        # The answer belongs to exactly one volume, and the user picks files by
+        # hand, so every exported volume is tried rather than demanding they
+        # remember which one this was.
+        imported = None
+        imported_session = ""
+        first_error = ""
+        for package in self._ai_packages.values():
+            try:
+                imported = parse_ai_review_response(text, package)
+                imported_session = package.review_session_id
+                break
+            except (AiReviewContractError, TypeError, ValueError) as error:
+                first_error = first_error or str(error)
+        rule_verdicts: list[tuple[str, RuleDecision, str]] = []
+        recycle: set[str] = set()
+        keep: set[str] = set()
+        needs_user: set[str] = set()
+
+        def record(path: str, verdict: str, reason: str) -> None:
+            key = normalise_path(path)
+            if verdict == AiRecommendation.RECOMMEND_RECYCLE.value:
+                self._ai_unsure_reasons.pop(key, None)
+                recycle.add(key)
+                rule_verdicts.append((path, RuleDecision.DELETE, reason))
+            elif verdict == AiRecommendation.KEEP.value:
+                self._ai_unsure_reasons.pop(key, None)
+                keep.add(key)
+                rule_verdicts.append((path, RuleDecision.KEEP, reason))
+            else:
+                needs_user.add(key)
+                self._ai_unsure_reasons[key] = reason
+
+        if imported is not None:
+            for entry in imported.recommendations:
+                record(
+                    entry.item.path,
+                    {
+                        AiRecommendation.RECOMMEND_RECYCLE: (
+                            AiRecommendation.RECOMMEND_RECYCLE.value
+                        ),
+                        AiRecommendation.KEEP: AiRecommendation.KEEP.value,
+                    }.get(entry.recommendation, AiRecommendation.UNSURE.value),
+                    entry.reason,
+                )
+        else:
+            # The export this answers was made before a restart, so the sealed
+            # package is gone.  The session index still knows which path each
+            # candidate id meant, and that is enough: importing only files rows into lists,
+            # and every object is re-verified by identity at deletion.  Refusing
+            # here would throw away answers the user paid a model for.
+            recovered = _verdicts_from_session_index(text)
+            if not recovered:
+                messagebox.showerror(
+                    "导入失败", first_error or "这份结果不属于任何已导出的卷。"
+                )
+                return
+            try:
+                payload = json.loads(text)
+                imported_session = str(payload.get("review_session_id", ""))
+            except (AttributeError, TypeError, ValueError):
+                imported_session = ""
+            for path, (verdict, reason) in recovered.items():
+                record(path, verdict, reason)
+        rules_saved = True
+        try:
+            # Merge into the latest on-disk edit instead of overwriting changes
+            # made in Notepad while DevClean was open.
+            self._rules = add_ai_verdicts(load_rules(), rule_verdicts)
+        except (OSError, RuleConfigError, UnicodeError) as error:
+            rules_saved = False
+            messagebox.showwarning(
+                "AI 规则未能保存",
+                f"本次分类仍会应用，但规则文件没有更新：{error}",
+            )
+
+        # A hand-authored KEEP rule wins even when the imported answer says
+        # DELETE.  Apply that precedence immediately, not only on the next scan.
+        for key in tuple(recycle):
+            if self._rules.decision_for(key) is RuleDecision.KEEP:
+                recycle.remove(key)
+                keep.add(key)
+        if rules_saved and self._session is not None:
+            # One classification function owns both queues.  Rebuilding from the
+            # completed session applies imported decisions, pre-existing regex
+            # rules, and KEEP precedence to rows that were already on the left.
+            self._publish(self._session)
+            deletable_paths = {
+                normalise_path(item.path) for item in self._deletable
+            }
+            moved_count = len(recycle & deletable_paths)
+        else:
+            # Saving can fail if an externally edited rule file is invalid.  The
+            # answer is still useful for this session, but must update both
+            # queues so a KEEP can never remain selected on the left.
+            kept_left = {
+                item.path
+                for item in self._deletable
+                if normalise_path(item.path) in keep
+            }
+            if kept_left:
+                self._deletable = [
+                    item for item in self._deletable if item.path not in kept_left
+                ]
+                self._checked -= kept_left
+            moved = [
+                item
+                for item in self._unsure
+                if normalise_path(item.path) in recycle
+            ]
+            settled = recycle | keep
+            self._unsure = [
+                item
+                for item in self._unsure
+                if normalise_path(item.path) not in settled
+            ]
+            if moved:
+                self._deletable = sorted(
+                    self._deletable + moved, key=self._size_of, reverse=True
+                )
+                self._checked.update(item.path for item in moved)
+            moved_count = len(moved)
+            self._fill(self._deletable_tree, self._deletable)
+            self._fill(self._unsure_tree, self._unsure)
+            self._refresh_totals()
+            self._sync_buttons()
+        status = (
+            f"AI 判定 {moved_count:,} 项可删（已在左边）、{len(keep):,} 项不能删。"
+        )
+        if needs_user:
+            status += (
+                f"{len(needs_user):,} 项 AI 仍不确定；"
+                "在右侧选中后点“我来决定…”。"
+            )
+        decided_paths = recycle | keep
+        status += (
+            f"已写入 {len(decided_paths):,} 条规则，同路径以后不再询问。"
+            if rules_saved
+            else "本次结果已应用，但未写入规则；下次仍可能再次询问。"
+        )
+        if (
+            rules_saved
+            and imported is not None
+            and imported_session
+            and not needs_user
+        ):
+            # A strict full-package import has consumed the complete index entry.
+            # Fallback imports may intentionally be partial, so those entries
+            # remain available until the bounded retention policy removes them.
+            with contextlib.suppress(OSError):
+                ai_sessions.forget_export(imported_session)
+            self._ai_packages.pop(imported_session, None)
+        self._status.set(status)
+
+    def _decide_ai_unsure(self) -> None:
+        """Persist the user's final decision for AI-UNSURE rows."""
+
+        items = self._selected_ai_unsure_items()
+        if not items:
+            messagebox.showinfo(
+                "DevClean",
+                "请先在右侧选中 AI 已明确回答 UNSURE 的项目。",
+            )
+            return
+        preview: list[str] = []
+        for item in items[:12]:
+            reason = self._ai_unsure_reasons[normalise_path(item.path)]
+            preview.append(f"{item.path}\nAI 说明：{reason}")
+        if len(items) > 12:
+            preview.append(f"……另有 {len(items) - 12:,} 项")
+        answer = messagebox.askyesnocancel(
+            "AI 仍不确定，交给你决定",
+            "\n\n".join(preview)
+            + "\n\n选择“是”：记为可以删除并移到左侧；"
+            "选择“否”：记为确定保留；选择“取消”：不作修改。",
+        )
+        if answer is None:
+            return
+        decision = RuleDecision.DELETE if answer else RuleDecision.KEEP
+        verdicts = [
+            (
+                item.path,
+                decision,
+                (
+                    "AI 仍不确定（"
+                    + self._ai_unsure_reasons[normalise_path(item.path)]
+                    + "）；用户在 DevClean 界面中最终决定"
+                    + ("可删除" if answer else "保留")
+                ),
+            )
+            for item in items
+        ]
+        rules_saved = True
+        try:
+            self._rules = add_user_verdicts(load_rules(), verdicts)
+        except (OSError, RuleConfigError, UnicodeError) as error:
+            rules_saved = False
+            messagebox.showwarning(
+                "用户决定未能保存",
+                f"本次决定仍会应用，但规则文件没有更新：{error}",
+            )
+        selected_paths = {item.path for item in items}
+        for item in items:
+            self._ai_unsure_reasons.pop(normalise_path(item.path), None)
+        if rules_saved and self._session is not None:
+            self._publish(self._session)
+        else:
+            self._unsure = [
+                item for item in self._unsure if item.path not in selected_paths
+            ]
+            if decision is RuleDecision.DELETE:
+                self._deletable = sorted(
+                    self._deletable + list(items),
+                    key=self._size_of,
+                    reverse=True,
+                )
+                self._checked.update(selected_paths)
+            self._fill(self._deletable_tree, self._deletable)
+            self._fill(self._unsure_tree, self._unsure)
+            self._refresh_totals()
+            self._sync_buttons()
+        choice = "可以删除，已移到左侧并勾选" if answer else "确定保留"
+        persistence = (
+            "已写入规则，下次扫描不再询问 AI。"
+            if rules_saved
+            else "仅本次生效；规则修复前无法长期记住。"
+        )
+        self._status.set(f"你已决定 {len(items):,} 项{choice}。{persistence}")
+
+    def _forget_verdicts(self) -> None:
+        count = self._rules.ai_rule_count
+        if not count:
+            messagebox.showinfo("DevClean", "还没有记住任何 AI 判决。")
+            return
+        if not messagebox.askyesno(
+            "清空 AI 判决记录",
+            f"将删除 {count:,} 条由 AI 添加的规则；手工规则不受影响。继续？",
+        ):
+            return
+        try:
+            self._rules = clear_ai_rules(self._rules)
+        except (OSError, RuleConfigError, UnicodeError) as error:
+            messagebox.showerror("清空失败", str(error))
+            return
+        if self._session is not None:
+            self._publish(self._session)
+        self._sync_buttons()
+        self._status.set("已清空 AI 判决记录。")
+
+    def _edit_rules(self) -> None:
+        raw_documents: tuple[str, str, str] | None = None
+        try:
+            self._rules = load_rules()
+        except (OSError, RuleConfigError, UnicodeError) as error:
+            messagebox.showerror(
+                "规则载入失败",
+                f"{error}\n\n编辑器会打开磁盘原文，请直接修正后保存。",
+            )
+        try:
+            raw_documents = read_rule_documents(errors="replace")
+        except (OSError, RuleConfigError, UnicodeError):
+            # If the files cannot be read at all, the last valid in-memory
+            # configuration is still a useful recovery starting point.
+            raw_documents = None
+        self._rule_editor = open_rule_editor(
+            self._root,
+            self._rules,
+            self._rules_saved,
+            raw_documents,
+        )
+
+    def _rules_saved(self, rules: UserRules) -> None:
+        self._rules = rules
+        if self._session is not None:
+            self._publish(self._session)
+        self._sync_buttons()
+        self._status.set(
+            "DELETE/KEEP 路径规则已应用；扫描范围、阈值和分类表下次扫描生效。"
+        )
+
+    # ---- events -------------------------------------------------------------
 
     def _drain_events(self) -> None:
         try:
             while True:
                 kind, payload = self._events.get_nowait()
-                if kind == "scan_progress":
-                    token, observed, logical, allocated, errors, boundaries = cast(
-                        tuple[str, int, int, int, int, int], payload
+                if kind == "progress":
+                    token, files, logical = cast(tuple[str, int, int], payload)
+                    if token == self._scan_token:
+                        self._status.set(
+                            f"正在扫描…已看过 {files:,} 个文件"
+                            f"（{_format_bytes(logical)}）"
+                        )
+                elif kind == "scan_partial":
+                    token, buckets = cast(
+                        tuple[str, tuple[tuple[Row, ...], tuple[Row, ...]]], payload
                     )
-                    if token != self._active_scan_token:
+                    if token != self._scan_token:
                         continue
-                    self._total_card.set(f"{observed:,}")
-                    self._space_card.set(_format_bytes(allocated))
+                    # Shown as it is found.  Ticking and deleting stay disabled
+                    # until the scan finishes, because a candidate has to be
+                    # built from the completed session.
+                    partial_deletable, partial_unsure = buckets
+                    self._fill_rows(self._deletable_tree, partial_deletable)
+                    self._fill_rows(self._unsure_tree, partial_unsure)
+                    self._deletable_total.set(
+                        f"{_format_bytes(sum(row[1] for row in partial_deletable))}"
+                        f"（{len(partial_deletable):,} 项，扫描中）"
+                    )
+                    self._unsure_total.set(
+                        f"{_format_bytes(sum(row[1] for row in partial_unsure))}"
+                        f"（{len(partial_unsure):,} 项，扫描中）"
+                    )
+                elif kind == "scan_done":
+                    token, session, cancelled = cast(
+                        tuple[str, TriageSession, bool], payload
+                    )
+                    if token != self._scan_token:
+                        continue
+                    self._progress.stop()
+                    self._busy = None
+                    self._publish(session)
                     self._status.set(
-                        f"只读扫描中：{observed:,} 个文件，逻辑 {_format_bytes(logical)}，"
-                        f"已分配 {_format_bytes(allocated)}；错误 {errors}，边界 {boundaries}…"
+                        "扫描已取消，下面是已看到的部分。"
+                        if cancelled
+                        else "扫描完成。左边是可以删除的，右边需要 AI 判断。"
                     )
-                elif kind == "scan_finished":
-                    (
-                        token,
-                        session,
-                        observed,
-                        logical,
-                        allocated,
-                        errors,
-                        boundaries,
-                        cancelled,
-                        scan_mode,
-                        incremental_ready,
-                        records_reobserved,
-                        records_reused,
-                        fallback_text,
-                    ) = cast(
-                        tuple[
-                            str,
-                            TriageSession,
-                            int,
-                            int,
-                            int,
-                            int,
-                            int,
-                            bool,
-                            SessionScanMode,
-                            bool,
-                            int,
-                            int,
-                            str,
-                        ],
-                        payload,
-                    )
-                    if token != self._active_scan_token:
-                        continue
-                    self._scan_cancel = None
-                    self._active_task = ""
-                    self._session = session
-                    self._render_session(session)
-                    if cancelled:
-                        self._scan_complete = False
-                        self._scan_session_id = ""
-                        self._marked_ids.clear()
-                        self._set_state(WorkbenchState.READY)
-                        self._status.set(
-                            f"扫描已停止：展示 {observed:,} 个只读观察；"
-                            "结果不完整，不能标记或导出。"
-                        )
-                    else:
-                        self._scan_complete = True
-                        self._scan_session_id = token
-                        self._marked_ids.clear()
-                        self._set_state(WorkbenchState.REVIEW)
-                        if scan_mode is SessionScanMode.INCREMENTAL:
-                            mode_text = (
-                                f"增量刷新完成：重观察 {records_reobserved:,} 条，"
-                                f"复用 {records_reused:,} 条"
-                            )
-                        elif scan_mode is SessionScanMode.FALLBACK:
-                            mode_text = "监视状态失效，已安全回退全量扫描"
-                        else:
-                            mode_text = "全量基线完成"
-                        monitor_text = (
-                            "同会话增量已就绪"
-                            if incremental_ready
-                            else "下次刷新仍需全量扫描"
-                        )
-                        fallback_suffix = (
-                            f"；回退原因 {fallback_text}" if fallback_text else ""
-                        )
-                        self._status.set(
-                            f"{mode_text}：{observed:,} 个文件，逻辑 {_format_bytes(logical)}，"
-                            f"已分配 {_format_bytes(allocated)}；错误 {errors}，边界 {boundaries}；"
-                            f"{monitor_text}{fallback_suffix}；默认零选择。"
-                        )
-                elif kind == "duplicates":
-                    result = cast(DuplicateScanResult, payload)
-                    self._duplicate_cancel = None
-                    self._active_task = ""
-                    self._render_duplicate_groups(result)
-                    self._set_state(WorkbenchState.REVIEW)
-                    qualifiers: list[str] = []
-                    if result.truncated:
-                        qualifiers.append("结果受边界限制")
-                    if result.cancelled:
-                        qualifiers.append("任务已停止")
-                    suffix = f"；{'；'.join(qualifiers)}" if qualifiers else ""
-                    self._status.set(
-                        f"重复分析完成：{len(result.groups)} 组，已哈希 "
-                        f"{result.files_hashed:,} 个文件；没有自动指定或标记任何副本{suffix}。"
-                    )
-                elif kind == "duplicate_error":
-                    self._duplicate_cancel = None
-                    self._active_task = ""
-                    self._set_state(WorkbenchState.REVIEW)
-                    messagebox.showerror("重复文件分析失败", str(payload))
-                elif kind == "recovery_state":
-                    quarantined, indeterminate = cast(tuple[int, int], payload)
-                    self._quarantined_count = quarantined
-                    self._refresh_action_states()
-                    if self._state is WorkbenchState.READY and (
-                        quarantined or indeterminate
-                    ):
-                        self._status.set(
-                            f"启动恢复检查：可恢复隔离 {quarantined} 项，"
-                            f"待人工判定 {indeterminate} 项；不会自动重放。"
-                        )
-                elif kind == "recovery_error":
-                    if self._state is WorkbenchState.READY:
-                        self._status.set(
-                            f"持久化隔离日志需要人工检查：{payload}"
-                        )
-                elif kind == "restore_finished":
-                    token, restored = cast(
-                        tuple[str, tuple[tuple[str, ActionState], ...]], payload
-                    )
-                    if token != self._active_task:
-                        continue
-                    self._active_task = ""
-                    self._scan_complete = False
-                    self._marked_ids.clear()
-                    self._ai_review_ids.clear()
-                    restored_count = sum(
-                        state is ActionState.RESTORED for _action_id, state in restored
-                    )
-                    review_count = len(restored) - restored_count
-                    self._quarantined_count = max(
-                        0, self._quarantined_count - restored_count
-                    )
-                    self._set_state(WorkbenchState.READY)
-                    messagebox.showinfo(
-                        "隔离恢复结果",
-                        f"已恢复 {restored_count} 项；仍需复核 {review_count} 项。"
-                        "原路径被占用时不会覆盖。",
-                    )
-                    self._start_recovery_reconciliation()
-                    if self._last_scan_roots:
-                        self._begin_scan(
-                            self._last_scan_roots,
-                            scan_label=f"恢复后核验：{self._last_scan_label}",
-                        )
-                elif kind == "restore_error":
-                    token, detail, restored = cast(
-                        tuple[
-                            str,
-                            str,
-                            tuple[tuple[str, ActionState], ...],
-                        ],
-                        payload,
-                    )
-                    if token != self._active_task:
-                        continue
-                    self._active_task = ""
-                    self._scan_complete = False
-                    self._marked_ids.clear()
-                    self._ai_review_ids.clear()
-                    self._set_state(WorkbenchState.READY)
-                    messagebox.showerror(
-                        "隔离恢复需要复核",
-                        f"{detail}\n\n已产生状态结果 {len(restored)} 项；不会自动重试。",
-                    )
-                    self._start_recovery_reconciliation()
-                elif kind == "cleanup_finished":
-                    token, results = cast(
-                        tuple[str, tuple[CleanupExecutionResult, ...]], payload
-                    )
-                    if token != self._active_task:
-                        continue
-                    self._active_task = ""
-                    self._last_cleanup_results = results
-                    self._scan_complete = False
-                    self._marked_ids.clear()
-                    self._ai_review_ids.clear()
-                    self._set_state(WorkbenchState.READY)
-                    messagebox.showinfo("清理执行结果", _cleanup_result_summary(results))
-                    if self._last_scan_roots:
-                        if (
-                            self._incremental_session is not None
-                            and self._incremental_session.has_baseline
-                        ):
-                            self._begin_incremental_refresh(scan_label="清理后增量核验")
-                        else:
-                            self._begin_scan(
-                                self._last_scan_roots,
-                                scan_label=f"清理后核验：{self._last_scan_label}",
-                            )
-                elif kind == "cleanup_error":
-                    token, detail, results = cast(
-                        tuple[str, str, tuple[CleanupExecutionResult, ...]], payload
-                    )
-                    if token != self._active_task:
-                        continue
-                    self._active_task = ""
-                    self._last_cleanup_results = results
-                    self._scan_complete = False
-                    self._marked_ids.clear()
-                    self._ai_review_ids.clear()
-                    self._set_state(WorkbenchState.READY)
-                    summary = _cleanup_result_summary(results) if results else "尚无完整批次结果。"
-                    messagebox.showerror(
-                        "清理执行需要复核",
-                        f"{detail}\n\n{summary}\n\n不会自动重放未知动作；将重新扫描当前范围。",
-                    )
-                    if self._last_scan_roots:
-                        if (
-                            self._incremental_session is not None
-                            and self._incremental_session.has_baseline
-                        ):
-                            self._begin_incremental_refresh(scan_label="异常后增量核验")
-                        else:
-                            self._begin_scan(
-                                self._last_scan_roots,
-                                scan_label=f"异常后核验：{self._last_scan_label}",
-                            )
                 elif kind == "scan_error":
                     token, detail = cast(tuple[str, str], payload)
-                    if token != self._active_scan_token:
+                    if token != self._scan_token:
                         continue
-                    self._scan_cancel = None
-                    self._active_task = ""
-                    self._scan_complete = False
-                    self._scan_session_id = ""
-                    self._marked_ids.clear()
-                    self._set_state(WorkbenchState.READY)
-                    messagebox.showerror("DevClean", f"只读扫描失败：{detail}")
-        except queue.Empty:
-            pass
-        self._root.after(80, self._drain_events)
-
-    def _clear_result_views(self) -> None:
-        if self._result_tree is not None:
-            self._result_tree.delete(*self._result_tree.get_children())
-        if self._category_tree is not None:
-            self._category_tree.delete(*self._category_tree.get_children())
-        if self._directory_tree is not None:
-            self._directory_tree.delete(*self._directory_tree.get_children())
-        if self._duplicates_tree is not None:
-            self._duplicates_tree.delete(*self._duplicates_tree.get_children())
-        self._set_details("选择结果后查看完整证据与安全边界。")
-        self._display_cap_note.set("")
-        self._total_card.set("0")
-        self._space_card.set("0 B")
-        self._eligible_card.set("0")
-        self._marked_card.set("0 项 · 0 B")
-
-    def _render_session(self, session: TriageSession) -> None:
-        self._all_items = session.all_display_items()
-        self._displayed_items = {
-            f"item:{index:04d}": item for index, item in enumerate(self._all_items)
-        }
-        self._marked_ids.clear()
-        self._apply_filters()
-        self._render_insights(session)
-        self._render_volume_summary()
-        total_files = sum(session.summary(lane).files for lane in ReviewLane)
-        total_allocated = sum(session.summary(lane).allocated_bytes for lane in ReviewLane)
-        eligible = sum(
-            session.summary(lane).files
-            for lane in (ReviewLane.DETERMINISTIC_CANDIDATE, ReviewLane.AI_REVIEW)
-        )
-        self._total_card.set(f"{total_files:,}")
-        self._space_card.set(_format_bytes(total_allocated))
-        self._eligible_card.set(f"{eligible:,}")
-        displayed = len(self._all_items)
-        if total_files > displayed:
-            self._display_cap_note.set(
-                f"表格按队列仅保留最大的 {session.display_limit} 个候选："
-                f"当前可见 {displayed:,} 项，扫描总计 {total_files:,} 个文件；"
-                "未显示的文件不会被选择或删除，分类汇总与统计始终完整。"
-            )
-        else:
-            self._display_cap_note.set(f"表格已显示全部 {displayed:,} 个扫描文件。")
-        self._update_marked_card()
-
-    def _apply_filters(self) -> None:
-        tree = self._result_tree
-        if tree is None:
-            return
-        selected_before = tree.selection()
-        tree.delete(*tree.get_children())
-        items = [
-            (item_id, item)
-            for item_id, item in self._displayed_items.items()
-            if self._matches_filters(item)
-        ]
-        items.sort(key=lambda pair: pair[1].logical_size, reverse=True)
-        for item_id, item in items:
-            recommendation = self._ai_recommendations.get(_path_key(item.path))
-            tags: tuple[str, ...]
-            if item_id in self._marked_ids:
-                tags = ("marked",)
-            elif item_id in self._ai_review_ids:
-                tags = ("ai_review",)
-            elif item.lane is ReviewLane.PROTECTED:
-                tags = ("protected",)
-            elif item.risk_tier is RiskTier.HIGH:
-                tags = ("high",)
-            else:
-                tags = ()
-            if item_id in self._marked_ids:
-                mark_glyph = "☑ 清理"
-            elif item_id in self._ai_review_ids:
-                mark_glyph = "AI 复核"
-            elif is_direct_cleanup_eligible(item):
-                mark_glyph = "☐"
-            elif is_ai_review_eligible(item):
-                mark_glyph = "AI?"
-            elif item.lane is ReviewLane.PROTECTED:
-                mark_glyph = "锁定"
-            else:
-                mark_glyph = "—"
-            tree.insert(
-                "",
-                tk.END,
-                iid=item_id,
-                values=(
-                    mark_glyph,
-                    _DOMAIN_TITLES[item.source_domain],
-                    _CATEGORY_TITLES[item.category],
-                    _LANE_TITLES[item.lane],
-                    _EXECUTION_TITLES[item.execution_policy],
-                    (
-                        _AI_RECOMMENDATION_TITLES[recommendation[0]]
-                        if recommendation is not None
-                        else "—"
-                    ),
-                    _RISK_TITLES[item.risk_tier],
-                    _EVIDENCE_TITLES[item.evidence_kind],
-                    _RECOVERY_TITLES[item.recovery],
-                    _format_bytes(item.logical_size),
-                    item.reason,
-                    item.path,
-                ),
-                tags=tags,
-            )
-        if selected_before and tree.exists(selected_before[0]):
-            tree.selection_set(selected_before[0])
-        self._refresh_action_states()
-
-    def _matches_filters(self, item: TriageItem) -> bool:
-        domain = self._domain_filter.get()
-        if domain != _FILTER_ALL and domain != _DOMAIN_TITLES[item.source_domain]:
-            return False
-        lane = self._lane_filter.get()
-        if lane != _FILTER_ALL and lane != _LANE_TITLES[item.lane]:
-            return False
-        query = self._search_filter.get().strip().casefold()
-        if not query:
-            return True
-        haystack = " ".join(
-            (
-                item.path,
-                item.reason,
-                _DOMAIN_TITLES[item.source_domain],
-                _CATEGORY_TITLES[item.category],
-                _LANE_TITLES[item.lane],
-                " ".join(item.tags),
-            )
-        ).casefold()
-        return query in haystack
-
-    def _clear_filters(self) -> None:
-        self._domain_filter.set(_FILTER_ALL)
-        self._lane_filter.set(_FILTER_ALL)
-        self._search_filter.set("")
-        self._apply_filters()
-
-    def _selected_item(self) -> TriageItem | None:
-        tree = self._result_tree
-        if tree is None:
-            return None
-        selection = tree.selection()
-        return self._displayed_items.get(selection[0]) if selection else None
-
-    def _selected_item_id(self) -> str | None:
-        tree = self._result_tree
-        if tree is None:
-            return None
-        selection = tree.selection()
-        return selection[0] if selection else None
-
-    def _show_selected_details(self, _event: tk.Event[tk.Misc] | None = None) -> None:
-        item = self._selected_item()
-        if item is None:
-            self._set_details("选择结果后查看完整证据与安全边界。")
-        else:
-            if is_direct_cleanup_eligible(item):
-                eligible = (
-                    "可由用户直接加入受控清理计划；AI 复核是可选辅助"
-                    if is_ai_review_eligible(item)
-                    else "可由用户加入受控清理计划"
-                )
-            elif is_ai_review_eligible(item):
-                eligible = "可导出给 AI 复核；导回后仍需用户采用"
-            else:
-                eligible = "当前执行策略不可清理"
-            recommendation = self._ai_recommendations.get(_path_key(item.path))
-            allocated = (
-                _format_bytes(item.allocated_size)
-                if item.allocated_size is not None
-                else "未知 / 估算不可用"
-            )
-            self._set_details(
-                "\n".join(
-                    (
-                        f"安全状态：{eligible}",
-                        f"来源域：{_DOMAIN_TITLES[item.source_domain]}",
-                        f"细分类：{_CATEGORY_TITLES[item.category]}",
-                        f"复核队列：{_LANE_TITLES[item.lane]}    "
-                        f"风险：{_RISK_TITLES[item.risk_tier]}",
-                        f"证据：{_EVIDENCE_TITLES[item.evidence_kind]}",
-                        f"本机执行上限：{_EXECUTION_TITLES[item.execution_policy]}",
-                        (
-                            "AI 建议：尚未导入"
-                            if recommendation is None
-                            else f"AI 建议：{_AI_RECOMMENDATION_TITLES[recommendation[0]]}；"
-                            f"理由：{recommendation[1]}"
-                        ),
-                        f"恢复能力：{_RECOVERY_TITLES[item.recovery]}",
-                        f"逻辑大小：{_format_bytes(item.logical_size)}    已分配：{allocated}",
-                        f"标签：{', '.join(item.tags) if item.tags else '无'}",
-                        f"原因：{item.reason}",
-                        f"路径：{item.path}",
+                    self._progress.stop()
+                    self._busy = None
+                    self._sync_buttons()
+                    self._status.set(f"扫描失败：{detail}")
+                elif kind == "delete_progress":
+                    _token, done, total = cast(tuple[str, int, int], payload)
+                    self._progress.configure(maximum=total, value=done)
+                    self._status.set(f"正在删除… {done:,} / {total:,}")
+                elif kind == "delete_done":
+                    _token, results, reasons = cast(
+                        tuple[str, tuple[CleanupExecutionResult, ...], dict[str, int]],
+                        payload,
                     )
-                )
-            )
-        self._refresh_action_states()
+                    self._progress.stop()
+                    self._progress.configure(mode="indeterminate", value=0)
+                    self._busy = None
+                    self._report_deletion(results, reasons)
+                elif kind == "delete_error":
+                    _token, detail, results = cast(
+                        tuple[str, str, tuple[CleanupExecutionResult, ...]], payload
+                    )
+                    self._progress.stop()
+                    self._progress.configure(mode="indeterminate", value=0)
+                    done = sum(
+                        1
+                        for result in results
+                        for _action, state in result.action_states
+                        if state in {ActionState.PURGED, ActionState.RECYCLED}
+                    )
+                    self._busy = None
+                    self._sync_buttons()
+                    self._status.set(f"删除中断：{detail}（已完成 {done:,} 项）")
+                    messagebox.showerror("删除中断", detail)
+        except Empty:
+            pass
+        self._root.after(120, self._drain_events)
 
-    def _set_details(self, value: str) -> None:
-        if self._details is None:
-            return
-        self._details.configure(state=tk.NORMAL)
-        self._details.delete("1.0", tk.END)
-        self._details.insert("1.0", value)
-        self._details.configure(state=tk.DISABLED)
-
-    def _on_result_double_click(self, event: tk.Event[tk.Misc]) -> None:
-        tree = self._result_tree
-        if tree is None:
-            return
-        item_id = tree.identify_row(event.y)
-        if item_id:
-            tree.selection_set(item_id)
-            item = self._displayed_items.get(item_id)
-            if item is not None and is_direct_cleanup_eligible(item):
-                self._toggle_selected_mark()
-            elif item is not None and is_ai_review_eligible(item):
-                self._toggle_selected_ai_review()
-
-    def _toggle_selected_mark(self) -> None:
-        if self._state is not WorkbenchState.REVIEW or not self._scan_complete:
-            return
-        item_id = self._selected_item_id()
-        item = self._displayed_items.get(item_id or "")
-        if item_id is None or item is None:
-            return
-        if not is_direct_cleanup_eligible(item):
-            self._status.set(
-                "该项属于受保护、只报告或尚未实现的执行类型，不能加入清理。"
-            )
-            return
-        if item_id in self._marked_ids:
-            self._marked_ids.remove(item_id)
-            verb = "取消标记"
-        else:
-            if len(self._marked_ids) >= MAX_CLEANUP_PLAN_FILES:
-                self._status.set(
-                    f"单次精确计划最多 {MAX_CLEANUP_PLAN_FILES} 个文件；"
-                    "执行器会自动拆成可审计小批次。"
-                )
-                return
-            self._marked_ids.add(item_id)
-            verb = "已人工标记"
-        self._apply_filters()
-        if self._result_tree is not None and self._result_tree.exists(item_id):
-            self._result_tree.selection_set(item_id)
-        self._update_marked_card()
-        self._status.set(f"{verb}：{item.path}。这不会修改文件。")
-
-    def _toggle_selected_ai_review(self) -> None:
-        if self._state is not WorkbenchState.REVIEW or not self._scan_complete:
-            return
-        item_id = self._selected_item_id()
-        item = self._displayed_items.get(item_id or "")
-        if item_id is None or item is None or not is_ai_review_eligible(item):
-            self._status.set("该项不属于可导出的 AI 复核队列。")
-            return
-        if item_id in self._ai_review_ids:
-            self._ai_review_ids.remove(item_id)
-            verb = "已取消 AI 复核标记"
-        else:
-            self._ai_review_ids.add(item_id)
-            verb = "已加入 AI 复核"
-        self._apply_filters()
-        if self._result_tree is not None and self._result_tree.exists(item_id):
-            self._result_tree.selection_set(item_id)
-        self._status.set(f"{verb}：{item.path}。此时仍没有任何删除权限。")
-
-    def _select_low_risk_candidates(self) -> None:
-        if self._state is not WorkbenchState.REVIEW or not self._scan_complete:
-            return
-        available = [
-            item_id
-            for item_id, item in self._displayed_items.items()
-            if is_low_risk_cleanup_eligible(item)
-        ]
-        remaining = MAX_CLEANUP_PLAN_FILES - len(self._marked_ids)
-        selected = [item_id for item_id in available if item_id not in self._marked_ids][
-            :remaining
-        ]
-        self._marked_ids.update(selected)
-        self._apply_filters()
-        self._update_marked_card()
-        suffix = (
-            f"；单次计划上限为 {MAX_CLEANUP_PLAN_FILES}，其余未选择"
-            if len(available) > len(selected)
-            else ""
-        )
-        self._status.set(
-            f"已由用户操作选择 {len(selected)} 个低风险确定性候选{suffix}；尚未删除。"
-        )
-
-    def _select_filtered_candidates(self) -> None:
-        """Explicitly select actionable rows visible under the current filters."""
-
-        if self._state is not WorkbenchState.REVIEW or not self._scan_complete:
-            return
-        available = [
-            item_id
-            for item_id, item in self._displayed_items.items()
-            if self._matches_filters(item)
-            and is_direct_cleanup_eligible(item)
-            and item_id not in self._marked_ids
-        ]
-        remaining = MAX_CLEANUP_PLAN_FILES - len(self._marked_ids)
-        selected = available[:remaining]
-        self._marked_ids.update(selected)
-        high_risk = sum(
-            self._displayed_items[item_id].risk_tier is RiskTier.HIGH
-            for item_id in selected
-        )
-        self._apply_filters()
-        self._update_marked_card()
-        suffix = (
-            f"；另有 {len(available) - len(selected)} 项因计划上限未选择"
-            if len(available) > len(selected)
-            else ""
-        )
-        self._status.set(
-            f"已由用户操作选择当前筛选中的 {len(selected)} 项，其中高风险 "
-            f"{high_risk} 项{suffix}；尚未删除，仍需精确清单和最终确认。"
-        )
-
-    def _clear_marks(self) -> None:
-        if self._state is not WorkbenchState.REVIEW:
-            return
-        self._marked_ids.clear()
-        self._ai_review_ids.clear()
-        self._apply_filters()
-        self._update_marked_card()
-        self._status.set("已清空清理选择与 AI 复核标记；没有修改任何文件。")
-
-    def _marked_items(self) -> tuple[TriageItem, ...]:
-        return tuple(
-            self._displayed_items[item_id]
-            for item_id in sorted(self._marked_ids)
-            if item_id in self._displayed_items
-        )
-
-    def _update_marked_card(self) -> None:
-        items = self._marked_items()
-        total = sum(item.logical_size for item in items)
-        self._marked_card.set(f"{len(items):,} 项 · {_format_bytes(total)}")
-        self._refresh_action_states()
-
-    def _ai_review_items(self) -> tuple[TriageItem, ...]:
-        return tuple(
-            self._displayed_items[item_id]
-            for item_id in sorted(self._ai_review_ids)
-            if item_id in self._displayed_items
-        )
-
-    def _export_ai_review(self) -> None:
-        if self._state is not WorkbenchState.REVIEW or not self._scan_complete:
-            return
-        items = self._ai_review_items()
-        if not items:
-            messagebox.showinfo("DevClean", "请先标记至少一个待 AI 复核项。")
-            return
-        if not self._scan_session_id:
-            messagebox.showerror("DevClean", "当前扫描会话无效，请重新扫描。")
-            return
-        try:
-            package = build_ai_review_package(
-                tuple(
-                    AiReviewCandidateInput(item=item, hard_protected=False)
-                    for item in items
-                ),
-                scan_session_id=self._scan_session_id,
-            )
-            rendered = serialize_ai_review_package(package) + "\n"
-        except (AiReviewContractError, TypeError, ValueError) as error:
-            messagebox.showerror("AI 复核包创建失败", str(error))
-            return
-        suggested = f"DevClean-ai-review-{datetime.now(UTC):%Y%m%d-%H%M%S}.json"
-        selected = filedialog.asksaveasfilename(
-            title="导出 AI 复核包",
-            defaultextension=".json",
-            initialfile=suggested,
-            filetypes=(("JSON", "*.json"),),
-            confirmoverwrite=False,
-        )
-        if not selected:
-            return
-        destination = Path(selected)
-        try:
-            write_report_stream(destination, (rendered,))
-        except (FileExistsError, OSError, TypeError, ValueError) as error:
-            messagebox.showerror("AI 复核包导出失败", str(error))
-            return
-        self._ai_package = package
-        self._ai_import = None
-        self._ai_recommendations.clear()
-        self._apply_filters()
-        self._status.set(
-            f"已导出 {len(items)} 项 AI 复核包：{destination}。"
-            "包内只有脱敏元数据，execution_authority=NONE。"
-        )
-
-    def _import_ai_response(self) -> None:
-        if self._state is not WorkbenchState.REVIEW or not self._scan_complete:
-            return
-        package = self._ai_package
-        if package is None:
-            messagebox.showinfo("DevClean", "请先从当前扫描会话导出 AI 复核包。")
-            return
-        selected = filedialog.askopenfilename(
-            title="导入 AI 建议响应",
-            filetypes=(("JSON", "*.json"), ("所有文件", "*.*")),
-        )
-        if not selected:
-            return
-        source = Path(selected)
-        try:
-            with source.open("rb") as response_file:
-                raw_response = response_file.read(MAX_AI_RESPONSE_BYTES + 1)
-            if len(raw_response) > MAX_AI_RESPONSE_BYTES:
-                raise AiReviewContractError("AI response exceeds the byte limit")
-            imported = parse_ai_review_response(
-                raw_response.decode("utf-8", errors="strict"), package
-            )
-        except (AiReviewContractError, OSError, UnicodeError, ValueError) as error:
-            messagebox.showerror("AI 建议导入失败", str(error))
-            return
-        self._ai_import = imported
-        self._ai_recommendations = {
-            _path_key(recommendation.item.path): (
-                recommendation.recommendation,
-                recommendation.reason,
-            )
-            for recommendation in imported.recommendations
-        }
-        self._apply_filters()
-        recommended = sum(
-            recommendation.recommendation is AiRecommendation.RECOMMEND_RECYCLE
-            for recommendation in imported.recommendations
-        )
-        self._status.set(
-            f"已验证并导入 {len(imported.recommendations)} 条 AI 建议，"
-            f"其中 {recommended} 条建议回收。"
-            "导入没有自动选择，也没有调用删除执行器。"
-        )
-
-    def _adopt_ai_recommendations(self) -> None:
-        if self._state is not WorkbenchState.REVIEW or not self._scan_complete:
-            return
-        if self._ai_import is None:
-            return
-        available = [
-            item_id
-            for item_id, item in self._displayed_items.items()
-            if is_ai_review_eligible(item)
-            and self._ai_recommendations.get(_path_key(item.path), (None, ""))[0]
-            is AiRecommendation.RECOMMEND_RECYCLE
-            and item_id not in self._marked_ids
-        ]
-        remaining = MAX_CLEANUP_PLAN_FILES - len(self._marked_ids)
-        adopted = available[:remaining]
-        self._marked_ids.update(adopted)
-        self._ai_review_ids.difference_update(adopted)
-        self._apply_filters()
-        self._update_marked_card()
-        suffix = (
-            f"；另有 {len(available) - len(adopted)} 条因单批上限未采用"
-            if len(available) > len(adopted)
-            else ""
-        )
-        self._status.set(
-            f"用户已显式采用 {len(adopted)} 条 AI 安全移除建议{suffix}。"
-            "AI 建议本身只建议先隔离；是否永久清除由你在最终页独立授权。"
-        )
-
-    def _confirm_and_execute_cleanup(self) -> None:
-        if self._state is not WorkbenchState.REVIEW or not self._scan_complete:
-            return
-        items = self._marked_items()
-        if not items:
-            return
-        try:
-            candidates = tuple(
-                candidate_from_triage_item(item, known_roots=self._known_roots)
-                for item in items
-            )
-        except (CleanupRefusal, OSError, RuntimeError, TypeError, ValueError) as error:
-            messagebox.showerror("无法生成清理计划", str(error))
-            return
-
-        permanent = tuple(candidate for candidate in candidates if candidate.permanent_eligible)
-        answer = _ask_cleanup_mode_choice(
-            self._root,
-            file_count=len(candidates),
-            total_bytes=sum(item.logical_size for item in items),
-            permanent_count=len(permanent),
-        )
-        if answer is None:
-            return
-        mode = cleanup_mode_for_user_choice(candidates, irreversible=answer)
-
-        try:
-            plan = prepare_cleanup_plan(candidates)
-        except (CleanupRefusal, TypeError, ValueError) as error:
-            messagebox.showerror("无法生成清理计划", str(error))
-            return
-
-        try:
-            challenge = issue_cleanup_plan_confirmation(plan, mode=mode)
-        except CleanupRefusal as error:
-            messagebox.showerror("最终确认失败", str(error))
-            return
-        impact = sum(action.candidate.snapshot.logical_size for action in plan.actions)
-        irreversible = mode in {
-            CleanupMode.PERMANENT,
-            CleanupMode.CONFIRMED_PURGE,
-        }
-        warning = (
-            "这是不可恢复的永久清除：先精确隔离，再写不可逆意图并按句柄清除。"
-            if irreversible
-            else "文件只移入 DevClean 私有隔离区；可恢复，但不会释放该卷空间。"
-        )
-        mode_title = "永久清除" if irreversible else "可恢复私有隔离"
-        typed = _ask_typed_cleanup_confirmation(
-            self._root,
-            mode_title=(
-                f"{mode_title} · {len(plan.actions)} 个文件 · "
-                f"{_format_bytes(impact)} · {len(plan.batches)} 个日志批次"
-            ),
-            warning=warning,
-            plan=plan,
-            phrase=challenge.phrase,
-        )
-        if typed is None:
-            return
-        try:
-            approvals = confirm_cleanup_plan(plan, challenge, typed)
-        except CleanupRefusal as error:
-            messagebox.showerror("确认文本不匹配", str(error))
-            return
-        confirmed = tuple(zip(plan.batches, approvals, strict=True))
-
-        execution_token = f"cleanup_{uuid4().hex}"
-        self._active_task = execution_token
-        self._set_state(WorkbenchState.EXECUTING)
-        self._status.set(
-            "最终计划已锁定；正在逐项复验文件身份、先写 SQLite 意图，再执行删除…"
-        )
-        threading.Thread(
-            target=self._cleanup_worker,
-            args=(execution_token, confirmed),
-            daemon=True,
-        ).start()
-
-    def _cleanup_worker(
+    def _report_deletion(
         self,
-        execution_token: str,
-        confirmed: tuple[tuple[PreparedCleanupBatch, CleanupExecutionApproval], ...],
+        results: tuple[CleanupExecutionResult, ...],
+        reasons: dict[str, int],
     ) -> None:
-        results: list[CleanupExecutionResult] = []
-        try:
-            for batch, approval in confirmed:
-                result = execute_approved_batch(batch, approval)
-                results.append(result)
-                expected = (
-                    ActionState.QUARANTINED
-                    if approval.mode is CleanupMode.RECYCLE
-                    else ActionState.PURGED
-                )
-                if any(state is not expected for _action_id, state in result.action_states):
-                    break
-        except Exception as error:
-            self._events.put(("cleanup_error", (execution_token, str(error), tuple(results))))
-            return
-        self._events.put(("cleanup_finished", (execution_token, tuple(results))))
-
-    def _export_review_plan(self) -> None:
-        if self._state is not WorkbenchState.REVIEW or not self._scan_complete:
-            return
-        items = self._marked_items()
-        if not items:
-            messagebox.showinfo("DevClean", "请先人工标记至少一个允许复核的候选项。")
-            return
-        if any(not is_review_plan_eligible(item) for item in items):
-            messagebox.showerror("DevClean", "标记集合包含不可加入计划的项目，已拒绝导出。")
-            return
-        suggested = f"DevClean-review-{datetime.now(UTC):%Y%m%d-%H%M%S}.json"
-        selected = filedialog.asksaveasfilename(
-            title="导出不可执行复核计划",
-            defaultextension=".json",
-            initialfile=suggested,
-            filetypes=(("JSON", "*.json"),),
-            confirmoverwrite=False,
-        )
-        if not selected:
-            return
-        destination = Path(selected)
-        try:
-            plan = build_non_executable_review_plan(items, scan_roots=self._last_scan_roots)
-            write_non_executable_review_plan(destination, plan)
-        except (FileExistsError, OSError, TypeError, ValueError) as error:
-            messagebox.showerror("导出失败", str(error))
-            return
+        finished = 0
+        failed = 0
+        freed = 0
+        for result in results:
+            for _action, state in result.action_states:
+                if state in {ActionState.PURGED, ActionState.RECYCLED}:
+                    finished += 1
+                else:
+                    failed += 1
+            freed += result.purged_logical_bytes
+        gone = {
+            item.path
+            for item in self._deletable
+            if item.path in self._checked and not Path(item.path).exists()
+        }
+        if gone:
+            self._deletable = [
+                item for item in self._deletable if item.path not in gone
+            ]
+            self._checked -= gone
+            self._fill(self._deletable_tree, self._deletable)
+            self._refresh_totals()
+        self._sync_buttons()
+        parts = [f"已删除 {finished:,} 项"]
+        if freed:
+            parts.append(f"释放 {_format_bytes(freed)}")
+        if failed:
+            parts.append(f"{failed:,} 项未完成")
+        for name, count in sorted(reasons.items(), key=lambda pair: -pair[1]):
+            parts.append(f"{name} {count:,} 项")
+        self._status.set("；".join(parts) + "。正在重新扫描以核对结果…")
         self._status.set(
-            f"已导出 {len(items)} 项不可执行复核计划：{destination}；没有修改扫描文件。"
+            self._status.get().replace("正在重新扫描以核对结果…", "点「扫描」可核对结果。")
         )
-        messagebox.showinfo(
-            "导出完成",
-            "复核计划已作为新文件写出。execution_authority=NONE，且不支持导入执行。",
-        )
-
-    def _render_insights(self, session: TriageSession) -> None:
-        if self._category_tree is None or self._directory_tree is None:
-            return
-        self._category_tree.delete(*self._category_tree.get_children())
-        self._directory_tree.delete(*self._directory_tree.get_children())
-        for category, summary in session.insights.category_items():
-            self._category_tree.insert(
-                "",
-                tk.END,
-                values=(
-                    _DOMAIN_TITLES[source_domain_for_category(category)],
-                    _CATEGORY_TITLES[category],
-                    f"{summary.files:,}",
-                    _format_bytes(summary.logical_bytes),
-                    _format_bytes(summary.allocated_bytes),
-                ),
-            )
-        for insight in session.insights.top_directories():
-            self._directory_tree.insert(
-                "",
-                tk.END,
-                values=(
-                    insight.path,
-                    f"{insight.summary.files:,}",
-                    _format_bytes(insight.summary.logical_bytes),
-                    _format_bytes(insight.summary.allocated_bytes),
-                ),
-            )
-        self._insight_note.set(
-            "目录桶超过 2,000 个，概览已明确截断；分类总计仍完整。"
-            if session.insights.skipped_directory_buckets
-            else "目录概览按扫描根目录的首层聚合；分类总计始终完整。"
-        )
-
-    def _render_volume_summary(self) -> None:
-        observed: set[str] = set()
-        summaries: list[str] = []
-        for root in self._last_scan_roots:
-            anchor = root.anchor or str(root)
-            key = anchor.casefold()
-            if key in observed:
-                continue
-            observed.add(key)
-            try:
-                usage = shutil.disk_usage(root)
-            except OSError:
-                continue
-            summaries.append(
-                f"{anchor}：可用 {_format_bytes(usage.free)} / 总计 {_format_bytes(usage.total)}"
-            )
-        self._volume_note.set("；".join(summaries) if summaries else "无法读取所扫描驱动器的空间。")
-
-    def _render_duplicate_groups(self, result: DuplicateScanResult) -> None:
-        tree = self._duplicates_tree
-        if tree is None:
-            return
-        tree.delete(*tree.get_children())
-        for index, group in enumerate(result.groups, start=1):
-            group_id = f"duplicate:{index}"
-            tree.insert(
-                "",
-                tk.END,
-                iid=group_id,
-                text=f"重复组 {index}",
-                values=(
-                    len(group.records),
-                    _format_bytes(group.logical_size),
-                    _format_bytes(group.reclaimable_logical_bytes),
-                    group.digest,
-                    "只读分组；未指定正本或待处理副本",
-                ),
-                open=False,
-            )
-            for file_index, record in enumerate(group.records, start=1):
-                tree.insert(
-                    group_id,
-                    tk.END,
-                    text=f"文件 {file_index}",
-                    values=("", "", "", "", record.path),
-                )
-
-
-def _path_key(value: str) -> str:
-    return str(Path(value).absolute()).casefold()
-
-
-def _cleanup_result_summary(results: Sequence[CleanupExecutionResult]) -> str:
-    if not results:
-        return "没有执行任何清理批次。"
-    lines: list[str] = []
-    purged_logical = 0
-    for index, result in enumerate(results, start=1):
-        states = [state for _action_id, state in result.action_states]
-        purged = sum(state is ActionState.PURGED for state in states)
-        unchanged = sum(state is ActionState.FAILED_UNCHANGED for state in states)
-        recoverable = sum(state is ActionState.QUARANTINED for state in states)
-        unknown = sum(state is ActionState.UNKNOWN for state in states)
-        expected = (
-            ActionState.QUARANTINED
-            if result.mode is CleanupMode.RECYCLE
-            else ActionState.PURGED
-        )
-        expected_complete = bool(states) and all(state is expected for state in states)
-        purged_logical += result.purged_logical_bytes
-        mode = (
-            "永久清除"
-            if result.mode in {CleanupMode.PERMANENT, CleanupMode.CONFIRMED_PURGE}
-            else "可恢复私有隔离"
-        )
-        if expected_complete:
-            state = "已隔离并可恢复" if expected is ActionState.QUARANTINED else "完成"
-        elif unknown:
-            state = "需要人工复核"
-        else:
-            state = "已停止 / 部分未执行"
-        lines.append(
-            f"批次 {index}（{mode}）：{state}；已永久清除 {purged}，"
-            f"可恢复隔离 {recoverable}，未改动 {unchanged}，不确定 {unknown}。"
-        )
-    lines.append(
-        f"已验证永久移除文件的逻辑大小：{_format_bytes(purged_logical)}。"
-        "这不是卷空闲空间的实测值；稀疏、压缩及仍打开的句柄会影响实际释放。"
-    )
-    if any(result.mode is CleanupMode.RECYCLE for result in results):
-        lines.append("私有隔离与源文件位于同一卷，因此隔离本身不释放空间。")
-    lines.append(
-        "执行记录已写入本机 SQLite 意图日志；PURGE_PENDING/不确定状态不会自动重放。"
-    )
-    return "\n".join(lines)
-
-
-def _format_bytes(value: int) -> str:
-    units = ("B", "KiB", "MiB", "GiB", "TiB", "PiB")
-    size = float(value)
-    for unit in units:
-        if size < 1024 or unit == units[-1]:
-            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
-        size /= 1024
-    raise AssertionError("unreachable")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -2517,20 +1554,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         root.update_idletasks()
         root.destroy()
         return 0
-    try:
-        elevated = is_process_elevated()
-    except OSError:
-        elevated = True
-    if elevated:
-        warning = tk.Tk()
-        warning.withdraw()
-        messagebox.showerror(
-            "DevClean",
-            "DevClean 主程序拒绝以管理员权限运行。请关闭后用普通用户方式启动。",
-            parent=warning,
-        )
-        warning.destroy()
-        return 2
+    # Administrator is required, not refused: the system garbage that actually
+    # fills a drive -- C:\Windows\Temp, SoftwareDistribution\Download, Prefetch,
+    # the machine-wide error report queues -- cannot be removed by a normal user.
     root = tk.Tk()
     DevCleanWindow(root)
     root.mainloop()
@@ -2539,13 +1565,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 __all__ = [
     "DevCleanWindow",
-    "WorkbenchState",
-    "build_non_executable_review_plan",
-    "cleanup_mode_for_user_choice",
     "is_ai_review_eligible",
     "is_direct_cleanup_eligible",
-    "is_low_risk_cleanup_eligible",
-    "is_review_plan_eligible",
     "main",
-    "write_non_executable_review_plan",
+    "scan_targets",
 ]

@@ -20,6 +20,9 @@ class InsightSummary:
     files: int = 0
     logical_bytes: int = 0
     allocated_bytes: int = 0
+    # See TriageSummary: an allocated total of zero has to be distinguishable
+    # from "no file here was opened, so nothing was measured".
+    allocation_unknown_files: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,15 +57,14 @@ class ScanInsights:
             self.skipped_directory_buckets += 1
 
     def category_summary(self, category: CleanupCategory) -> InsightSummary:
-        source = self._categories[category]
-        return InsightSummary(source.files, source.logical_bytes, source.allocated_bytes)
+        return _copy(self._categories[category])
 
     def category_items(self) -> tuple[tuple[CleanupCategory, InsightSummary], ...]:
         return tuple(
             (category, self.category_summary(category))
             for category in sorted(
                 CleanupCategory,
-                key=lambda value: self._categories[value].allocated_bytes,
+                key=lambda value: self._categories[value].logical_bytes,
                 reverse=True,
             )
             if self._categories[category].files
@@ -71,24 +73,33 @@ class ScanInsights:
     def top_directories(self, *, limit: int = 100) -> tuple[DirectoryInsight, ...]:
         if limit < 1:
             raise ValueError("directory insight limit must be positive")
+        # Ranked by logical size.  Physical allocation is only known for objects
+        # that were opened, so ranking on it silently ordered everything by zero
+        # once the scan stopped opening every file -- turning "the locations
+        # using the most space" into an arbitrary list.
         ranked = sorted(
-            self._directories.items(), key=lambda item: item[1].allocated_bytes, reverse=True
+            self._directories.items(), key=lambda item: item[1].logical_bytes, reverse=True
         )[:limit]
         return tuple(
-            DirectoryInsight(
-                path=path,
-                summary=InsightSummary(
-                    summary.files, summary.logical_bytes, summary.allocated_bytes
-                ),
-            )
-            for path, summary in ranked
+            DirectoryInsight(path=path, summary=_copy(summary)) for path, summary in ranked
         )
+
+
+def _copy(summary: InsightSummary) -> InsightSummary:
+    return InsightSummary(
+        summary.files,
+        summary.logical_bytes,
+        summary.allocated_bytes,
+        summary.allocation_unknown_files,
+    )
 
 
 def _add(summary: InsightSummary, item: TriageItem) -> None:
     summary.files += 1
     summary.logical_bytes += item.logical_size
-    if item.allocated_size is not None:
+    if item.allocated_size is None:
+        summary.allocation_unknown_files += 1
+    else:
         summary.allocated_bytes += item.allocated_size
 
 

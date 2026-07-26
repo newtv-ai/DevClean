@@ -1,0 +1,128 @@
+{
+  "schema_version": 2,
+  "document_type": "devclean.keep_rules",
+  "_help": "DevClean 只从本文件读取确定不删分类数据和用户/AI KEEP 规则。KEEP 规则始终优先。",
+  "_ai_editing_contract": {
+    "contract_version": 1,
+    "output_format": "FULL_JSON_OBJECT_ONLY",
+    "instructions": [
+      "返回完整 JSON 对象，不要使用 Markdown 代码块、注释或省略号。",
+      "不得修改 schema_version、document_type 或 _ai_editing_contract。",
+      "不得增加、删除或改名字段；只修改现有字段的值或数组内容。",
+      "rules 中每条 KEEP 规则必须保留 id、group、enabled、match、value、source、reason、updated_at 全部字段，id 必须唯一。",
+      "只能使用 match_help 中列出的 match；正则必须能编译。",
+      "没有充分把握时不要新增规则；UNSURE 不得写成 DELETE 或 KEEP。"
+    ]
+  },
+  "classification": {
+    "application_data_segments": ["appdata", "programdata"],
+    "protected_system_root_names": [
+      "Windows",
+      "Program Files",
+      "Program Files (x86)",
+      "ProgramData",
+      "Recovery",
+      "$Recycle.Bin",
+      "System Volume Information",
+      "Windows.old",
+      "$Windows.~BT"
+    ],
+    "protected_system_file_names": [
+      "bootmgr",
+      "hiberfil.sys",
+      "pagefile.sys",
+      "swapfile.sys"
+    ],
+    "program_payload_suffixes": [
+      ".vhd",
+      ".vhdx",
+      ".avhd",
+      ".avhdx",
+      ".vmdk",
+      ".vdi",
+      ".qcow",
+      ".qcow2",
+      ".img",
+      ".iso",
+      ".wim",
+      ".zst",
+      ".exe",
+      ".dll",
+      ".sys",
+      ".ocx",
+      ".drv",
+      ".node",
+      ".pyd",
+      ".so",
+      ".dylib",
+      ".wasm",
+      ".jar",
+      ".msi",
+      ".msix",
+      ".appx",
+      ".pyi"
+    ],
+    "application_state_suffixes": [
+      ".lock",
+      ".pid",
+      ".ini",
+      ".cfg",
+      ".conf",
+      ".toml",
+      ".yml",
+      ".yaml",
+      ".reg",
+      ".dat",
+      ".db",
+      ".sqlite",
+      ".sqlite3",
+      ".lnk",
+      ".url"
+    ],
+    "installed_payload_segments": ["extensions", "plugins", "modulardata"],
+    "application_state_names": [
+      "environments.txt",
+      "locked-directories",
+      "settings.json",
+      "config.json",
+      "preferences",
+      "state.json",
+      "credentials.json",
+      "known_hosts"
+    ],
+    "application_state_tails": [
+      "-overrides.json",
+      "-schedule.json",
+      "settings.json",
+      "config.json",
+      "state.json",
+      ".lockb",
+      ".trackid"
+    ]
+  },
+  "classification_groups": {
+    "windows_system": [
+      "protected_system_root_names",
+      "protected_system_file_names"
+    ],
+    "installed_application_payload": [
+      "application_data_segments",
+      "program_payload_suffixes",
+      "installed_payload_segments"
+    ],
+    "application_state": [
+      "application_state_suffixes",
+      "application_state_names",
+      "application_state_tails"
+    ]
+  },
+  "match_help": {
+    "exact_path": "仅匹配一个完整路径",
+    "path_prefix": "匹配目录或路径及其全部后代",
+    "path_glob": "按完整路径匹配 * 和 ?",
+    "filename_glob": "只按文件名匹配 * 和 ?",
+    "path_regex": "正则搜索完整路径，路径分隔符统一写成 /",
+    "filename_regex": "正则搜索文件名"
+  },
+  "rules": []
+}

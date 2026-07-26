@@ -1,111 +1,141 @@
+"""Handle-bound mutation primitives: recycle, delete, and delete a tree.
+
+Nothing is staged anywhere. ``RECYCLE`` hands the object to the Windows Recycle
+Bin, where the user already knows how to get it back, and the permanent modes
+delete the verified handle where it stands. A private holding area would not
+free the space the user is trying to reclaim, which is the whole point.
+"""
+
 from __future__ import annotations
 
-import ctypes
+import os
 from pathlib import Path
 
 import pytest
 
-from devclean.platform.windows import exact_cleanup
 from devclean.platform.windows.exact_cleanup import (
     ExactCleanupError,
     ExactFileSnapshot,
     ExactRootBoundary,
-    metadata_matches_snapshot,
-    quarantine_exact_file,
+    purge_exact_file,
+    recycle_exact_object,
 )
-from devclean.platform.windows.filesystem import FileSystemMetadata
+from devclean.platform.windows.filesystem import read_file_metadata
 
-
-def _snapshot() -> ExactFileSnapshot:
-    return ExactFileSnapshot(7, 42, "ab" * 16, "file_id_128", 1, 32, None, 100, 200)
+pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows handle-bound mutations")
 
 
 def _boundary(root: Path) -> ExactRootBoundary:
-    return ExactRootBoundary(root, 42, "10" * 16, "file_id_128")
-
-
-def _metadata(**changes: object) -> FileSystemMetadata:
-    values: dict[str, object] = {
-        "is_directory": False,
-        "logical_size": 7,
-        "allocation_size": 4096,
-        "volume_serial": 42,
-        "file_id": "ab" * 16,
-        "file_id_kind": "file_id_128",
-        "link_count": 1,
-        "attributes": 32,
-        "reparse_tag": None,
-        "is_reparse_point": False,
-        "is_cloud_placeholder": False,
-        "creation_time_ns": 100,
-        "last_write_time_ns": 200,
-    }
-    values.update(changes)
-    return FileSystemMetadata(**values)  # type: ignore[arg-type]
-
-
-def test_rename_layout_uses_file_name_offset_not_padded_structure_size() -> None:
-    offset = exact_cleanup._FILE_RENAME_INFO_LAYOUT.file_name.offset
-    assert offset == 20
-    assert ctypes.sizeof(exact_cleanup._FILE_RENAME_INFO_LAYOUT) > offset
-
-
-def test_disposition_boolean_is_one_byte_and_mutation_omits_write_delete_share() -> None:
-    assert ctypes.sizeof(exact_cleanup._FILE_DISPOSITION_INFO) == 1
-    assert exact_cleanup._MUTATION_SHARE_MODE & exact_cleanup._FILE_SHARE_WRITE == 0
-    assert exact_cleanup._MUTATION_SHARE_MODE & exact_cleanup._FILE_SHARE_DELETE == 0
-
-
-def test_final_handle_path_escape_is_refused(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        exact_cleanup, "_final_path", lambda _handle: r"c:\outside\payload.bin"
+    metadata = read_file_metadata(root)
+    return ExactRootBoundary(
+        path=root,
+        volume_serial=metadata.volume_serial,
+        file_id=metadata.file_id,
+        file_id_kind=metadata.file_id_kind,
     )
-    with pytest.raises(ExactCleanupError, match="escaped"):
-        exact_cleanup._require_handle_in_boundary(
-            object(), r"c:\approved", allow_equal=False
-        )
 
 
-@pytest.mark.parametrize(
-    "change",
-    [
-        {"logical_size": 8},
-        {"volume_serial": 43},
-        {"file_id": "cd" * 16},
-        {"file_id_kind": "file_index_64"},
-        {"link_count": 2},
-        {"attributes": 33},
-        {"reparse_tag": 123, "is_reparse_point": True},
-        {"is_cloud_placeholder": True},
-        {"creation_time_ns": 101},
-        {"last_write_time_ns": 201},
-        {"is_directory": True},
-    ],
-)
-def test_exact_snapshot_comparison_fails_closed(change: dict[str, object]) -> None:
-    assert not metadata_matches_snapshot(_metadata(**change), _snapshot())
+def _snapshot(path: Path) -> ExactFileSnapshot:
+    metadata = read_file_metadata(path)
+    return ExactFileSnapshot(
+        logical_size=metadata.logical_size,
+        volume_serial=metadata.volume_serial,
+        file_id=metadata.file_id,
+        file_id_kind=metadata.file_id_kind,
+        link_count=metadata.link_count,
+        attributes=metadata.attributes,
+        reparse_tag=metadata.reparse_tag,
+        creation_time_ns=metadata.creation_time_ns,
+        last_write_time_ns=metadata.last_write_time_ns,
+    )
 
 
-def test_exact_snapshot_comparison_accepts_only_full_match() -> None:
-    assert metadata_matches_snapshot(_metadata(), _snapshot())
-    assert not metadata_matches_snapshot(None, _snapshot())
+def test_permanent_delete_needs_no_staging_area(tmp_path: Path) -> None:
+    target = tmp_path / "cache.bin"
+    target.write_bytes(b"payload")
+
+    result = purge_exact_file(target, _snapshot(target), _boundary(tmp_path))
+
+    assert result.source_name_absent
+    assert result.destination_path is None
+    assert not target.exists()
+    # Nothing was created beside it on the way out.
+    assert tuple(tmp_path.iterdir()) == ()
 
 
-def test_quarantine_rejects_same_existing_and_cross_volume_paths(tmp_path: Path) -> None:
-    source = tmp_path / "source.bin"
-    source.write_bytes(b"fixture")
-    with pytest.raises(ExactCleanupError, match="must differ"):
-        quarantine_exact_file(source, source, _snapshot(), _boundary(tmp_path))
-    destination = tmp_path / "destination.bin"
-    destination.write_bytes(b"occupied")
-    with pytest.raises(ExactCleanupError, match="already exists"):
-        quarantine_exact_file(source, destination, _snapshot(), _boundary(tmp_path))
-    with pytest.raises(ExactCleanupError, match="source volume"):
-        quarantine_exact_file(
-            source,
-            Path(r"Z:\quarantine\target"),
-            _snapshot(),
-            _boundary(tmp_path),
-        )
+def test_a_file_replaced_after_the_snapshot_is_refused(tmp_path: Path) -> None:
+    target = tmp_path / "cache.bin"
+    target.write_bytes(b"original")
+    snapshot = _snapshot(target)
+    target.unlink()
+    target.write_bytes(b"substituted")
+
+    with pytest.raises(ExactCleanupError):
+        purge_exact_file(target, snapshot, _boundary(tmp_path))
+
+    assert target.read_bytes() == b"substituted"
+
+
+def test_a_target_outside_the_approved_root_is_refused(tmp_path: Path) -> None:
+    approved = tmp_path / "approved"
+    approved.mkdir()
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"payload")
+
+    with pytest.raises(ExactCleanupError):
+        purge_exact_file(outside, _snapshot(outside), _boundary(approved))
+
+    assert outside.exists()
+
+
+def test_the_approved_root_itself_is_refused(tmp_path: Path) -> None:
+    """A boundary bounds its contents; it is never itself the target.
+
+    The file opener deliberately omits backup semantics, so a directory handed to
+    it is refused by Windows before any boundary logic runs.  Either refusal is
+    acceptable; surviving is not optional.
+    """
+
+    with pytest.raises((ExactCleanupError, OSError)):
+        purge_exact_file(tmp_path, _snapshot(tmp_path), _boundary(tmp_path))
+
+    assert tmp_path.is_dir()
+
+
+@pytest.mark.parametrize("prefix", ("\\\\?\\", "\\\\.\\", "\\\\"))
+def test_non_ordinary_paths_are_refused(tmp_path: Path, prefix: str) -> None:
+    target = tmp_path / "cache.bin"
+    target.write_bytes(b"payload")
+    snapshot = _snapshot(target)
+
+    with pytest.raises(ExactCleanupError, match="ordinary absolute local path"):
+        purge_exact_file(Path(f"{prefix}{target}"), snapshot, _boundary(tmp_path))
+
+    assert target.exists()
+
+
+def test_recycling_refuses_a_replaced_file_before_calling_the_shell(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "cache.bin"
+    target.write_bytes(b"original")
+    snapshot = _snapshot(target)
+    target.unlink()
+    target.write_bytes(b"substituted")
+
+    with pytest.raises(ExactCleanupError):
+        recycle_exact_object(target, snapshot, _boundary(tmp_path))
+
+    assert target.read_bytes() == b"substituted"
+
+
+def test_recycling_refuses_a_target_outside_the_approved_root(tmp_path: Path) -> None:
+    approved = tmp_path / "approved"
+    approved.mkdir()
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"payload")
+
+    with pytest.raises(ExactCleanupError):
+        recycle_exact_object(outside, _snapshot(outside), _boundary(approved))
+
+    assert outside.exists()

@@ -19,10 +19,10 @@ from devclean.platform.windows.volumes import is_local_fixed_path
 def classify_execution_platform(
     *, is_windows: bool, machine: str, product_name: str | None, build_number: int | None
 ) -> dict[str, str]:
-    """Describe future execution support without authorizing any action.
+    """Describe the supported host baseline without authorizing any action.
 
-    The current milestone remains inventory-only on every platform. This keeps the published
-    Windows 11 x64 support boundary visible before an execution release exists.
+    Confirmed cleanup exists in the GUI, and only on the documented baseline. This
+    classification makes that boundary visible; it never grants an action.
     """
 
     if not is_windows:
@@ -36,13 +36,13 @@ def classify_execution_platform(
     if machine.casefold() not in {"amd64", "x86_64", "x64"}:
         return {
             "status": "UNSUPPORTED",
-            "detail": "Future execution support requires a Windows 11 x64 host.",
+            "detail": "Confirmed cleanup requires a Windows 11 x64 host.",
         }
     product = product_name.casefold() if product_name is not None else ""
     if "server" in product:
         return {
             "status": "UNSUPPORTED",
-            "detail": "Future execution support is limited to Windows 11 x64 client hosts.",
+            "detail": "Confirmed cleanup is limited to Windows 11 x64 client hosts.",
         }
     # The ProductName registry value can retain a Windows 10 string on Windows 11 upgrades.
     # Windows client build 22000 introduced Windows 11, so prefer the build when it is available.
@@ -55,22 +55,22 @@ def classify_execution_platform(
         return {
             "status": "UNKNOWN",
             "detail": (
-                "Windows product edition could not be read; future execution support cannot "
-                "be determined."
+                "Windows product edition could not be read; the cleanup support "
+                "baseline cannot be determined."
             ),
         }
     if product.startswith("windows 10"):
         return {
             "status": "BEST_EFFORT_INVENTORY",
             "detail": (
-                "Windows 10 is inventory-only best effort; future execution support is not "
-                "available."
+                "Windows 10 is inventory best effort; confirmed cleanup is not "
+                "supported there."
             ),
         }
     return {
         "status": "UNKNOWN",
         "detail": (
-            "This Windows product is outside the documented future execution support baseline."
+            "This Windows product is outside the documented cleanup support baseline."
         ),
     }
 
@@ -129,8 +129,13 @@ def collect_diagnostics() -> dict[str, Any]:
         "machine": platform.machine(),
         "is_windows": os.name == "nt",
         "process_elevated": elevated,
+        # Scoped to this process: the CLI has no cleanup surface at all.  It is
+        # not a claim that the product cannot delete -- the GUI can, behind a
+        # typed confirmation -- and ``doctor`` is where a user goes to learn the
+        # safety boundary, so it must not deny a capability that exists.
         "execution_allowed": False,
-        "future_execution_platform": execution_platform,
+        "confirmed_cleanup_surface": "GUI_ONLY",
+        "execution_platform_baseline": execution_platform,
         "inventory_allowed": not elevated,
         "data_dir": str(data_dir()),
         "data_dir_is_absolute": data_dir().is_absolute(),
@@ -141,7 +146,11 @@ def collect_diagnostics() -> dict[str, Any]:
         "safety_message": (
             "Main process is elevated; exit and restart from a normal terminal."
             if elevated
-            else "Inventory-only milestone; no cleaning actions are available."
+            else (
+                "This CLI is read-only and has no cleanup command. Confirmed "
+                "cleanup -- recoverable private quarantine, and irreversible "
+                "purge only after a typed confirmation -- exists in the GUI."
+            )
         ),
     }
 

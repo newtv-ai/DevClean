@@ -14,7 +14,6 @@ from devclean.core.ai_review_contract import (
     AI_REVIEW_REQUEST_TYPE,
     AI_REVIEW_RESPONSE_TYPE,
     MAX_AI_REASON_CHARS,
-    MAX_AI_REVIEW_ITEMS,
     AiRecommendation,
     AiReviewCandidateInput,
     AiReviewContractError,
@@ -77,7 +76,7 @@ def _item(
         risk_tier=risk,
         evidence_kind=EvidenceKind.PATH_HEURISTIC,
         actionability=actionability,
-        execution_policy=ExecutionPolicy.RECYCLE_ONLY,
+        execution_policy=ExecutionPolicy.USER_CHOICE_DELETE,
         recovery=RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT,
         reason=reason,
         tags=tags,
@@ -134,6 +133,7 @@ def test_request_is_closed_private_bounded_and_has_zero_authority(tmp_path: Path
         "scan_session_digest",
         "issued_at",
         "expires_at",
+        "path_disclosure",
         "instructions",
         "response_contract",
         "candidates",
@@ -141,14 +141,149 @@ def test_request_is_closed_private_bounded_and_has_zero_authority(tmp_path: Path
     }
     assert payload["document_type"] == AI_REVIEW_REQUEST_TYPE
     assert payload["execution_authority"] == "NONE"
+    # Redaction is the default, and the document says so.
+    assert payload["path_disclosure"] == "REDACTED"
     assert str(private_path) not in serialized
     assert "private-customer-model-name" not in serialized
     assert "filename=*.whl" in serialized
     candidate = payload["candidates"][0]
     assert candidate["candidate_id"].startswith("candidate_")
     assert candidate["hard_protected"] is False
+    assert candidate["path"] is None
     assert len(candidate["snapshot_identity_digest"]) == 64
     assert len(serialized.encode("utf-8")) < contract_module.MAX_AI_REQUEST_BYTES
+
+
+def test_disclosed_package_carries_real_paths_and_says_so(tmp_path: Path) -> None:
+    """A local reviewer needs the path; the document records that it was sent."""
+
+    target = tmp_path / "pip" / "cache" / "customer-model-name.whl"
+    package = build_ai_review_package(
+        (AiReviewCandidateInput(_item(target), hard_protected=False),),
+        scan_session_id="scan-session-disclosed",
+        now=NOW,
+        disclose_full_paths=True,
+    )
+
+    payload = package.payload()
+    serialized = serialize_ai_review_package(package)
+
+    assert payload["path_disclosure"] == "FULL"
+    assert payload["candidates"][0]["path"] == str(target)
+    # Check the serialized document, not just the dict.  Compare after parsing:
+    # JSON escapes the backslashes, so the raw path is not a literal substring.
+    assert json.loads(serialized)["candidates"][0]["path"] == str(target)
+    # The structural hint stays, so the key set never changes between modes.
+    assert payload["candidates"][0]["redacted_path_hint"].endswith("filename=*.whl")
+    assert set(payload["candidates"][0]) == set(
+        build_ai_review_package(
+            (AiReviewCandidateInput(_item(target), hard_protected=False),),
+            scan_session_id="scan-session-redacted",
+            now=NOW,
+        ).payload()["candidates"][0]
+    )
+    # A disclosed package still validates and still carries no authority.
+    assert package.disclose_full_paths is True
+    assert payload["execution_authority"] == "NONE"
+    contract_module._validate_package_object(package, now=NOW)
+
+
+@pytest.mark.parametrize(
+    "explanation",
+    [
+        r"pip download cache entry under C:\Users\dev\AppData\Local\pip; pip re-downloads it",
+        "Safe to remove: regenerate with `npm install` when the project is built again.",
+        "This is a uv wheel cache entry; `uv cache clean` would remove it too.",
+        "Keep: this looks like the only copy of a build output, not a cache.",
+    ],
+)
+def test_the_model_explanation_is_kept_verbatim(tmp_path: Path, explanation: str) -> None:
+    """The explanation is the answer to "can I delete this" -- do not mangle it.
+
+    Filtering paths and command names out of this field destroyed exactly the
+    text the user asked for: a model explaining that a cache entry is safe to
+    remove names the path it looked at and the command that regenerates it.  Both
+    used to void the whole batch or blank the text, protecting nothing.
+    """
+
+    target = tmp_path / "pip" / "cache" / "one.whl"
+    package = build_ai_review_package(
+        (AiReviewCandidateInput(_item(target), hard_protected=False),),
+        scan_session_id="scan-session-verbatim",
+        now=NOW,
+        disclose_full_paths=True,
+    )
+    answer = response_template(package)
+    answer["recommendations"][0].update(
+        {"recommendation": "RECOMMEND_RECYCLE", "reason": explanation}
+    )
+
+    imported = parse_ai_review_response(json.dumps(answer), package, now=NOW)
+
+    assert imported.recommendations[0].recommendation is AiRecommendation.RECOMMEND_RECYCLE
+    assert imported.recommendations[0].reason == explanation
+
+
+def test_explanation_bounds_that_do_still_apply(tmp_path: Path) -> None:
+    """Only what keeps the string safe to store and render is enforced."""
+
+    target = tmp_path / "pip" / "cache" / "one.whl"
+    package = build_ai_review_package(
+        (AiReviewCandidateInput(_item(target), hard_protected=False),),
+        scan_session_id="scan-session-bounds",
+        now=NOW,
+        disclose_full_paths=True,
+    )
+    for label, reason in (
+        ("empty", "   "),
+        ("too long", "x" * (contract_module.MAX_AI_REASON_CHARS + 1)),
+        ("control characters", "safe to remove\x07\x00"),
+    ):
+        answer = response_template(package)
+        answer["recommendations"][0].update({"reason": reason})
+        with pytest.raises(contract_module.AiReviewContractError):
+            parse_ai_review_response(json.dumps(answer), package, now=NOW)
+            raise AssertionError(f"{label} should have been refused")
+
+
+def test_disclosure_never_lets_the_model_widen_the_candidate_set(tmp_path: Path) -> None:
+    """Disclosure changes what the model reads, never what it can authorise."""
+
+    target = tmp_path / "pip" / "cache" / "one.whl"
+    package = build_ai_review_package(
+        (AiReviewCandidateInput(_item(target), hard_protected=False),),
+        scan_session_id="scan-session-no-widen",
+        now=NOW,
+        disclose_full_paths=True,
+    )
+    answer = response_template(package)
+    answer["recommendations"].append(
+        {
+            "candidate_id": "candidate_" + "0" * 32,
+            "recommendation": "RECOMMEND_RECYCLE",
+            "reason": "an id the package never issued",
+        }
+    )
+
+    with pytest.raises(contract_module.AiReviewContractError):
+        parse_ai_review_response(json.dumps(answer), package, now=NOW)
+
+
+def test_disclosure_flag_is_covered_by_the_package_digest(tmp_path: Path) -> None:
+    """Flipping the recorded disclosure must not survive validation."""
+
+    target = tmp_path / "pip" / "cache" / "one.whl"
+    package = build_ai_review_package(
+        (AiReviewCandidateInput(_item(target), hard_protected=False),),
+        scan_session_id="scan-session-digest",
+        now=NOW,
+        disclose_full_paths=True,
+    )
+
+    forged = replace(package, disclose_full_paths=False)
+
+    with pytest.raises(contract_module.AiReviewContractError):
+        contract_module._validate_package_object(forged, now=NOW)
 
 
 def test_packet_tokens_and_keyed_snapshot_digests_are_fresh(tmp_path: Path) -> None:
@@ -180,15 +315,9 @@ def test_snapshot_digest_binds_identity_and_metadata(tmp_path: Path) -> None:
         serialize_ai_review_package(changed_with_same_nonce)
 
 
-def test_builder_requires_explicit_bounded_unique_candidates(tmp_path: Path) -> None:
-    with pytest.raises(AiReviewContractError, match="1 to"):
+def test_builder_requires_explicit_nonempty_unique_candidates(tmp_path: Path) -> None:
+    with pytest.raises(AiReviewContractError, match="at least one"):
         build_ai_review_package((), scan_session_id="scan", now=NOW)
-    too_many = tuple(
-        _source(tmp_path / f"cache-{index}" / "entry.bin")
-        for index in range(MAX_AI_REVIEW_ITEMS + 1)
-    )
-    with pytest.raises(AiReviewContractError, match="1 to"):
-        build_ai_review_package(too_many, scan_session_id="scan", now=NOW)
     duplicate = _source(tmp_path / "same.bin")
     with pytest.raises(AiReviewContractError, match="duplicate path"):
         build_ai_review_package((duplicate, duplicate), scan_session_id="scan", now=NOW)
@@ -200,7 +329,7 @@ def test_builder_rejects_unsafe_scan_session_id(tmp_path: Path, scan_id: str) ->
         build_ai_review_package((_source(tmp_path / "one.bin"),), scan_session_id=scan_id, now=NOW)
 
 
-def test_builder_rejects_invalid_clock_and_ttl(tmp_path: Path) -> None:
+def test_builder_rejects_invalid_clock(tmp_path: Path) -> None:
     candidate = (_source(tmp_path / "one.bin"),)
     with pytest.raises(AiReviewContractError, match="timezone-aware"):
         build_ai_review_package(
@@ -208,9 +337,6 @@ def test_builder_rejects_invalid_clock_and_ttl(tmp_path: Path) -> None:
             scan_session_id="scan",
             now=datetime(2026, 7, 16),
         )
-    for ttl in (timedelta(0), timedelta(hours=25)):
-        with pytest.raises(AiReviewContractError, match="ttl"):
-            build_ai_review_package(candidate, scan_session_id="scan", now=NOW, ttl=ttl)
 
 
 def test_source_metadata_is_redacted_and_bounded_not_rejected(tmp_path: Path) -> None:
@@ -332,24 +458,40 @@ def test_response_requires_every_current_packet_id_exactly_once(tmp_path: Path) 
             )
 
 
-def test_response_rejects_new_paths_commands_and_unknown_fields(tmp_path: Path) -> None:
+def test_response_rejects_extra_fields_but_not_prose(tmp_path: Path) -> None:
+    """A model cannot add fields; it can say whatever it wants in 'reason'.
+
+    An extra key is refused because it could only be an attempt to supply data the
+    contract does not accept -- a path to act on, a different target.  The reason
+    string is refused for none of that: it is display text, and a model explaining
+    a cache entry will name the path and the command that regenerates it.
+    """
+
     package = _package(tmp_path)
     entry = package.entries[0]
     injected_field = _recommendation(entry)
     injected_field["path"] = r"C:\new\target.bin"
-    cases = [
-        ([injected_field], "unknown or missing fields"),
-        ([_recommendation(entry, reason=r"The target is C:\new\target.bin")], "contain a path"),
-        ([_recommendation(entry, reason="Run pip cache purge first")], "contain a command"),
-        ([_recommendation(entry, reason="Use Remove-Item on it")], "contain a command"),
-    ]
-    for recommendations, message in cases:
-        with pytest.raises(AiReviewContractError, match=message):
-            parse_ai_review_response(
-                _response_text(package, recommendations),
-                package,
-                now=NOW,
-            )
+
+    with pytest.raises(AiReviewContractError, match="unknown or missing fields"):
+        parse_ai_review_response(
+            _response_text(package, [injected_field]), package, now=NOW
+        )
+
+    for prose in (
+        r"The target is C:\new\target.bin",
+        "Run pip cache purge first",
+        "Use Remove-Item on it",
+    ):
+        imported = parse_ai_review_response(
+            _response_text(package, [_recommendation(entry, reason=prose)]),
+            package,
+            now=NOW,
+        )
+        assert imported.recommendations[0].reason == prose
+        # Prose never becomes a target: the plan still comes from the candidate
+        # ids DevClean issued, and this one is still just advice.
+        assert imported.execution_authority == "NONE"
+        assert imported.recommendations[0].item.path == entry.item.path
 
 
 def test_response_rejects_unbounded_or_control_character_reason(tmp_path: Path) -> None:
@@ -426,13 +568,11 @@ def test_response_is_bound_to_session_nonce_and_package_digest(tmp_path: Path) -
             parse_ai_review_response(json.dumps(payload), package, now=NOW)
 
 
-def test_expired_or_not_yet_valid_package_is_rejected(tmp_path: Path) -> None:
+def test_response_import_does_not_expire_paid_ai_work(tmp_path: Path) -> None:
     package = _package(tmp_path)
     valid_response = _response_text(package)
-    with pytest.raises(AiReviewContractError, match="expired"):
-        parse_ai_review_response(valid_response, package, now=NOW + timedelta(hours=3))
-    with pytest.raises(AiReviewContractError, match="not yet valid"):
-        parse_ai_review_response(valid_response, package, now=NOW - timedelta(minutes=6))
+    parse_ai_review_response(valid_response, package, now=NOW + timedelta(hours=3))
+    parse_ai_review_response(valid_response, package, now=NOW - timedelta(minutes=6))
 
 
 def test_tampered_local_snapshot_or_package_digest_is_rejected(tmp_path: Path) -> None:

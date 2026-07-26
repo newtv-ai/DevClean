@@ -32,13 +32,36 @@ def test_doctor_json_is_inventory_only(monkeypatch, capsys) -> None:
             "python_version": "3.13",
             "process_elevated": False,
             "state_integrity": "not_created",
-            "safety_message": "Inventory-only milestone",
+            "safety_message": "This CLI is read-only and has no cleanup command.",
             "execution_allowed": False,
+            "confirmed_cleanup_surface": "GUI_ONLY",
         },
     )
     assert cli.main(["doctor", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["execution_allowed"] is False
+    assert payload["confirmed_cleanup_surface"] == "GUI_ONLY"
+
+
+def test_doctor_reports_the_real_cleanup_surface(capsys) -> None:
+    """The safety self-report must not deny a capability the product has.
+
+    ``doctor`` is the command for inspecting the safety boundary.  It used to say
+    "no cleaning actions are available", which stopped being true once the GUI
+    gained confirmed cleanup, so anyone auditing the binary through it would draw
+    the wrong conclusion.
+    """
+
+    assert cli.main(["doctor", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    # True and unchanged: this CLI never executes cleanup.
+    assert payload["execution_allowed"] is False
+    # Newly stated: where cleanup does live.
+    assert payload["confirmed_cleanup_surface"] == "GUI_ONLY"
+    assert "no cleaning actions are available" not in payload["safety_message"]
+    assert "GUI" in payload["safety_message"]
+    assert "typed confirmation" in payload["safety_message"]
 
 
 def test_doctor_rejects_elevated_main_process(monkeypatch, capsys) -> None:

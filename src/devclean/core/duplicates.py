@@ -6,7 +6,7 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
-from devclean.core.triage import is_protected_path
+from devclean.core.triage import is_own_quarantine_path
 from devclean.platform.windows.filesystem import read_file_metadata
 from devclean.scanner import CancellationToken, ScanOptions, ScanRecord, ScanRecordKind, scan_roots
 
@@ -125,7 +125,12 @@ def _is_hash_candidate(record: ScanRecord, minimum_size: int) -> bool:
         and record.file_id is not None
         and record.creation_time_ns is not None
         and record.last_write_time_ns is not None
-        and not is_protected_path(Path(record.path))
+        # Duplicate analysis is read-only and reports to the user, so it covers
+        # everything the scan saw -- duplicated photos and archives are exactly
+        # what a cleaner should surface.  Only this tool's own staging area is
+        # skipped, because a quarantined object is a copy of the source by
+        # construction and reporting it as a duplicate would be noise.
+        and not is_own_quarantine_path(Path(record.path))
     )
 
 
