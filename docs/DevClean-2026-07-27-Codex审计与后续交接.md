@@ -15,7 +15,7 @@
 - 构建方式：PyInstaller `--onefile --windowed --uac-admin`
 - 发布载荷：一个 EXE 加四份运行时许可证
 
-Git 仓库已经直接恢复在 `G:\clean`，不再有两个同名目录套壳。当前分支为 `main`，远端为 `https://github.com/newtv-ai/DevClean.git`。本轮产品改动已经提交为 `97b67a7487f393a360b9d46cb9ead4a52b69779e`（`feat: complete configurable cleanup workflow and Windows release`），作者和提交者均为 `newtv-ai <267045021+newtv-ai@users.noreply.github.com>`。当前本地提交尚未 push；不得未经用户明确要求上传到 GitHub。
+Git 仓库已经直接恢复在 `G:\clean`，不再有两个同名目录套壳。当前分支为 `main`，远端为 `https://github.com/newtv-ai/DevClean.git`。产品实现提交为 `97b67a7487f393a360b9d46cb9ead4a52b69779e`（`feat: complete configurable cleanup workflow and Windows release`）；Claude 复审后的旧架构清理提交为 `b5855786d5961c2210f6495281fcb35aa4551fc0`（`refactor: remove legacy pipeline and streamline EXE build`）。作者和提交者均为 `newtv-ai <267045021+newtv-ai@users.noreply.github.com>`。当前本地提交尚未 push；不得未经用户明确要求上传到 GitHub。
 
 ## 2. 本轮确认并修复的问题
 
