@@ -15,7 +15,7 @@
 - 构建方式：PyInstaller `--onefile --windowed --uac-admin`
 - 发布载荷：一个 EXE 加四份运行时许可证
 
-本轮没有 push。当前 `G:\clean` 目录没有 `.git` 元数据，因此无法在此目录生成可信的 Git diff、commit 或提交号；后续若需要 commit，应先恢复或重新关联正确仓库，且作者必须使用项目所有者身份，不能写成 Claude、Codex 或其他模型。
+Git 仓库已经直接恢复在 `G:\clean`，不再有两个同名目录套壳。当前分支为 `main`，远端为 `https://github.com/newtv-ai/DevClean.git`。本轮产品改动已经提交为 `97b67a7487f393a360b9d46cb9ead4a52b69779e`（`feat: complete configurable cleanup workflow and Windows release`），作者和提交者均为 `newtv-ai <267045021+newtv-ai@users.noreply.github.com>`。当前本地提交尚未 push；不得未经用户明确要求上传到 GitHub。
 
 ## 2. 本轮确认并修复的问题
 
