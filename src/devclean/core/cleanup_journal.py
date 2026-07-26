@@ -1,8 +1,8 @@
 """Durable, private intent journal for post-scan cleanup execution.
 
-The journal never performs a filesystem mutation.  It records intent before a
-mutation, persists every state transition with ``synchronous=FULL``, and leaves
-ambiguous crash states for reconciliation.  It deliberately has no replay API.
+The journal never performs a filesystem mutation. It records intent before a
+mutation and persists every state transition with ``synchronous=FULL``. It has
+no staging, restore, or replay workflow.
 """
 
 from __future__ import annotations
@@ -20,10 +20,9 @@ from devclean.platform.windows.exact_cleanup import ExactFileSnapshot
 from devclean.platform.windows.security import secure_private_directory, secure_private_file
 from devclean.platform.windows.volumes import is_local_fixed_path
 
-JOURNAL_SCHEMA_VERSION = 4
+JOURNAL_SCHEMA_VERSION = 1
 MAX_JOURNAL_ERROR_LENGTH = 4_096
 MAX_RETAINED_COMPLETED_BATCHES = 128
-_MAX_SQLITE_INTEGER = (1 << 63) - 1
 _MAX_UINT64 = (1 << 64) - 1
 
 
@@ -34,17 +33,10 @@ class CleanupJournalError(RuntimeError):
 class CleanupMode(StrEnum):
     RECYCLE = "RECYCLE"
     PERMANENT = "PERMANENT"
-    CONFIRMED_PURGE = "CONFIRMED_PURGE"
 
 
 class JournalTargetKind(StrEnum):
-    """Whether a journaled action covers one file or one whole subtree.
-
-    Reconciliation compares an observed object with the recorded snapshot, and
-    the comparison differs by kind, so the durable record has to carry it.  A
-    directory action also reconciles differently in principle: a purge that
-    stopped partway leaves a tree that cannot be restored to a working state.
-    """
+    """Whether a journaled action covers one file or one whole subtree."""
 
     FILE = "FILE"
     DIRECTORY = "DIRECTORY"
@@ -53,20 +45,11 @@ class JournalTargetKind(StrEnum):
 class ActionState(StrEnum):
     INTENT_RECORDED = "INTENT_RECORDED"
     EXECUTING = "EXECUTING"
-    QUARANTINED = "QUARANTINED"
-    # RECYCLE_PENDING is retained for journals written by the withdrawn private
-    # staging workflow. The current Shell Recycle Bin path emits RECYCLED
-    # directly; reconciliation still treats an old RECYCLE_PENDING row as
-    # ambiguous (NEEDS_REVIEW), never as a success state.
-    RECYCLE_PENDING = "RECYCLE_PENDING"
     RECYCLED = "RECYCLED"
     PURGED = "PURGED"
     PURGE_PENDING = "PURGE_PENDING"
     FAILED_UNCHANGED = "FAILED_UNCHANGED"
     UNKNOWN = "UNKNOWN"
-    RESTORE_INTENT = "RESTORE_INTENT"
-    RESTORING = "RESTORING"
-    RESTORED = "RESTORED"
 
 
 class BatchState(StrEnum):
@@ -81,9 +64,7 @@ class CleanupIntent:
     candidate_id: str
     source_path: str
     scan_root: str
-    approved_root: str
-    approved_root_snapshot: ExactFileSnapshot
-    quarantine_path: str | None
+    scan_root_snapshot: ExactFileSnapshot
     category: str
     snapshot: ExactFileSnapshot
     target_kind: JournalTargetKind = JournalTargetKind.FILE
@@ -101,9 +82,7 @@ class JournalAction:
     state: ActionState
     source_path: str
     scan_root: str
-    approved_root: str
-    approved_root_snapshot: ExactFileSnapshot
-    quarantine_path: str | None
+    scan_root_snapshot: ExactFileSnapshot
     category: str
     snapshot: ExactFileSnapshot
     last_error: str | None
@@ -134,7 +113,7 @@ INSERT INTO cleanup_meta(key, value) VALUES ('schema_version', '{JOURNAL_SCHEMA_
 
 CREATE TABLE cleanup_batches (
     batch_id TEXT PRIMARY KEY,
-    mode TEXT NOT NULL CHECK(mode IN ('RECYCLE', 'PERMANENT', 'CONFIRMED_PURGE')),
+    mode TEXT NOT NULL CHECK(mode IN ('RECYCLE', 'PERMANENT')),
     state TEXT NOT NULL CHECK(state IN ('ACTIVE', 'COMPLETED', 'NEEDS_REVIEW')),
     action_count INTEGER NOT NULL CHECK(action_count BETWEEN 1 AND 32),
     logical_bytes INTEGER NOT NULL CHECK(logical_bytes >= 0),
@@ -147,19 +126,15 @@ CREATE TABLE cleanup_actions (
     batch_id TEXT NOT NULL REFERENCES cleanup_batches(batch_id),
     candidate_id TEXT NOT NULL,
     action_ordinal INTEGER NOT NULL CHECK(action_ordinal >= 0),
-    mode TEXT NOT NULL CHECK(mode IN ('RECYCLE', 'PERMANENT', 'CONFIRMED_PURGE')),
+    mode TEXT NOT NULL CHECK(mode IN ('RECYCLE', 'PERMANENT')),
     state TEXT NOT NULL CHECK(state IN (
-        'INTENT_RECORDED', 'EXECUTING', 'QUARANTINED', 'RECYCLE_PENDING',
-        'RECYCLED', 'PURGED', 'PURGE_PENDING', 'FAILED_UNCHANGED', 'UNKNOWN',
-        'RESTORE_INTENT', 'RESTORING', 'RESTORED'
+        'INTENT_RECORDED', 'EXECUTING', 'RECYCLED', 'PURGED',
+        'PURGE_PENDING', 'FAILED_UNCHANGED', 'UNKNOWN'
     )),
     source_path TEXT NOT NULL,
     scan_root TEXT NOT NULL,
-    approved_root TEXT NOT NULL,
-    quarantine_path TEXT,
     category TEXT NOT NULL,
     logical_size INTEGER NOT NULL CHECK(logical_size >= 0),
-    volume_serial INTEGER NOT NULL CHECK(volume_serial >= 0),
     volume_serial_u64 TEXT NOT NULL CHECK(
         volume_serial_u64 = '0'
         OR (
@@ -179,7 +154,6 @@ CREATE TABLE cleanup_actions (
     reparse_tag INTEGER,
     creation_time_ns INTEGER NOT NULL CHECK(creation_time_ns >= 0),
     last_write_time_ns INTEGER NOT NULL CHECK(last_write_time_ns >= 0),
-    root_volume_serial INTEGER NOT NULL CHECK(root_volume_serial >= 0),
     root_volume_serial_u64 TEXT NOT NULL CHECK(
         root_volume_serial_u64 = '0'
         OR (
@@ -201,9 +175,9 @@ CREATE TABLE cleanup_actions (
     last_error TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    target_kind TEXT NOT NULL DEFAULT 'FILE' CHECK(target_kind IN ('FILE', 'DIRECTORY')),
-    subtree_files INTEGER NOT NULL DEFAULT 0 CHECK(subtree_files >= 0),
-    subtree_bytes INTEGER NOT NULL DEFAULT 0 CHECK(subtree_bytes >= 0),
+    target_kind TEXT NOT NULL CHECK(target_kind IN ('FILE', 'DIRECTORY')),
+    subtree_files INTEGER NOT NULL CHECK(subtree_files >= 0),
+    subtree_bytes INTEGER NOT NULL CHECK(subtree_bytes >= 0),
     UNIQUE(batch_id, candidate_id),
     UNIQUE(batch_id, source_path)
 ) STRICT;
@@ -226,7 +200,7 @@ class CleanupJournal:
     """SQLite intent log with explicit compare-and-transition operations."""
 
     def __init__(self, path: Path | None = None) -> None:
-        self.path = Path(path or (data_dir() / "state" / "cleanup-intents-v1.db"))
+        self.path = Path(path or (data_dir() / "state" / "cleanup-journal.db"))
         if not self.path.is_absolute():
             raise CleanupJournalError("cleanup journal path must be absolute")
         if not is_local_fixed_path(self.path.parent):
@@ -278,23 +252,22 @@ class CleanupJournal:
                     connection.execute(
                         """INSERT INTO cleanup_actions (
                             action_id, batch_id, candidate_id, action_ordinal, mode, state,
-                            source_path,
-                            scan_root, approved_root, quarantine_path, category,
-                            logical_size, volume_serial, volume_serial_u64,
+                            source_path, scan_root, category,
+                            logical_size, volume_serial_u64,
                             file_id, file_id_kind, link_count,
                             attributes, reparse_tag, creation_time_ns, last_write_time_ns,
-                            root_volume_serial, root_volume_serial_u64,
+                            root_volume_serial_u64,
                             root_file_id, root_file_id_kind,
                             root_attributes, root_reparse_tag, root_creation_time_ns,
                             root_last_write_time_ns, last_error, created_at, updated_at,
                             target_kind, subtree_files, subtree_bytes
                         ) VALUES (
                             :action_id, :batch_id, :candidate_id, :action_ordinal, :mode, :state,
-                            :source_path, :scan_root, :approved_root, :quarantine_path, :category,
-                            :logical_size, :volume_serial, :volume_serial_u64,
+                            :source_path, :scan_root, :category,
+                            :logical_size, :volume_serial_u64,
                             :file_id, :file_id_kind, :link_count,
                             :attributes, :reparse_tag, :creation_time_ns, :last_write_time_ns,
-                            :root_volume_serial, :root_volume_serial_u64,
+                            :root_volume_serial_u64,
                             :root_file_id, :root_file_id_kind,
                             :root_attributes, :root_reparse_tag, :root_creation_time_ns,
                             :root_last_write_time_ns, NULL, :created_at, :updated_at,
@@ -312,13 +285,8 @@ class CleanupJournal:
                             "state": ActionState.INTENT_RECORDED.value,
                             "source_path": intent.source_path,
                             "scan_root": intent.scan_root,
-                            "approved_root": intent.approved_root,
-                            "quarantine_path": intent.quarantine_path,
                             "category": intent.category,
                             "logical_size": snapshot.logical_size,
-                            "volume_serial": _legacy_volume_serial(
-                                snapshot.volume_serial
-                            ),
                             "volume_serial_u64": _encode_volume_serial(
                                 snapshot.volume_serial
                             ),
@@ -329,23 +297,20 @@ class CleanupJournal:
                             "reparse_tag": snapshot.reparse_tag,
                             "creation_time_ns": snapshot.creation_time_ns,
                             "last_write_time_ns": snapshot.last_write_time_ns,
-                            "root_volume_serial": _legacy_volume_serial(
-                                intent.approved_root_snapshot.volume_serial
-                            ),
                             "root_volume_serial_u64": _encode_volume_serial(
-                                intent.approved_root_snapshot.volume_serial
+                                intent.scan_root_snapshot.volume_serial
                             ),
-                            "root_file_id": intent.approved_root_snapshot.file_id,
+                            "root_file_id": intent.scan_root_snapshot.file_id,
                             "root_file_id_kind": (
-                                intent.approved_root_snapshot.file_id_kind
+                                intent.scan_root_snapshot.file_id_kind
                             ),
-                            "root_attributes": intent.approved_root_snapshot.attributes,
-                            "root_reparse_tag": intent.approved_root_snapshot.reparse_tag,
+                            "root_attributes": intent.scan_root_snapshot.attributes,
+                            "root_reparse_tag": intent.scan_root_snapshot.reparse_tag,
                             "root_creation_time_ns": (
-                                intent.approved_root_snapshot.creation_time_ns
+                                intent.scan_root_snapshot.creation_time_ns
                             ),
                             "root_last_write_time_ns": (
-                                intent.approved_root_snapshot.last_write_time_ns
+                                intent.scan_root_snapshot.last_write_time_ns
                             ),
                             "created_at": now,
                             "updated_at": now,
@@ -420,12 +385,8 @@ class CleanupJournal:
             ambiguous = {
                 ActionState.INTENT_RECORDED,
                 ActionState.EXECUTING,
-                ActionState.RECYCLE_PENDING,
                 ActionState.UNKNOWN,
-                ActionState.QUARANTINED,
                 ActionState.PURGE_PENDING,
-                ActionState.RESTORE_INTENT,
-                ActionState.RESTORING,
             }
             state = (
                 BatchState.NEEDS_REVIEW
@@ -475,39 +436,6 @@ class CleanupJournal:
             ).fetchall()
         return tuple(_row_to_action(row) for row in rows)
 
-    def unresolved_actions(self) -> tuple[JournalAction, ...]:
-        unresolved = tuple(
-            state.value
-            for state in (
-                ActionState.INTENT_RECORDED,
-                ActionState.EXECUTING,
-                ActionState.QUARANTINED,
-                ActionState.RECYCLE_PENDING,
-                ActionState.PURGE_PENDING,
-                ActionState.UNKNOWN,
-                ActionState.RESTORE_INTENT,
-                ActionState.RESTORING,
-            )
-        )
-        placeholders = ",".join("?" for _ in unresolved)
-        with self._connect() as connection:
-            rows = connection.execute(
-                f"SELECT * FROM cleanup_actions WHERE state IN ({placeholders}) "
-                "ORDER BY updated_at, action_id",
-                unresolved,
-            ).fetchall()
-        return tuple(_row_to_action(row) for row in rows)
-
-    def event_states(self, action_id: str) -> tuple[str, ...]:
-        """Return an immutable audit projection useful to tests and support."""
-
-        with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT to_state FROM cleanup_events WHERE action_id = ? ORDER BY event_id",
-                (action_id,),
-            ).fetchall()
-        return tuple(str(row[0]) for row in rows)
-
     def _initialize(self) -> None:
         exists = self.path.exists()
         with self._connect(create=True) as connection:
@@ -522,75 +450,12 @@ class CleanupJournal:
             ).fetchone()
             if version is None:
                 raise CleanupJournalError("cleanup journal schema version is unsupported")
-            try:
-                current_version = int(version[0])
-            except (TypeError, ValueError) as error:
-                raise CleanupJournalError(
-                    "cleanup journal schema version is unsupported"
-                ) from error
-            if current_version == 2:
-                self._migrate_v2_to_v3(connection)
-                current_version = 3
-            if current_version == 3:
-                self._migrate_v3_to_v4(connection)
-                current_version = 4
-            if current_version != JOURNAL_SCHEMA_VERSION:
+            if str(version[0]) != str(JOURNAL_SCHEMA_VERSION):
                 raise CleanupJournalError("cleanup journal schema version is unsupported")
             connection.execute("BEGIN IMMEDIATE")
             self._prune_completed_batches(connection)
             connection.commit()
         secure_private_file(self.path)
-
-    @staticmethod
-    def _migrate_v2_to_v3(connection: sqlite3.Connection) -> None:
-        """Add exact unsigned volume identities without discarding safety state."""
-
-        connection.execute("BEGIN IMMEDIATE")
-        connection.execute(
-            "ALTER TABLE cleanup_actions ADD COLUMN volume_serial_u64 TEXT"
-        )
-        connection.execute(
-            "ALTER TABLE cleanup_actions ADD COLUMN root_volume_serial_u64 TEXT"
-        )
-        connection.execute(
-            """UPDATE cleanup_actions
-               SET volume_serial_u64 = CAST(volume_serial AS TEXT),
-                   root_volume_serial_u64 = CAST(root_volume_serial AS TEXT)"""
-        )
-        # Each step names the version it actually produces.  Writing the current
-        # constant here would let a v2 journal claim the newest schema while
-        # still missing every column a later step adds.
-        connection.execute(
-            "UPDATE cleanup_meta SET value = '3' WHERE key = 'schema_version'"
-        )
-        connection.commit()
-
-    @staticmethod
-    def _migrate_v3_to_v4(connection: sqlite3.Connection) -> None:
-        """Record whether an action covers one file or one whole subtree.
-
-        Existing rows predate whole-tree cleanup, so they are all files.  The
-        column defaults say so, which keeps reconciliation of an interrupted
-        pre-upgrade batch behaving exactly as it did before.
-        """
-
-        connection.execute("BEGIN IMMEDIATE")
-        connection.execute(
-            "ALTER TABLE cleanup_actions ADD COLUMN target_kind TEXT NOT NULL "
-            "DEFAULT 'FILE' CHECK(target_kind IN ('FILE', 'DIRECTORY'))"
-        )
-        connection.execute(
-            "ALTER TABLE cleanup_actions ADD COLUMN subtree_files INTEGER NOT NULL "
-            "DEFAULT 0 CHECK(subtree_files >= 0)"
-        )
-        connection.execute(
-            "ALTER TABLE cleanup_actions ADD COLUMN subtree_bytes INTEGER NOT NULL "
-            "DEFAULT 0 CHECK(subtree_bytes >= 0)"
-        )
-        connection.execute(
-            "UPDATE cleanup_meta SET value = '4' WHERE key = 'schema_version'"
-        )
-        connection.commit()
 
     @contextmanager
     def _connect(self, *, create: bool = False) -> Iterator[sqlite3.Connection]:
@@ -700,11 +565,7 @@ def _row_to_action(row: sqlite3.Row) -> JournalAction:
         state=ActionState(str(row["state"])),
         source_path=str(row["source_path"]),
         scan_root=str(row["scan_root"]),
-        approved_root=str(row["approved_root"]),
-        approved_root_snapshot=root_snapshot,
-        quarantine_path=(
-            str(row["quarantine_path"]) if row["quarantine_path"] is not None else None
-        ),
+        scan_root_snapshot=root_snapshot,
         category=str(row["category"]),
         snapshot=snapshot,
         last_error=str(row["last_error"]) if row["last_error"] is not None else None,
@@ -730,13 +591,6 @@ def _encode_volume_serial(value: int) -> str:
     if value < 0 or value > _MAX_UINT64:
         raise CleanupJournalError("volume serial is outside the unsigned 64-bit range")
     return str(value)
-
-
-def _legacy_volume_serial(value: int) -> int:
-    """Retain a bounded compatibility projection for schema-v2 tooling."""
-
-    _encode_volume_serial(value)
-    return value if value <= _MAX_SQLITE_INTEGER else 0
 
 
 def _decode_volume_serial(value: object) -> int:

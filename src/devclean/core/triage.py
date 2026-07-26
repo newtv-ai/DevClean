@@ -26,7 +26,6 @@ from devclean.core.cleanup_catalog import (
     known_root_for_path,
     source_domain_for_category,
 )
-from devclean.core.paths import QUARANTINE_DIRECTORY_NAME
 from devclean.core.scan_insights import ScanInsights
 from devclean.core.user_rules import DeleteClassification, KeepClassification
 from devclean.scanner.filesystem import ScanRecord, ScanRecordKind
@@ -47,7 +46,6 @@ class DirectoryScope(StrEnum):
     STALE_VERSION = "STALE_VERSION"
     AGED_TEMP_ITEM = "AGED_TEMP_ITEM"
     NOT_ELIGIBLE = "NOT_ELIGIBLE"
-    PROTECTED = "PROTECTED"
 
 
 class ReviewLane(StrEnum):
@@ -57,7 +55,6 @@ class ReviewLane(StrEnum):
     VENDOR_MANAGED = "VENDOR_MANAGED"
     AI_REVIEW = "AI_REVIEW"
     REPORT_ONLY = "REPORT_ONLY"
-    PROTECTED = "PROTECTED"
 
 
 class RiskTier(StrEnum):
@@ -72,7 +69,6 @@ class EvidenceKind(StrEnum):
     KNOWN_ROOT_HEURISTIC = "KNOWN_ROOT_HEURISTIC"
     PATH_HEURISTIC = "PATH_HEURISTIC"
     FILESYSTEM_OBSERVATION = "FILESYSTEM_OBSERVATION"
-    PROTECTED_RULE = "PROTECTED_RULE"
 
 
 class Actionability(StrEnum):
@@ -81,16 +77,11 @@ class Actionability(StrEnum):
     REVIEW_PLAN = "REVIEW_PLAN"
     AI_REVIEW = "AI_REVIEW"
     REPORT_ONLY = "REPORT_ONLY"
-    PROTECTED = "PROTECTED"
 
 
 class ExecutionPolicy(StrEnum):
     """Locally assigned execution ceiling, independent from analysis lane."""
 
-    PERMANENT_APPROVED_CACHE = "PERMANENT_APPROVED_CACHE"
-    EXACT_VENDOR = "EXACT_VENDOR"
-    PREVIEWED_VENDOR = "PREVIEWED_VENDOR"
-    POLICY_VENDOR = "POLICY_VENDOR"
     USER_CHOICE_DELETE = "USER_CHOICE_DELETE"
     NONE = "NONE"
 
@@ -368,7 +359,7 @@ def triage_directory(
     scope = directory_cleanup_scope(
         path, known_roots, delete_config, keep_config
     )
-    if scope in {DirectoryScope.NOT_ELIGIBLE, DirectoryScope.PROTECTED}:
+    if scope is DirectoryScope.NOT_ELIGIBLE:
         return None
     known = known_root_for_path(path, known_roots)
     if scope is DirectoryScope.KNOWN_CACHE_ROOT and known is not None:
@@ -434,18 +425,6 @@ def _classify(
     delete_config: DeleteClassification,
     keep_config: KeepClassification,
 ) -> _Classification:
-    if is_own_quarantine_path(path):
-        return _Classification(
-            CleanupCategory.OTHER,
-            ReviewLane.PROTECTED,
-            RiskTier.PROTECTED,
-            EvidenceKind.PROTECTED_RULE,
-            Actionability.PROTECTED,
-            ExecutionPolicy.NONE,
-            RecoveryCapability.NONE,
-            "DevClean 自己的隔离中转区；批次进行中被占用，不作为清理对象",
-            ("protected", "own_quarantine"),
-        )
     # A log or a dump is one wherever it sits, so this decides before any other
     # rule can route the file somewhere less useful.  Placed at the end it never
     # ran: earlier heuristic branches had already returned AI_REVIEW, and 361
@@ -508,7 +487,7 @@ def _classify(
                     RiskTier.LOW,
                     EvidenceKind.AGE_AND_APPROVED_ROOT,
                     Actionability.REVIEW_PLAN,
-                    ExecutionPolicy.PERMANENT_APPROVED_CACHE,
+                    ExecutionPolicy.USER_CHOICE_DELETE,
                     RecoveryCapability.UNKNOWN,
                     (
                         f"{known.label}：已知根目录且超过 "
@@ -584,7 +563,7 @@ def _classify(
             RiskTier.LOW,
             EvidenceKind.AGE_AND_APPROVED_ROOT,
             Actionability.REVIEW_PLAN,
-            ExecutionPolicy.PERMANENT_APPROVED_CACHE,
+            ExecutionPolicy.USER_CHOICE_DELETE,
             RecoveryCapability.UNKNOWN,
             (
                 f"当前用户临时目录中超过 {delete_config.old_temp_days} 天，"
@@ -677,22 +656,6 @@ def _is_descendant(path: Path, root: Path) -> bool:
         ) == os.path.normcase(os.path.abspath(root))
     except ValueError:
         return False
-
-
-def is_own_quarantine_path(path: Path) -> bool:
-    """Return whether *path* is inside DevClean's reserved staging namespace.
-
-    Current deletion does not create new staging directories, but older
-    interrupted versions may have left one behind.  It remains excluded so the
-    normal scanner never treats DevClean's own recovery state as user garbage.
-    """
-
-    name = QUARANTINE_DIRECTORY_NAME.casefold()
-    prefix = f"{name}-"
-    return any(
-        part.casefold() == name or part.casefold().startswith(prefix)
-        for part in path.parts
-    )
 
 
 def is_regenerable_byproduct(
@@ -928,8 +891,6 @@ def directory_cleanup_scope(
     is_known_root = _normalized_path(path) in _whole_tree_known_roots(known_roots)
     is_tool_output = is_regenerable_tool_directory(path, delete_config)
     if not is_known_root and not is_tool_output:
-        if is_own_quarantine_path(path):
-            return DirectoryScope.PROTECTED
         # A scratch directory sitting directly in %TEMP% goes as one object.
         # Its contents are one program's working set, so deleting them one file
         # at a time is slower and gives up halfway through leaving a half-empty
@@ -945,8 +906,6 @@ def directory_cleanup_scope(
         if is_stale_version_directory(path, delete_config):
             return DirectoryScope.STALE_VERSION
         return DirectoryScope.NOT_ELIGIBLE
-    if is_own_quarantine_path(path):
-        return DirectoryScope.PROTECTED
     if is_known_root:
         return DirectoryScope.KNOWN_CACHE_ROOT
     # Everything below narrows the tool-output rule.  These checks run only for
@@ -1076,7 +1035,6 @@ __all__ = [
     "is_development_cache_hint",
     "is_inside_cache_directory",
     "is_installed_addon_payload",
-    "is_own_quarantine_path",
     "is_program_payload_file",
     "is_regenerable_byproduct",
     "is_regenerable_tool_directory",

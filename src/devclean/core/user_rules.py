@@ -23,7 +23,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Final
 
-from devclean.adapters.json_contract import strict_json_loads
+from devclean.core.json_contract import strict_json_loads
 from devclean.core.paths import data_dir
 from devclean.core.rule_schema import CleanupCategory, CleanupPolicy, SourceDomain
 

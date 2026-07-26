@@ -1,5 +1,5 @@
 name: Feature request
-description: Propose a bounded product improvement
+description: Propose a DevClean improvement
 title: "[Feature] "
 labels: [enhancement]
 body:
@@ -18,12 +18,6 @@ body:
   - type: textarea
     id: scope
     attributes:
-      label: Paths, tools, privileges, and write surface
-    validations:
-      required: true
-  - type: textarea
-    id: safety
-    attributes:
-      label: Evidence, recovery, and failure-closed behavior
+      label: Affected scan, rule, or cleanup workflow
     validations:
       required: true

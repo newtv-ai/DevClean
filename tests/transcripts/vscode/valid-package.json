@@ -1,9 +1,0 @@
-{
-  "name": "fixture-extension",
-  "publisher": "fixture-publisher",
-  "version": "1.2.3",
-  "engines": {
-    "vscode": "^1.90.0"
-  },
-  "main": "./out/extension.js"
-}

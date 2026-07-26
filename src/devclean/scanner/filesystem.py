@@ -13,7 +13,6 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from threading import Event
-from typing import TypeAlias
 
 from devclean.platform.windows import FileSystemMetadata, read_file_metadata
 from devclean.platform.windows.filesystem import (
@@ -23,7 +22,7 @@ from devclean.platform.windows.filesystem import (
     FILE_ATTRIBUTE_REPARSE_POINT,
 )
 
-PathLike: TypeAlias = str | os.PathLike[str]
+type PathLike = str | os.PathLike[str]
 
 
 class ScanRecordKind(StrEnum):
@@ -166,7 +165,7 @@ class CancellationToken:
         return self.is_cancelled()
 
 
-ProgressCallback: TypeAlias = Callable[[ScanStats], None]
+type ProgressCallback = Callable[[ScanStats], None]
 
 
 @dataclass(slots=True)

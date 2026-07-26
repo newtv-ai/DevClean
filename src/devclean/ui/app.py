@@ -43,6 +43,7 @@ from devclean.core.cleanup_catalog import (
     discover_known_cleanup_roots,
 )
 from devclean.core.cleanup_journal import ActionState, CleanupMode
+from devclean.core.paths import data_dir
 from devclean.core.postscan_cleanup import (
     CleanupExecutionResult,
     CleanupRefusal,
@@ -140,11 +141,7 @@ def is_direct_cleanup_eligible(item: TriageItem) -> bool:
     return (
         _is_vouched_for(item)
         and item.actionability in {Actionability.REVIEW_PLAN, Actionability.AI_REVIEW}
-        and item.execution_policy
-        in {
-            ExecutionPolicy.PERMANENT_APPROVED_CACHE,
-            ExecutionPolicy.USER_CHOICE_DELETE,
-        }
+        and item.execution_policy is ExecutionPolicy.USER_CHOICE_DELETE
         and item.risk_tier is not RiskTier.PROTECTED
     )
 
@@ -741,6 +738,9 @@ class DevCleanWindow:
             normalise_path(path)
             for path in expanded_scan_paths(active_rules.scan.excluded_paths)
         }
+        # Protect the actual runtime state location precisely. Packaged builds
+        # use DevClean-data beside the EXE; source runs use LocalAppData.
+        configured_skip_paths.add(normalise_path(data_dir()))
         if not active_rules.scan.include_known_cleanup_roots:
             # The profile root contains most user-level package caches.  Merely
             # omitting those caches as separate roots would still reach them
@@ -963,7 +963,7 @@ class DevCleanWindow:
         if not items:
             messagebox.showinfo("DevClean", "没有勾选任何行。点「全选」，或逐行点前面的方框。")
             return
-        mode = CleanupMode.CONFIRMED_PURGE if irreversible else CleanupMode.RECYCLE
+        mode = CleanupMode.PERMANENT if irreversible else CleanupMode.RECYCLE
         self._busy = "deleting"
         self._sync_buttons()
         self._progress.configure(mode="determinate", maximum=len(items), value=0)

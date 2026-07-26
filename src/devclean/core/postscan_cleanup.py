@@ -20,7 +20,6 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TypeAlias
 
 from devclean.core.cleanup_catalog import CleanupCategory, KnownCleanupRoot
 from devclean.core.cleanup_journal import (
@@ -29,7 +28,6 @@ from devclean.core.cleanup_journal import (
     CleanupIntent,
     CleanupJournal,
     CleanupMode,
-    JournalAction,
     JournalTargetKind,
 )
 from devclean.core.paths import data_dir
@@ -38,13 +36,10 @@ from devclean.core.triage import (
     CleanupTargetKind,
     DirectoryScope,
     DirectorySubtreeTotals,
-    EvidenceKind,
     ExecutionPolicy,
     ReviewLane,
-    RiskTier,
     TriageItem,
     directory_cleanup_scope,
-    is_own_quarantine_path,
 )
 from devclean.core.user_rules import DeleteClassification, KeepClassification
 from devclean.platform.windows.exact_cleanup import (
@@ -64,10 +59,6 @@ from devclean.platform.windows.filesystem import (
     FileSystemMetadata,
     read_file_metadata,
 )
-from devclean.platform.windows.known_folders import (
-    CanonicalCleanupKind,
-    canonical_permanent_cleanup_roots,
-)
 from devclean.platform.windows.volumes import is_local_fixed_path
 from devclean.scanner.filesystem import ScanRecordKind
 
@@ -77,13 +68,13 @@ _SEAL = object()
 _CAPABILITY_KEY = secrets.token_bytes(32)
 # Machine-wide cleanup exceptions are carried by the discovered scan roots whose
 # JSON entry explicitly sets ``allow_inside_system_anchor``.
-Recycler: TypeAlias = Callable[
+type Recycler = Callable[
     [Path, ExactFileSnapshot, ExactRootBoundary], ExactMutationResult
 ]
-PermanentPurger: TypeAlias = Callable[
+type PermanentPurger = Callable[
     [Path, ExactFileSnapshot, ExactRootBoundary], ExactMutationResult
 ]
-DirectoryTreePurger: TypeAlias = Callable[
+type DirectoryTreePurger = Callable[
     [Path, ExactDirectorySnapshot, ExactRootBoundary], DirectoryPurgeResult
 ]
 
@@ -102,9 +93,6 @@ class ScanCleanupCandidate:
     scan_root_snapshot: ExactFileSnapshot
     snapshot: ExactFileSnapshot
     category: CleanupCategory
-    permanent_eligible: bool
-    permanent_root: Path | None
-    permanent_root_snapshot: ExactFileSnapshot | None
     target_kind: CleanupTargetKind = CleanupTargetKind.FILE
     directory_scope: DirectoryScope | None = None
     subtree_files: int = 0
@@ -122,9 +110,6 @@ class ScanCleanupCandidate:
             self.scan_root_snapshot,
             self.snapshot,
             self.category,
-            self.permanent_eligible,
-            self.permanent_root,
-            self.permanent_root_snapshot,
             self.target_kind,
             self.directory_scope,
             self.subtree_files,
@@ -209,23 +194,20 @@ def candidate_from_triage_item(
 ) -> ScanCleanupCandidate:
     """Bind an exact scan observation to its original, user-chosen scan root.
 
-    Presentation-only and protected items are never candidates.  Ordinary
-    AI/manual-review items can enter the user-choice workflow, while automatic
-    permanent eligibility is restricted to deterministic aged Temp/CrashDumps.
+    Presentation-only and protected items are never candidates. Ordinary
+    AI/manual-review items enter only after the UI has classified or approved
+    them; the cleanup mode remains the user's button choice.
     """
 
     record = item.record
     if record.kind is not ScanRecordKind.FILE or item.path != record.path:
         raise CleanupRefusal("candidate must be an exact file item from the completed scan")
-    if item.lane in {ReviewLane.PROTECTED, ReviewLane.REPORT_ONLY} or item.actionability in {
-        Actionability.PROTECTED,
-        Actionability.REPORT_ONLY,
-    }:
+    if (
+        item.lane is ReviewLane.REPORT_ONLY
+        or item.actionability is Actionability.REPORT_ONLY
+    ):
         raise CleanupRefusal("protected and report-only items cannot become cleanup actions")
-    if item.execution_policy not in {
-        ExecutionPolicy.USER_CHOICE_DELETE,
-        ExecutionPolicy.PERMANENT_APPROVED_CACHE,
-    }:
+    if item.execution_policy is not ExecutionPolicy.USER_CHOICE_DELETE:
         raise CleanupRefusal(
             "this item requires an implemented vendor action or is not executable"
         )
@@ -237,37 +219,6 @@ def candidate_from_triage_item(
         raise CleanupRefusal("candidate and original scan root must be on a local fixed volume")
     snapshot = _snapshot_from_record(item)
     root_snapshot = _directory_snapshot(scan_root, "original scan root")
-    # Permanent provenance remains narrower than the editable classification:
-    # it comes only from the canonical Windows API roots below.
-    canonical_kind = {
-        CleanupCategory.USER_TEMP: CanonicalCleanupKind.USER_TEMP,
-        CleanupCategory.CRASH_DUMPS: CanonicalCleanupKind.CRASH_DUMPS,
-    }.get(item.category)
-    canonical = next(
-        (
-            root
-            for root in canonical_permanent_cleanup_roots()
-            if root.kind is canonical_kind and _is_descendant(path, root.path)
-        ),
-        None,
-    )
-    permanent_eligible = bool(
-        canonical is not None
-        and item.category.value in delete_config.permanent_approved_categories
-        and item.lane is ReviewLane.DETERMINISTIC_CANDIDATE
-        and item.risk_tier is RiskTier.LOW
-        and item.evidence_kind is EvidenceKind.AGE_AND_APPROVED_ROOT
-        and item.actionability is Actionability.REVIEW_PLAN
-        and item.execution_policy is ExecutionPolicy.PERMANENT_APPROVED_CACHE
-    )
-    permanent_root = canonical.path if permanent_eligible and canonical is not None else None
-    permanent_root_snapshot = None
-    if permanent_root is not None:
-        permanent_root = _absolute_local_path(permanent_root, "approved permanent root")
-        _require_strict_descendant(path, permanent_root)
-        permanent_root_snapshot = _directory_snapshot(
-            permanent_root, "approved permanent root"
-        )
     candidate_id = "candidate_" + secrets.token_hex(16)
     integrity = _candidate_integrity(
         candidate_id,
@@ -276,9 +227,6 @@ def candidate_from_triage_item(
         root_snapshot,
         snapshot,
         item.category,
-        permanent_eligible,
-        permanent_root,
-        permanent_root_snapshot,
     )
     return ScanCleanupCandidate(
         candidate_id=candidate_id,
@@ -287,9 +235,6 @@ def candidate_from_triage_item(
         scan_root_snapshot=root_snapshot,
         snapshot=snapshot,
         category=item.category,
-        permanent_eligible=permanent_eligible,
-        permanent_root=permanent_root,
-        permanent_root_snapshot=permanent_root_snapshot,
         _integrity=integrity,
         _seal=_SEAL,
     )
@@ -338,9 +283,6 @@ def candidate_from_directory_item(
         root_snapshot,
         snapshot,
         item.category,
-        False,
-        None,
-        None,
         CleanupTargetKind.DIRECTORY,
         scope,
         totals.files,
@@ -353,11 +295,6 @@ def candidate_from_directory_item(
         scan_root_snapshot=root_snapshot,
         snapshot=snapshot,
         category=item.category,
-        # A whole tree is never inside the narrow Temp/CrashDumps automatic
-        # permanent capability; it always requires the explicit purge mode.
-        permanent_eligible=False,
-        permanent_root=None,
-        permanent_root_snapshot=None,
         target_kind=CleanupTargetKind.DIRECTORY,
         directory_scope=scope,
         subtree_files=totals.files,
@@ -371,7 +308,7 @@ def _reject_overlapping_candidates(candidates: Sequence[ScanCleanupCandidate]) -
     """Refuse a selection where one target already contains another.
 
     Once whole directories can be selected, a plan can hold both a tree and
-    something inside it.  Executing that would quarantine the tree and then fail
+    something inside it. Executing that would delete the tree and then fail
     on the now-missing child, spending the user's deletion choice to reach a
     first-failure stop.  Refusing while the plan is still being prepared says so
     before anything is typed.
@@ -406,8 +343,6 @@ def _require_directory_scope(
     scope = directory_cleanup_scope(
         path, known_roots, delete_config, keep_config
     )
-    if scope is DirectoryScope.PROTECTED:
-        raise CleanupRefusal("the selected directory is DevClean's own quarantine staging area")
     if scope is DirectoryScope.NOT_ELIGIBLE:
         raise CleanupRefusal(
             "whole-directory cleanup is limited to recognised cache roots and "
@@ -509,7 +444,7 @@ def execute_cleanup_batch(
     # a gate here meant one file changing since the scan aborted the other 31 --
     # then the caller's loop stopped, so a single churning cache file ended the
     # entire run with "candidate changed since the completed scan".
-    intents = tuple(_intent_for(action, batch.batch_id, mode) for action in batch.actions)
+    intents = tuple(_intent_for(action, batch.batch_id) for action in batch.actions)
     active_journal.record_batch(batch.batch_id, mode, intents)
 
     purged_directory_bytes: dict[str, int] = {}
@@ -543,12 +478,11 @@ def execute_cleanup_batch(
                 continue
             _preflight_candidate(
                 candidate,
-                mode,
                 known_roots=known_roots,
                 delete_config=delete_config,
                 keep_config=keep_config,
             )
-            boundary = _execution_boundary(candidate, mode)
+            boundary = _execution_boundary(candidate)
             is_directory = candidate.target_kind is CleanupTargetKind.DIRECTORY
             if mode is CleanupMode.RECYCLE:
                 outcome = recycler(candidate.path, candidate.snapshot, boundary)
@@ -634,74 +568,6 @@ def execute_cleanup_batch(
         # PURGED actions, never a claim about physical allocation or free space.
         immediate_reclaim_upper_bound=purged_bytes,
     )
-
-
-def reconcile_unfinished_actions(journal: CleanupJournal) -> tuple[tuple[str, ActionState], ...]:
-    """Reconcile durable unknowns by observation only; never replay mutation."""
-
-    results: list[tuple[str, ActionState]] = []
-    for action in journal.unresolved_actions():
-        observation_failed = False
-        try:
-            source = _optional_metadata(Path(action.source_path))
-            quarantine = (
-                _optional_metadata(Path(action.quarantine_path))
-                if action.quarantine_path is not None
-                else None
-            )
-        except OSError:
-            source = None
-            quarantine = None
-            observation_failed = True
-        purge_may_have_started = (
-            ActionState.PURGE_PENDING.value in journal.event_states(action.action_id)
-        )
-        if observation_failed:
-            new_state = ActionState.UNKNOWN
-            detail = "reconciliation could not observe source and quarantine safely"
-        elif action.state in {ActionState.PURGE_PENDING, ActionState.UNKNOWN} and (
-            purge_may_have_started
-        ):
-            new_state = ActionState.UNKNOWN
-            detail = (
-                "purge disposition may have started; observation cannot prove recovery"
-            )
-        elif _observed_matches(quarantine, action):
-            new_state = ActionState.QUARANTINED
-            detail = "reconciliation found the exact object in private quarantine"
-        elif _observed_matches(source, action) and quarantine is None:
-            if action.state in {ActionState.RESTORE_INTENT, ActionState.RESTORING}:
-                new_state = ActionState.RESTORED
-                detail = "reconciliation proved the exact object was restored"
-            else:
-                new_state = ActionState.FAILED_UNCHANGED
-                detail = "reconciliation found the exact object unchanged at its source"
-        else:
-            new_state = ActionState.UNKNOWN
-            detail = "reconciliation cannot prove the exact object's recoverable state"
-        if action.state is not new_state:
-            journal.transition(
-                action.action_id,
-                expected=(action.state,),
-                new_state=new_state,
-                detail=detail,
-            )
-        results.append((action.action_id, new_state))
-        journal.finalize_batch(action.batch_id)
-    return tuple(results)
-
-
-def _observed_matches(
-    metadata: FileSystemMetadata | None, action: JournalAction
-) -> bool:
-    """Compare an observation with a journaled snapshot using the right rule."""
-
-    if action.target_kind is JournalTargetKind.DIRECTORY:
-        return directory_metadata_matches_snapshot(
-            metadata, _directory_identity(action.snapshot)
-        )
-    return metadata_matches_snapshot(metadata, action.snapshot)
-
 
 def _snapshot_from_record(item: TriageItem) -> ExactFileSnapshot:
     record = item.record
@@ -796,7 +662,6 @@ def _snapshot_from_live_read(item: TriageItem) -> ExactFileSnapshot:
 
 def _preflight_candidate(
     candidate: ScanCleanupCandidate,
-    mode: CleanupMode,
     *,
     delete_config: DeleteClassification,
     keep_config: KeepClassification,
@@ -818,31 +683,8 @@ def _preflight_candidate(
         )
     ):
         raise CleanupRefusal("original approved scan root identity changed")
-    if mode is CleanupMode.PERMANENT:
-        permanent_root = candidate.permanent_root
-        permanent_snapshot = candidate.permanent_root_snapshot
-        if (
-            not candidate.permanent_eligible
-            or permanent_root is None
-            or permanent_snapshot is None
-        ):
-            raise CleanupRefusal("candidate has no narrow approved permanent root")
-        _require_strict_descendant(candidate.path, permanent_root)
-        root = read_file_metadata(permanent_root)
-        if (
-            not root.is_directory
-            or root.is_reparse_point
-            or root.is_cloud_placeholder
-            or root.identity
-            != (permanent_snapshot.volume_serial, permanent_snapshot.file_id)
-        ):
-            raise CleanupRefusal("approved Temp/CrashDumps root identity changed")
     metadata = read_file_metadata(candidate.path)
     if candidate.target_kind is CleanupTargetKind.DIRECTORY:
-        if mode is CleanupMode.PERMANENT:
-            raise CleanupRefusal(
-                "the automatic Temp/CrashDumps permanent mode never covers a whole directory"
-            )
         # Re-derive the reason this tree may be removed at all.  The catalog is
         # environment-derived, so a redirected variable could have widened the
         # recognised roots between selection and execution; a directory that no
@@ -859,28 +701,14 @@ def _preflight_candidate(
         raise CleanupRefusal("candidate changed since the completed scan")
 
 
-def _intent_for(
-    action: CleanupAction, batch_id: str, mode: CleanupMode
-) -> CleanupIntent:
+def _intent_for(action: CleanupAction, batch_id: str) -> CleanupIntent:
     candidate = action.candidate
-    if mode is CleanupMode.PERMANENT:
-        if candidate.permanent_root is None or candidate.permanent_root_snapshot is None:
-            raise CleanupRefusal("permanent action has no narrow approved root")
-        approved_root = candidate.permanent_root
-        approved_root_snapshot = candidate.permanent_root_snapshot
-    else:
-        approved_root = candidate.scan_root
-        approved_root_snapshot = candidate.scan_root_snapshot
     return CleanupIntent(
         action_id=action.action_id,
         candidate_id=candidate.candidate_id,
         source_path=str(candidate.path),
         scan_root=str(candidate.scan_root),
-        approved_root=str(approved_root),
-        approved_root_snapshot=approved_root_snapshot,
-        # Nothing is staged any more: RECYCLE hands the object to the Windows
-        # Recycle Bin and the permanent modes delete it where it is.
-        quarantine_path=None,
+        scan_root_snapshot=candidate.scan_root_snapshot,
         category=candidate.category.value,
         snapshot=candidate.snapshot,
         target_kind=(
@@ -909,13 +737,7 @@ def _directory_identity(snapshot: ExactFileSnapshot) -> ExactDirectorySnapshot:
     )
 
 
-def _execution_boundary(
-    candidate: ScanCleanupCandidate, mode: CleanupMode
-) -> ExactRootBoundary:
-    if mode is CleanupMode.PERMANENT:
-        if candidate.permanent_root is None or candidate.permanent_root_snapshot is None:
-            raise CleanupRefusal("permanent candidate lost its canonical approved root")
-        return _boundary(candidate.permanent_root, candidate.permanent_root_snapshot)
+def _execution_boundary(candidate: ScanCleanupCandidate) -> ExactRootBoundary:
     return _boundary(candidate.scan_root, candidate.scan_root_snapshot)
 
 
@@ -934,28 +756,20 @@ def _record_failure(
     error: Exception,
 ) -> None:
     action = journal.action(action_id)
-    observation_failed = False
     try:
         source = _optional_metadata(Path(action.source_path))
-        quarantine = (
-            _optional_metadata(Path(action.quarantine_path))
-            if action.quarantine_path is not None
-            else None
-        )
     except OSError:
         source = None
-        quarantine = None
         observation_failed = True
-    restoring = action.state in {ActionState.RESTORE_INTENT, ActionState.RESTORING}
+    else:
+        observation_failed = False
     if action.state is ActionState.PURGE_PENDING or observation_failed:
         # A delete disposition can be accepted while another shared handle
         # keeps the name visible.  Never downgrade this phase to recoverable or
         # automatically replay it based on pathname observation.
         state = ActionState.UNKNOWN
-    elif metadata_matches_snapshot(quarantine, action.snapshot):
-        state = ActionState.QUARANTINED
-    elif metadata_matches_snapshot(source, action.snapshot) and quarantine is None:
-        state = ActionState.RESTORED if restoring else ActionState.FAILED_UNCHANGED
+    elif metadata_matches_snapshot(source, action.snapshot):
+        state = ActionState.FAILED_UNCHANGED
     else:
         state = ActionState.UNKNOWN
     journal.transition(
@@ -1019,8 +833,6 @@ def _batch_digest(batch_id: str, actions: Sequence[CleanupAction]) -> str:
             candidate.snapshot.file_id,
             str(candidate.snapshot.logical_size),
             str(candidate.snapshot.last_write_time_ns),
-            _normalized(candidate.permanent_root) if candidate.permanent_root else "",
-            "1" if candidate.permanent_eligible else "0",
         )
         for value in fields:
             digest.update(b"\0")
@@ -1035,9 +847,6 @@ def _candidate_integrity(
     scan_root_snapshot: ExactFileSnapshot,
     snapshot: ExactFileSnapshot,
     category: CleanupCategory,
-    permanent_eligible: bool,
-    permanent_root: Path | None,
-    permanent_root_snapshot: ExactFileSnapshot | None,
     target_kind: CleanupTargetKind = CleanupTargetKind.FILE,
     directory_scope: DirectoryScope | None = None,
     subtree_files: int = 0,
@@ -1050,9 +859,6 @@ def _candidate_integrity(
         repr(scan_root_snapshot),
         repr(snapshot),
         category.value,
-        "1" if permanent_eligible else "0",
-        _normalized(permanent_root) if permanent_root else "",
-        repr(permanent_root_snapshot),
         target_kind.value,
         directory_scope.value if directory_scope else "",
         str(subtree_files),
@@ -1105,8 +911,6 @@ def _reject_protected_path(
     # the review lane rather than forbidding it, and re-imposing them at
     # execution would refuse a path the workbench had already offered -- after
     # the user selected it for deletion.
-    if is_own_quarantine_path(path):
-        raise CleanupRefusal("this path is DevClean's own quarantine staging area")
     _reject_system_anchor(path, known_roots, keep_config)
     state_root = _normalized(data_dir())
     try:
@@ -1192,5 +996,4 @@ __all__ = [
     "execute_cleanup_batch",
     "prepare_cleanup_batch",
     "prepare_cleanup_plan",
-    "reconcile_unfinished_actions",
 ]

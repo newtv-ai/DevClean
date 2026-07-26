@@ -1,21 +1,16 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
-.coverage
-coverage.xml
 .mypy_cache/
-.pytest_cache/
 .ruff_cache/
 .venv/
 build/
 dist/
 artifacts/
-htmlcov/
 *.db
 *.db-journal
 *.db-shm
 *.db-wal
-reports/
 
 # Only the public Windows payload may be checked in from release/.
 !release/

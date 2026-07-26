@@ -1,11 +1,8 @@
 name: Bug report
-description: Report a reproducible non-security defect
+description: Report a reproducible DevClean defect
 title: "[Bug] "
 labels: [bug]
 body:
-  - type: markdown
-    attributes:
-      value: "可能造成数据损失、路径逃逸或权限问题时，请不要公开提交，改用 SECURITY.md。"
   - type: textarea
     id: outcome
     attributes:
@@ -16,7 +13,7 @@ body:
     id: reproduce
     attributes:
       label: Reproduction steps
-      description: Remove credentials and personal paths.
+      description: 请隐藏账号、凭据和不希望公开的本机路径。
     validations:
       required: true
   - type: input

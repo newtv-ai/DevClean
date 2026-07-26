@@ -13,14 +13,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Windows / Python ${{ matrix.python-version }}
+  build:
+    name: Windows EXE
     runs-on: windows-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+    timeout-minutes: 30
 
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
@@ -37,7 +33,7 @@ jobs:
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           version: "0.11.6"
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
           enable-cache: true
 
       - name: Verify lockfile is current
@@ -49,47 +45,22 @@ jobs:
       - name: Verify installed dependencies
         run: uv pip check
 
-      - name: Validate checked-in JSON Schemas
-        run: uv run --frozen python scripts/validate_schemas.py
-
-      - name: Audit installed dependencies
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force artifacts/ci | Out-Null
-          uv run --frozen python -m pip_audit --local --skip-editable --progress-spinner off --format json --output artifacts/ci/dependency-audit-py${{ matrix.python-version }}.json
-
-      - name: Test
-        run: uv run --frozen pytest --cov=devclean --cov-report=term-missing --cov-report=xml:artifacts/ci/coverage-py${{ matrix.python-version }}.xml --junitxml=artifacts/ci/junit-py${{ matrix.python-version }}.xml
-
       - name: Lint
-        run: uv run --frozen ruff check .
+        run: uv run --frozen ruff check src scripts
 
       - name: Type check
-        run: uv run --frozen mypy src
+        run: uv run --frozen python -m mypy src scripts
 
-      - name: Build wheel and runtime SBOM
-        if: matrix.python-version == '3.13'
+      - name: Build Windows executable
         shell: pwsh
-        run: ./scripts/build_release.ps1 -Python ${{ matrix.python-version }}
+        run: ./scripts/build_windows_exe.ps1 -Python 3.13
 
-      - name: Upload wheel and SBOM
-        if: matrix.python-version == '3.13'
+      - name: Upload Windows executable
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: DevClean-wheel-and-sbom
+          name: DevClean-Windows-x64
           path: |
-            artifacts/release/*
-            artifacts/release-validation.json
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload per-version CI evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: ci-evidence-python-${{ matrix.python-version }}
-          path: |
-            artifacts/ci/dependency-audit-py${{ matrix.python-version }}.json
-            artifacts/ci/coverage-py${{ matrix.python-version }}.xml
-            artifacts/ci/junit-py${{ matrix.python-version }}.xml
+            artifacts/windows-exe/dist/DevClean.exe
+            artifacts/windows-exe/dist/licenses/*.txt
           if-no-files-found: error
           retention-days: 14

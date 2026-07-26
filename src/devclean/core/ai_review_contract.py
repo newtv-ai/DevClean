@@ -21,8 +21,8 @@ from enum import StrEnum
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Final, cast
 
-from devclean.adapters.json_contract import strict_json_loads
 from devclean.core.cleanup_catalog import CleanupCategory, SourceDomain
+from devclean.core.json_contract import strict_json_loads
 from devclean.core.triage import (
     Actionability,
     EvidenceKind,
@@ -517,11 +517,7 @@ def _snapshot_digest(item: TriageItem, nonce: str) -> str:
 
 
 def _triage_is_hard_protected(item: TriageItem) -> bool:
-    return (
-        item.lane is ReviewLane.PROTECTED
-        or item.risk_tier is RiskTier.PROTECTED
-        or item.actionability is Actionability.PROTECTED
-    )
+    return item.risk_tier is RiskTier.PROTECTED
 
 
 def _normalized_path(value: str) -> str:

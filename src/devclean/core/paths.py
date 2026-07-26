@@ -16,8 +16,6 @@ import os
 import sys
 from pathlib import Path
 
-QUARANTINE_DIRECTORY_NAME = ".DevClean-quarantine-v1"
-
 
 def _program_directory() -> Path | None:
     """Return the folder holding the running executable, if this is the exe.
@@ -54,22 +52,7 @@ def data_dir() -> Path:
     return Path.home() / ".local" / "share" / "DevClean"
 
 
-def state_path() -> Path:
-    """Return the default SQLite state path."""
-
-    return data_dir() / "state" / "DevClean.db"
-
-
-def reports_dir() -> Path:
-    """Return the default local report directory."""
-
-    return data_dir() / "reports"
-
-
 __all__ = [
-    "QUARANTINE_DIRECTORY_NAME",
     "data_dir",
-    "reports_dir",
-    "state_path",
 ]
 

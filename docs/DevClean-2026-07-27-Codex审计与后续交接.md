@@ -9,8 +9,8 @@
 
 `G:\clean\release\DevClean.exe`
 
-- 文件大小：12,765,708 字节（约 12.17 MiB）
-- SHA-256：`11567a0700416c9da162672f441956cb7dcece64a17e0978de4288ec9bb1d273`
+- 文件大小：12,754,891 字节（约 12.16 MiB）
+- SHA-256：`079dd98bb6088cacd2052ecf4ae8bfa737360c7e56b52c6cb6d032ead92af870`
 - 用户是否需要安装 Python：不需要
 - 构建方式：PyInstaller `--onefile --windowed --uac-admin`
 - 发布载荷：一个 EXE 加四份运行时许可证
@@ -21,11 +21,11 @@ Git 仓库已经直接恢复在 `G:\clean`，不再有两个同名目录套壳�
 
 ### 2.1 构建成功后仍被发布白名单判失败
 
-原因：构建脚本运行 `--ui-smoke` 时，EXE 会按正常首次启动流程在 `dist` 旁生成 `DevClean-data`、三份规则和默认备份。随后发布白名单发现了这些本机状态文件，因此判定构建失败。
+原因：旧构建脚本运行成品 `--uac-admin` EXE 做 `--ui-smoke`。它既会在 `dist` 旁生成 `DevClean-data`，也可能因 UAC 参数转交或无交互 CI 桌面而无法退出，导致发布白名单失败或构建永久等待。
 
-修复：GUI 冒烟检查成功后，只清理由本次构建在受控 `artifacts\windows-exe\dist\DevClean-data` 中生成的状态，再核对发布白名单。清理目标先验证必须是 `dist` 的直接子目录。
+修复：GUI 构造冒烟改为在打包前使用同一 Python 3.13 环境运行真实 Tk 入口；PyInstaller 随后完成依赖分析和单文件构建。构建流程不再启动带 `--uac-admin` 的最终 EXE，因此不会在发布目录生成运行时状态，也不会被 UAC/CI 桌面卡住。
 
-为什么这样改：用户收到的发布包应只有 EXE 和许可证；三份可编辑规则仍由用户首次启动时在 EXE 旁生成，不能把构建机状态塞进发布包。
+为什么这样改：用户收到的发布包仍只有 EXE 和许可证；三份可编辑规则仍由用户首次正常启动时在 EXE 旁生成。构建校验不应留下构建机状态，更不应依赖交互式 UAC。
 
 ### 2.2 “整个目录”可以彻底删除，却不能进回收站
 
@@ -60,7 +60,7 @@ Git 仓库已经直接恢复在 `G:\clean`，不再有两个同名目录套壳�
 
 原因：EXE 若放在 Downloads 等会被扫描的位置，旁边的 `DevClean-data` 没有进入默认剪枝。执行层会保护自身状态，但扫描层仍可能显示自己的临时写入文件，造成“看起来可选、执行时拒绝”的矛盾，并可能浪费 AI 判断次数。
 
-修复：只在 `scan-rules.json.skip_directory_groups.devclean_state` 中加入 `DevClean-data`。没有增加 Python 内置扫描规则。
+修复：`scan-rules.json.skip_directory_groups.devclean_state` 保留可编辑的 `DevClean-data` 名称剪枝；扫描启动时还会把本次运行实际使用的 `data_dir()` 作为精确排除路径。因此 EXE 旁的 `DevClean-data` 和源码运行使用的 `%LOCALAPPDATA%\DevClean` 都不会进入扫描，同时不会因为一个宽泛的 `DevClean` 名称规则而跳过用户其他同名目录。
 
 为什么这样改：自身状态不应成为垃圾候选；同时继续遵守“所有扫描分类配置统一由三份 JSON 管理”。
 
@@ -76,6 +76,25 @@ Git 仓库已经直接恢复在 `G:\clean`，不再有两个同名目录套壳�
 - 同步更新使用说明和架构文档。
 
 这些修改不改变用户产品决策，只清理已经确认的死代码、错误说明和静态检查问题。
+
+### 2.6 Claude 复审确认的旧架构残留
+
+Claude 复审确认，本地仓库仍同时保留 Reclaimer 时代的 pytest、三版本 Python
+矩阵、wheel/SBOM 发布链、broker gate、证据存储、旧 CLI 和不可达的隔离恢复
+状态机。这些不是 DevClean GUI 的备用实现，GUI 入口没有运行时调用关系。
+
+本轮按用户明确决定直接删除，不保留“以后可能会用”的并行架构：
+
+- 删除全部旧测试、测试 transcripts 和 pytest/coverage 配置及依赖。
+- CI 收敛为单个 Windows / Python 3.13 作业，只做静态检查并构建单文件 EXE。
+- 删除 wheel/SBOM、JSON Schema、gate evidence、broker 与旧发布校验脚本。
+- 删除旧 CLI、adapters、evidence、state/reporting/doctor/duplicates 等不可达模块。
+- 删除旧 quarantine/restore/replay 状态、旧日志迁移和自动永久清理分支。
+- 删除构建目录中残留的 Reclaimer wheel、coverage 文件和空目录。
+- 新增与当前产品一致的公开仓库 `README.md`，清理 issue/PR 模板中的失效链接和 pytest 要求。
+
+当前删除日志只有 `RECYCLE` 和 `PERMANENT` 两种用户真实选择；永久删除仍由用户
+点击“彻底删除”触发，行为没有被收窄。
 
 ## 3. 当前实际产品流程
 
@@ -173,6 +192,8 @@ Git 仓库已经直接恢复在 `G:\clean`，不再有两个同名目录套壳�
 23. 旧测试集已按用户要求删除；用户明确要求不要运行测试集。后续若想恢复或新建测试，必须先征得用户同意。
 24. 对项目行为不确定时，先按当前行为是有意设计处理，逐项解释并询问，不能借“审计”擅自改产品决策。
 25. 发布或提交时作者不能写成 Claude、Codex 或其他模型；不得未经要求 push。
+26. 旧测试和确认不可达的旧代码直接删除，不为“保底”或假想未来用途继续保留。
+27. CI 和开发环境只维护当前 Windows EXE 所需的 Python 3.13，不维护三版本矩阵或 wheel 发布物。
 
 ## 7. 本轮验证证据
 
@@ -181,11 +202,12 @@ Git 仓库已经直接恢复在 `G:\clean`，不再有两个同名目录套壳�
 已执行：
 
 - `ruff check src scripts`：通过
-- mypy：58 个源码文件通过，无类型错误
-- 发布分层 AST 审计：58 个运行时 Python 文件通过
-- 三份打包规则严格解析：通过
+- Python `compileall`：通过
+- mypy：`src + scripts` 通过，无类型错误
+- GUI 入口可达性复核：没有不可达的非初始化运行时模块
 - PyInstaller 单文件构建：通过
-- `--ui-smoke` GUI 构造与退出码检查：通过
+- 源码入口 `--ui-smoke` GUI 构造与退出码检查：通过
+- 成品 EXE 内三份默认规则归档检查：通过
 - EXE 50 MB 体积门槛：通过
 - 发布载荷白名单：通过
 - 最终 release EXE SHA-256 复核：通过
@@ -202,19 +224,10 @@ Git 仓库已经直接恢复在 `G:\clean`，不再有两个同名目录套壳�
 
 ## 9. 本轮涉及文件
 
-- `scripts\build_windows_exe.ps1`
-- `src\devclean\platform\windows\exact_cleanup.py`
-- `src\devclean\core\cleanup_journal.py`
-- `src\devclean\core\ai_sessions.py`
-- `src\devclean\core\user_rules.py`
-- `src\devclean\core\postscan_cleanup.py`
-- `src\devclean\core\triage.py`
-- `src\devclean\ui\app.py`
-- `src\devclean\ui\rule_editor.py`
-- `src\devclean\config\scan-rules.json`
-- `docs\使用说明.md`
-- `docs\架构与部署.md`
-- `release\DevClean.exe`
-- `release\licenses\`
+- 保留的产品源码：`src\devclean\ui\`、`scanner\`、`core\`、`platform\windows\`、`config\`
+- 保留的构建入口：`scripts\build_windows_exe.ps1`、`scripts\devclean_gui_entry.py`
+- CI：`.github\workflows\ci.yml`
+- 公开说明：`README.md`、`docs\使用说明.md`、`docs\架构与部署.md`
+- 最终产物：`release\DevClean.exe`、`release\licenses\`
 
 后续审核应先逐项核对本交接中的用户决定，再报告确认存在的 bug。不要把个人偏好、架构洁癖或与磁盘清理无关的风险包装成功能缺陷。
