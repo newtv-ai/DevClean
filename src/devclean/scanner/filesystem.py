@@ -158,13 +158,6 @@ class CancellationToken:
 
         return self._event.is_set()
 
-    @property
-    def cancelled(self) -> bool:
-        """Whether cancellation has been requested."""
-
-        return self.is_cancelled()
-
-
 type ProgressCallback = Callable[[ScanStats], None]
 
 

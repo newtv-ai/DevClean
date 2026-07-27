@@ -35,8 +35,10 @@ $defaultRuleFiles = @(
 )
 $executable = Join-Path $dist "DevClean.exe"
 $licenseDirectory = Join-Path $dist "licenses"
+$smokeData = Join-Path $artifacts "ui-smoke-data"
 $artifactsFull = [IO.Path]::GetFullPath($artifacts)
 $distFull = [IO.Path]::GetFullPath($dist)
+$smokeDataFull = [IO.Path]::GetFullPath($smokeData)
 if (
     -not [IO.Path]::GetDirectoryName($distFull).Equals(
         $artifactsFull,
@@ -44,6 +46,14 @@ if (
     )
 ) {
     throw "Windows EXE dist must be a direct child of its dedicated artifacts directory"
+}
+if (
+    -not [IO.Path]::GetDirectoryName($smokeDataFull).Equals(
+        $artifactsFull,
+        [StringComparison]::OrdinalIgnoreCase
+    )
+) {
+    throw "GUI smoke data must be a direct child of its dedicated artifacts directory"
 }
 
 Push-Location $root
@@ -64,8 +74,10 @@ try {
     # a non-interactive CI desktop. PyInstaller performs the packaged import
     # analysis below; this smoke verifies the application's own construction.
     $previousPythonPath = $env:PYTHONPATH
+    $previousDataDirectory = $env:DEVCLEAN_DATA_DIR
     try {
         $env:PYTHONPATH = Join-Path $root "src"
+        $env:DEVCLEAN_DATA_DIR = $smokeDataFull
         & uv run --frozen --python $Python python $entry --ui-smoke
         if ($LASTEXITCODE -ne 0) {
             throw "GUI construction smoke failed with exit code $LASTEXITCODE"
@@ -73,6 +85,10 @@ try {
     }
     finally {
         $env:PYTHONPATH = $previousPythonPath
+        $env:DEVCLEAN_DATA_DIR = $previousDataDirectory
+        if (Test-Path -LiteralPath $smokeDataFull) {
+            Remove-Item -LiteralPath $smokeDataFull -Recurse -Force
+        }
     }
 
     # dist is generated output. Recreate it so withdrawn or renamed executables

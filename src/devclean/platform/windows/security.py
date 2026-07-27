@@ -1,4 +1,4 @@
-"""Windows token inspection and fail-closed private-directory ACL helpers."""
+"""Fail-closed ACL helpers for DevClean's local state directory and files."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from devclean.platform.windows.filesystem import (
 from devclean.platform.windows.volumes import is_local_fixed_path
 
 TOKEN_QUERY = 0x0008
-TOKEN_ELEVATION_CLASS = 20
 _TOKEN_USER_CLASS = 1
 _ERROR_INSUFFICIENT_BUFFER = 122
 _READ_CONTROL = 0x00020000
@@ -221,70 +220,6 @@ class _WindowsPrivateAclAudit:
     entries: tuple[DirectoryAceAudit, ...]
 
 
-class _TokenElevation(ctypes.Structure):
-    _fields_ = [("TokenIsElevated", wintypes.DWORD)]
-
-
-class _SecurityAttributes(ctypes.Structure):
-    _fields_ = [
-        ("length", wintypes.DWORD),
-        ("security_descriptor", wintypes.LPVOID),
-        ("inherit_handle", wintypes.BOOL),
-    ]
-
-
-def is_process_elevated() -> bool:
-    """Return whether the current process token is elevated.
-
-    DevClean's main process must exit when this is true. Group membership is intentionally not
-    used because an administrator can still be running with a filtered, non-elevated token.
-    """
-
-    if os.name != "nt":
-        return False
-
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
-    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
-    advapi32.OpenProcessToken.argtypes = (
-        wintypes.HANDLE,
-        wintypes.DWORD,
-        ctypes.POINTER(wintypes.HANDLE),
-    )
-    advapi32.OpenProcessToken.restype = wintypes.BOOL
-    advapi32.GetTokenInformation.argtypes = (
-        wintypes.HANDLE,
-        ctypes.c_int,
-        wintypes.LPVOID,
-        wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD),
-    )
-    advapi32.GetTokenInformation.restype = wintypes.BOOL
-    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
-    kernel32.CloseHandle.restype = wintypes.BOOL
-
-    token = wintypes.HANDLE()
-    if not advapi32.OpenProcessToken(
-        kernel32.GetCurrentProcess(), TOKEN_QUERY, ctypes.byref(token)
-    ):
-        raise ctypes.WinError(ctypes.get_last_error())
-
-    try:
-        elevation = _TokenElevation()
-        returned = wintypes.DWORD()
-        if not advapi32.GetTokenInformation(
-            token,
-            TOKEN_ELEVATION_CLASS,
-            ctypes.byref(elevation),
-            ctypes.sizeof(elevation),
-            ctypes.byref(returned),
-        ):
-            raise ctypes.WinError(ctypes.get_last_error())
-        return bool(elevation.TokenIsElevated)
-    finally:
-        kernel32.CloseHandle(token)
-
-
 def secure_private_directory(path: Path) -> PrivateDirectoryAudit:
     """Replace one directory DACL with the exact DevClean private policy.
 
@@ -309,42 +244,6 @@ def secure_private_directory(path: Path) -> PrivateDirectoryAudit:
         audit = _audit_windows_private_directory(directory, current_sid)
     if not audit.policy_satisfied:
         raise RuntimeError("private-directory security policy verification failed")
-    return audit
-
-
-def create_private_directory(path: Path) -> PrivateDirectoryAudit:
-    """Create one new private directory without ever taking over an existing path.
-
-    On Windows the protected DACL is supplied to ``CreateDirectoryW`` so the
-    namespace is private from its first observable instant.  This is the only
-    creator suitable for cleanup quarantine directories: a pre-existing path,
-    even one with a plausible name, is refused instead of having its ACL
-    replaced.  The caller must separately pin and verify the approved parent
-    boundary across this operation.
-    """
-
-    directory = Path(path)
-    if not directory.is_absolute():
-        raise ValueError("private directory path must be absolute")
-    if os.path.lexists(directory):
-        raise FileExistsError(f"private directory already exists: {directory}")
-    _validated_directory(directory.parent)
-    if os.name != "nt":
-        os.mkdir(directory, mode=0o700)
-        os.chmod(directory, 0o700, follow_symlinks=False)
-        audit = audit_private_directory(directory)
-    else:
-        current_sid = _current_user_sid_string()
-        expected = _unique_sids(
-            current_sid,
-            _SYSTEM_SID,
-            _BUILTIN_ADMINISTRATORS_SID,
-        )
-        sddl = "D:P" + "".join(f"(A;OICI;FA;;;{sid})" for sid in expected)
-        _create_windows_private_directory(directory, sddl)
-        audit = _audit_windows_private_directory(directory, current_sid)
-    if not audit.policy_satisfied:
-        raise RuntimeError("new private-directory security policy verification failed")
     return audit
 
 
@@ -449,47 +348,6 @@ def _set_windows_private_dacl(directory: Path, current_sid: str) -> None:
     )
     sddl = "D:P" + "".join(f"(A;OICI;FA;;;{sid})" for sid in expected)
     _set_windows_private_acl(directory, sddl, require_directory=True)
-
-
-def _create_windows_private_directory(directory: Path, sddl: str) -> None:
-    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    convert_descriptor = advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW
-    convert_descriptor.argtypes = (
-        wintypes.LPCWSTR,
-        wintypes.DWORD,
-        ctypes.POINTER(wintypes.LPVOID),
-        ctypes.POINTER(wintypes.DWORD),
-    )
-    convert_descriptor.restype = wintypes.BOOL
-    create_directory = kernel32.CreateDirectoryW
-    create_directory.argtypes = (
-        wintypes.LPCWSTR,
-        ctypes.POINTER(_SecurityAttributes),
-    )
-    create_directory.restype = wintypes.BOOL
-    kernel32.LocalFree.argtypes = (wintypes.HLOCAL,)
-    kernel32.LocalFree.restype = wintypes.HLOCAL
-
-    descriptor = wintypes.LPVOID()
-    descriptor_size = wintypes.DWORD()
-    if not convert_descriptor(
-        sddl,
-        _SDDL_REVISION_1,
-        ctypes.byref(descriptor),
-        ctypes.byref(descriptor_size),
-    ):
-        raise ctypes.WinError(ctypes.get_last_error())
-    try:
-        attributes = _SecurityAttributes(
-            ctypes.sizeof(_SecurityAttributes),
-            descriptor,
-            False,
-        )
-        if not create_directory(str(directory), ctypes.byref(attributes)):
-            raise ctypes.WinError(ctypes.get_last_error())
-    finally:
-        kernel32.LocalFree(descriptor)
 
 
 def _set_windows_private_file_dacl(ordinary_file: Path, current_sid: str) -> None:
@@ -740,14 +598,6 @@ def _enumerate_acl(dacl: wintypes.LPVOID) -> tuple[DirectoryAceAudit, ...]:
     return tuple(entries)
 
 
-def _open_directory_handle(directory: Path, *, write_dac: bool) -> int:
-    return _open_path_handle(
-        directory,
-        write_dac=write_dac,
-        require_directory=True,
-    )
-
-
 def _open_path_handle(
     path: Path, *, write_dac: bool, require_directory: bool
 ) -> int:
@@ -899,8 +749,6 @@ __all__ = [
     "PrivateFileAudit",
     "audit_private_directory",
     "audit_private_file",
-    "create_private_directory",
-    "is_process_elevated",
     "secure_private_directory",
     "secure_private_file",
 ]

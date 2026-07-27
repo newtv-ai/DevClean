@@ -12,10 +12,12 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from functools import lru_cache
+from heapq import heappush, heapreplace
 from pathlib import Path
 
 from devclean.core.cleanup_catalog import (
@@ -26,8 +28,13 @@ from devclean.core.cleanup_catalog import (
     known_root_for_path,
     source_domain_for_category,
 )
-from devclean.core.scan_insights import ScanInsights
-from devclean.core.user_rules import DeleteClassification, KeepClassification
+from devclean.core.user_rules import (
+    DeleteClassification,
+    KeepClassification,
+    RuleDecision,
+    UserRules,
+    normalise_path,
+)
 from devclean.scanner.filesystem import ScanRecord, ScanRecordKind
 
 
@@ -52,7 +59,6 @@ class ReviewLane(StrEnum):
     """Human review queues; none implies automatic execution."""
 
     DETERMINISTIC_CANDIDATE = "DETERMINISTIC_CANDIDATE"
-    VENDOR_MANAGED = "VENDOR_MANAGED"
     AI_REVIEW = "AI_REVIEW"
     REPORT_ONLY = "REPORT_ONLY"
 
@@ -114,18 +120,6 @@ class TriageItem:
     directory_scope: DirectoryScope | None = None
 
 
-@dataclass(slots=True)
-class TriageSummary:
-    files: int = 0
-    logical_bytes: int = 0
-    allocated_bytes: int = 0
-    # Physical allocation is only known for objects that were opened.  A scan
-    # that reads files from directory enumeration cannot know it, so the count of
-    # such files travels with the total: without it a caller cannot tell an
-    # allocated total of zero from "nothing was measured".
-    allocation_unknown_files: int = 0
-
-
 @dataclass(frozen=True, slots=True)
 class DirectorySubtreeTotals:
     """Exact totals accumulated for one whole-tree candidate during a scan."""
@@ -149,21 +143,20 @@ class _Classification:
 
 
 class TriageSession:
-    """Keep exact aggregates plus a bounded largest-item review sample."""
+    """Keep the largest configured review sample in each lane/category."""
 
-    def __init__(self) -> None:
-        self._summaries = {lane: TriageSummary() for lane in ReviewLane}
-        # Bucketed per (lane, category), not per lane.  Six of the classification
-        # branches below return AI_REVIEW, so a per-lane sample lets the few
-        # largest files on the volume evict every mid-sized package-manager cache
-        # entry -- exactly the space a developer profile is made of.  Per-category
-        # buckets keep each source independently reviewable.
-        # Each bucket is a min-heap on logical size, so keeping the largest N
-        # costs log(N) per observation instead of the two O(N) passes a
-        # min()-plus-remove eviction needs.  On a 20,244-file cache that
-        # eviction alone was 3.0s of the classification pass.
-        self._items: dict[tuple[ReviewLane, CleanupCategory], list[TriageItem]] = {}
-        self._insights = ScanInsights()
+    def __init__(self, *, review_sample_per_category: int) -> None:
+        if review_sample_per_category < 1:
+            raise ValueError("review_sample_per_category must be positive")
+        self._review_sample_per_category = review_sample_per_category
+        self._items: dict[
+            tuple[ReviewLane, CleanupCategory], list[tuple[int, int, TriageItem]]
+        ] = {}
+        self._sequence = 0
+        self._observed_keep_paths: set[str] = set()
+        self._observation_rules: UserRules | None = None
+        self._keep_cache_rules: UserRules | None = None
+        self._keep_cache: tuple[str, ...] = ()
         # Whole-tree candidates and their running totals.  A scan emits a
         # directory before any of its descendants, so one streaming pass yields
         # exact subtree sizes without a second walk over hundreds of thousands
@@ -171,21 +164,39 @@ class TriageSession:
         self._directory_totals: dict[str, DirectorySubtreeTotals] = {}
         self._ancestor_cache: dict[str, tuple[str, ...]] = {}
 
+    def observe_path(self, path: str, rules: UserRules) -> None:
+        """Retain only observed paths protected by a configured KEEP rule."""
+
+        if self._observation_rules is None:
+            self._observation_rules = rules
+        elif self._observation_rules is not rules:
+            raise ValueError("one scan session must use one pinned rule set")
+        if rules.decision_for(path) is RuleDecision.KEEP:
+            self._observed_keep_paths.add(normalise_path(path))
+            self._keep_cache_rules = None
+            self._keep_cache = ()
+
     def add(self, item: TriageItem) -> None:
-        summary = self._summaries[item.lane]
-        summary.files += 1
-        summary.logical_bytes += item.logical_size
-        if item.allocated_size is None:
-            summary.allocation_unknown_files += 1
-        else:
-            summary.allocated_bytes += item.allocated_size
-        self._insights.add(item)
         if item.target_kind is CleanupTargetKind.DIRECTORY:
             self._register_directory(item.path)
         else:
             self._accumulate_into_directories(item)
 
-        self._items.setdefault((item.lane, item.category), []).append(item)
+        # REPORT_ONLY observations are never displayed, exported, selected or
+        # promoted by a DELETE rule. Their sizes have already contributed to any
+        # enclosing whole-directory candidate above, so retaining the objects
+        # would only consume memory on large profile scans.
+        if (
+            item.lane is not ReviewLane.REPORT_ONLY
+            and item.execution_policy is ExecutionPolicy.USER_CHOICE_DELETE
+        ):
+            bucket = self._items.setdefault((item.lane, item.category), [])
+            self._sequence += 1
+            entry = (item.logical_size, self._sequence, item)
+            if len(bucket) < self._review_sample_per_category:
+                heappush(bucket, entry)
+            elif item.logical_size > bucket[0][0]:
+                heapreplace(bucket, entry)
 
     def _register_directory(self, path: str) -> None:
         key = os.path.normcase(os.path.normpath(path))
@@ -246,33 +257,34 @@ class TriageSession:
         key = os.path.normcase(os.path.normpath(path))
         return self._directory_totals.get(key, DirectorySubtreeTotals())
 
-    def summary(self, lane: ReviewLane) -> TriageSummary:
-        source = self._summaries[lane]
-        return TriageSummary(
-            source.files,
-            source.logical_bytes,
-            source.allocated_bytes,
-            source.allocation_unknown_files,
+    def iter_items(self) -> Iterator[TriageItem]:
+        """Iterate the bounded review sample without copying or sorting it."""
+
+        return (
+            entry[2]
+            for bucket in self._items.values()
+            for entry in bucket
         )
 
-    def items(self, lane: ReviewLane) -> tuple[TriageItem, ...]:
-        """Return every observation in *lane*, largest first."""
+    def configured_keep_paths(self, rules: UserRules) -> tuple[str, ...]:
+        """Return sorted observed paths protected by the active KEEP rules."""
 
-        retained = [
-            item
-            for (bucket_lane, _), bucket in self._items.items()
-            if bucket_lane is lane
-            for item in bucket
-        ]
-        retained.sort(key=lambda item: item.logical_size, reverse=True)
-        return tuple(retained)
-
-    def all_items(self) -> tuple[TriageItem, ...]:
-        return tuple(item for lane in ReviewLane for item in self.items(lane))
-
-    @property
-    def insights(self) -> ScanInsights:
-        return self._insights
+        if self._keep_cache_rules is rules:
+            return self._keep_cache
+        kept_paths = {
+            path
+            for path in self._observed_keep_paths
+            if rules.decision_for(path) is RuleDecision.KEEP
+        }
+        kept_paths.update(
+            normalise_path(item.path)
+            for item in self.iter_items()
+            if rules.decision_for(item.path) is RuleDecision.KEEP
+        )
+        kept = tuple(sorted(kept_paths))
+        self._keep_cache_rules = rules
+        self._keep_cache = kept
+        return kept
 
 
 def triage_file(
@@ -352,10 +364,16 @@ def triage_directory(
         raise ValueError("directory triage accepts directory observations only")
     path = Path(record.path)
     if _normalized_path(path) == _normalized_path(Path(record.root)):
-        # The executor deliberately requires every candidate to be below its
-        # pinned scan boundary.  Offering the boundary itself would create a row
-        # that can never execute; its contents are still classified normally.
-        return None
+        known_scan_root = known_root_for_path(path, known_roots)
+        if (
+            known_scan_root is None
+            or _normalized_path(known_scan_root.path) != _normalized_path(path)
+            or not known_scan_root.delete_root_itself
+        ):
+            # Ordinary scan roots are traversal boundaries, not deletion
+            # candidates. A configured root may opt in explicitly; Windows.old
+            # uses that switch so the now-obsolete directory itself can go.
+            return None
     scope = directory_cleanup_scope(
         path, known_roots, delete_config, keep_config
     )
@@ -1029,7 +1047,6 @@ __all__ = [
     "RiskTier",
     "TriageItem",
     "TriageSession",
-    "TriageSummary",
     "directory_cleanup_scope",
     "is_application_state_file",
     "is_development_cache_hint",

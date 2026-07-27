@@ -46,10 +46,13 @@ jobs:
         run: uv pip check
 
       - name: Lint
-        run: uv run --frozen ruff check src scripts
+        run: uv run --frozen ruff check src scripts tests
 
       - name: Type check
-        run: uv run --frozen python -m mypy src scripts
+        run: uv run --frozen python -m mypy
+
+      - name: Test current DevClean workflow
+        run: uv run --frozen pytest
 
       - name: Build Windows executable
         shell: pwsh

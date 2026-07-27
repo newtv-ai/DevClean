@@ -22,7 +22,7 @@ from devclean.platform.windows.volumes import is_local_fixed_path
 
 JOURNAL_SCHEMA_VERSION = 1
 MAX_JOURNAL_ERROR_LENGTH = 4_096
-MAX_RETAINED_COMPLETED_BATCHES = 128
+MAX_RETAINED_BATCHES = 128
 _MAX_UINT64 = (1 << 64) - 1
 
 
@@ -91,17 +91,6 @@ class JournalAction:
     target_kind: JournalTargetKind = JournalTargetKind.FILE
     subtree_files: int = 0
     subtree_bytes: int = 0
-
-
-@dataclass(frozen=True, slots=True)
-class JournalBatch:
-    batch_id: str
-    mode: CleanupMode
-    state: BatchState
-    action_count: int
-    logical_bytes: int
-    created_at: str
-    updated_at: str
 
 
 _SCHEMA = f"""
@@ -232,7 +221,10 @@ class CleanupJournal:
         try:
             with self._connect() as connection:
                 connection.execute("BEGIN IMMEDIATE")
-                self._prune_completed_batches(connection)
+                self._prune_batches(
+                    connection,
+                    retain=MAX_RETAINED_BATCHES - 1,
+                )
                 connection.execute(
                     """INSERT INTO cleanup_batches
                        (batch_id, mode, state, action_count, logical_bytes, created_at, updated_at)
@@ -397,7 +389,7 @@ class CleanupJournal:
                 "UPDATE cleanup_batches SET state = ?, updated_at = ? WHERE batch_id = ?",
                 (state.value, _now(), batch_id),
             )
-            self._prune_completed_batches(connection)
+            self._prune_batches(connection)
             connection.commit()
         return state
 
@@ -409,23 +401,6 @@ class CleanupJournal:
         if row is None:
             raise CleanupJournalError("cleanup action does not exist")
         return _row_to_action(row)
-
-    def batch(self, batch_id: str) -> JournalBatch:
-        with self._connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM cleanup_batches WHERE batch_id = ?", (batch_id,)
-            ).fetchone()
-        if row is None:
-            raise CleanupJournalError("cleanup batch does not exist")
-        return JournalBatch(
-            batch_id=str(row["batch_id"]),
-            mode=CleanupMode(str(row["mode"])),
-            state=BatchState(str(row["state"])),
-            action_count=int(row["action_count"]),
-            logical_bytes=int(row["logical_bytes"]),
-            created_at=str(row["created_at"]),
-            updated_at=str(row["updated_at"]),
-        )
 
     def actions_for_batch(self, batch_id: str) -> tuple[JournalAction, ...]:
         with self._connect() as connection:
@@ -453,7 +428,7 @@ class CleanupJournal:
             if str(version[0]) != str(JOURNAL_SCHEMA_VERSION):
                 raise CleanupJournalError("cleanup journal schema version is unsupported")
             connection.execute("BEGIN IMMEDIATE")
-            self._prune_completed_batches(connection)
+            self._prune_batches(connection)
             connection.commit()
         secure_private_file(self.path)
 
@@ -500,15 +475,18 @@ class CleanupJournal:
         )
 
     @staticmethod
-    def _prune_completed_batches(connection: sqlite3.Connection) -> None:
-        """Bound terminal history while preserving every unresolved action."""
+    def _prune_batches(
+        connection: sqlite3.Connection,
+        *,
+        retain: int = MAX_RETAINED_BATCHES,
+    ) -> None:
+        """Keep the entire journal bounded, including unresolved outcomes."""
 
         rows = connection.execute(
             """SELECT batch_id FROM cleanup_batches
-               WHERE state = ?
                ORDER BY updated_at DESC, batch_id DESC
                LIMIT -1 OFFSET ?""",
-            (BatchState.COMPLETED.value, MAX_RETAINED_COMPLETED_BATCHES),
+            (retain,),
         ).fetchall()
         for row in rows:
             batch_id = str(row[0])
@@ -524,8 +502,8 @@ class CleanupJournal:
                 (batch_id,),
             )
             connection.execute(
-                "DELETE FROM cleanup_batches WHERE batch_id = ? AND state = ?",
-                (batch_id, BatchState.COMPLETED.value),
+                "DELETE FROM cleanup_batches WHERE batch_id = ?",
+                (batch_id,),
             )
 
 
@@ -610,7 +588,7 @@ def _decode_volume_serial(value: object) -> int:
 
 
 __all__ = [
-    "MAX_RETAINED_COMPLETED_BATCHES",
+    "MAX_RETAINED_BATCHES",
     "ActionState",
     "BatchState",
     "CleanupIntent",
@@ -618,6 +596,5 @@ __all__ = [
     "CleanupJournalError",
     "CleanupMode",
     "JournalAction",
-    "JournalBatch",
     "JournalTargetKind",
 ]

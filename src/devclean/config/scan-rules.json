@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "document_type": "devclean.scan_rules",
   "_help": "DevClean 只从本文件读取扫描范围和已知清理目录。所有路径支持 %环境变量% 和 ~；known_cleanup_roots.patterns 还支持 * 通配符和 {a,b} 组合展开。",
   "_ai_editing_contract": {
@@ -9,14 +9,17 @@
       "返回完整 JSON 对象，不要使用 Markdown 代码块、注释或省略号。",
       "不得修改 schema_version、document_type 或 _ai_editing_contract。",
       "不得增加、删除或改名字段；只修改现有字段的值或数组内容。",
-      "known_cleanup_roots 每项必须保留全部字段，id 必须唯一，group 用于人工分组。",
+      "review_sample_per_category 是每个分类最多进入界面和 AI 审核队列的项目数；原始产品规则为 500。",
+      "known_cleanup_roots 每项必须保留全部字段，id 必须唯一，group 用于人工分组；delete_root_ids 只能引用其中已有的 id。",
       "不确定的路径不要加入 known_cleanup_roots，先保留原配置。"
     ]
   },
   "include_user_profile": true,
   "include_known_cleanup_roots": true,
+  "review_sample_per_category": 500,
   "additional_paths": [],
   "excluded_paths": [],
+  "delete_root_ids": ["windows-old"],
   "skip_directory_groups": {
     "version_control": [".git", ".hg", ".svn"],
     "user_content": [
@@ -54,7 +57,6 @@
       "perflogs"
     ],
     "devclean_state": [
-      ".devclean-quarantine-v1",
       "DevClean-data"
     ]
   },
@@ -124,13 +126,20 @@
       "group": "windows_update",
       "enabled": true,
       "allow_inside_system_anchor": true,
-      "patterns": [
-        "%SYSTEMROOT%\\SoftwareDistribution\\Download",
-        "%SYSTEMDRIVE%\\Windows.old"
-      ],
+      "patterns": ["%SYSTEMROOT%\\SoftwareDistribution\\Download"],
       "category": "WINDOWS_UPDATE",
       "policy": "VENDOR_MANAGED",
-      "label": "Windows 更新下载或旧系统"
+      "label": "Windows 更新下载"
+    },
+    {
+      "id": "windows-old",
+      "group": "windows_update",
+      "enabled": true,
+      "allow_inside_system_anchor": true,
+      "patterns": ["%SYSTEMDRIVE%\\Windows.old"],
+      "category": "WINDOWS_UPDATE",
+      "policy": "VENDOR_MANAGED",
+      "label": "Windows 旧系统目录"
     },
     {
       "id": "windows-internet-cache",

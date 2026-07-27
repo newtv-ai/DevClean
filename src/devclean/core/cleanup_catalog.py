@@ -25,6 +25,7 @@ class KnownCleanupRoot:
     policy: CleanupPolicy
     label: str
     allow_inside_system_anchor: bool = False
+    delete_root_itself: bool = False
 
 
 def discover_known_cleanup_roots(
@@ -89,6 +90,9 @@ def discover_known_cleanup_roots(
                             label=configured.label,
                             allow_inside_system_anchor=(
                                 configured.allow_inside_system_anchor
+                            ),
+                            delete_root_itself=(
+                                configured.rule_id in rules.delete_root_ids
                             ),
                         )
                     )

@@ -21,6 +21,7 @@ dependencies = []
 dev = [
   "mypy>=1.15",
   "pyinstaller>=6.21,<7",
+  "pytest>=8.4,<9",
   "ruff>=0.11",
 ]
 
@@ -39,4 +40,9 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 python_version = "3.13"
 strict = true
 warn_unreachable = true
-packages = ["devclean"]
+mypy_path = ["src"]
+files = ["src", "scripts", "tests"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

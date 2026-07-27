@@ -7,7 +7,7 @@ its owner and nobody dares delete.  Beside the exe, deleting the folder deletes
 the program and everything it ever wrote, with nothing left behind.
 
 The directory is intentionally local and must never be placed on a network
-share.  Tests override it with ``DEVCLEAN_DATA_DIR``.
+share.  Development tools may override it with ``DEVCLEAN_DATA_DIR``.
 """
 
 from __future__ import annotations
@@ -44,12 +44,10 @@ def data_dir() -> Path:
     if beside_exe is not None:
         return beside_exe / "DevClean-data"
 
-    # Running from source: keep it out of the repository but still findable.
-    local_appdata = os.environ.get("LOCALAPPDATA")
-    if local_appdata:
-        return Path(local_appdata) / "DevClean"
-
-    return Path.home() / ".local" / "share" / "DevClean"
+    # Source runs follow the same product rule: state stays in the project
+    # folder that owns this module, independent of the shell's current working
+    # directory. The repository ignores this one visible directory.
+    return Path(__file__).resolve().parents[3] / "DevClean-data"
 
 
 __all__ = [

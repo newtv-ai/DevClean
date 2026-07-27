@@ -14,13 +14,16 @@ Mutation lives in ``core.postscan_cleanup`` and nothing here can widen it.
 from __future__ import annotations
 
 import contextlib
+import heapq
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
 import tkinter as tk
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from queue import Empty, Queue
@@ -33,9 +36,12 @@ from devclean.core.ai_review_contract import (
     AiRecommendation,
     AiReviewCandidateInput,
     AiReviewContractError,
+    AiReviewImport,
     AiReviewPackage,
+    AiReviewSimilarityGroup,
     build_ai_review_package,
     parse_ai_review_response,
+    parse_partial_ai_review_response,
     serialize_ai_review_package,
 )
 from devclean.core.cleanup_catalog import (
@@ -45,6 +51,7 @@ from devclean.core.cleanup_catalog import (
 from devclean.core.cleanup_journal import ActionState, CleanupMode
 from devclean.core.paths import data_dir
 from devclean.core.postscan_cleanup import (
+    CleanupExecutionProgress,
     CleanupExecutionResult,
     CleanupRefusal,
     ScanCleanupCandidate,
@@ -77,6 +84,7 @@ from devclean.core.user_rules import (
     load_rules,
     normalise_path,
     read_rule_documents,
+    reusable_path_pattern,
 )
 from devclean.platform.windows.volumes import fixed_volume_roots
 from devclean.scanner import (
@@ -97,14 +105,176 @@ _RED = "#c0392b"
 # Items per export.  Sized so one file stays inside what a model can read in a
 # single pass; the biggest items go first because they carry the most value.
 _AI_VOLUME_ITEMS = 300
-# Rows drawn in the table.  Everything found is kept, selected, exported and
-# deleted; this only bounds how many lines tkinter has to lay out, because
+# Rows drawn in the table.  The scan rules separately bound the largest
+# candidates retained per classification for review and AI export; this limit
+# only bounds how many lines tkinter has to lay out, because
 # rebuilding tens of thousands of rows every 1.5 seconds during a scan makes
 # the window unusable.  The header states the real count next to it.
 _ROWS_DRAWN = 2_000
+# A live preview is rebuilt repeatedly and only needs enough rows to fill the
+# visible pane.  The completed scan still draws ``_ROWS_DRAWN`` rows from the
+# configured review sample.
+_LIVE_ROWS_DRAWN = 300
+_SCAN_PREVIEW_INTERVAL_SECONDS = 1.5
+_EVENTS_PER_TICK = 64
+_EVENT_POLL_MS = 120
 
 # (path, size in bytes, is a whole directory)
 Row = tuple[str, int, bool]
+# (largest rows rendered during scan, effective item count, effective bytes)
+PartialBucket = tuple[tuple[Row, ...], int, int]
+
+_HIDDEN = 0
+_DELETE_BUCKET = 1
+_UNSURE_BUCKET = 2
+_NANOSECONDS_PER_DAY = 86_400_000_000_000
+
+
+@dataclass(frozen=True, slots=True)
+class _AiExportGroup:
+    """One model question and the same-type files it represents."""
+
+    members: tuple[TriageItem, ...]
+    filename_pattern: str | None
+
+    @property
+    def representative(self) -> TriageItem:
+        return self.members[0]
+
+    @property
+    def total_logical_size(self) -> int:
+        return sum(item.logical_size for item in self.members)
+
+    def similarity_summary(self) -> AiReviewSimilarityGroup | None:
+        if len(self.members) < 2 or self.filename_pattern is None:
+            return None
+        timestamps = [
+            item.record.last_write_time_ns
+            for item in self.members
+            if item.record.last_write_time_ns is not None
+        ]
+        sizes = [item.logical_size for item in self.members]
+        return AiReviewSimilarityGroup(
+            filename_pattern=self.filename_pattern,
+            member_count=len(self.members),
+            total_logical_size_bytes=sum(sizes),
+            minimum_logical_size_bytes=min(sizes),
+            maximum_logical_size_bytes=max(sizes),
+            oldest_last_write_time_ns=min(timestamps) if timestamps else None,
+            newest_last_write_time_ns=max(timestamps) if timestamps else None,
+        )
+
+
+def _ai_age_band(
+    item: TriageItem,
+    *,
+    now_ns: int,
+    thresholds: tuple[int, ...],
+) -> int | None:
+    modified = item.record.last_write_time_ns
+    if modified is None:
+        return None
+    age_days = max(0, (now_ns - modified) // _NANOSECONDS_PER_DAY)
+    return sum(age_days >= threshold for threshold in thresholds)
+
+
+def _ai_size_band(size: int) -> int:
+    """Keep tiny files together while separating models/archives from metadata."""
+
+    for index, ceiling in enumerate(
+        (64 * 1024, 1024 * 1024, 16 * 1024 * 1024, 256 * 1024 * 1024)
+    ):
+        if size <= ceiling:
+            return index
+    return 4
+
+
+def _group_ai_candidates(
+    items: Sequence[TriageItem],
+    rules: UserRules,
+    *,
+    now: datetime | None = None,
+) -> tuple[_AiExportGroup, ...]:
+    """Merge only generated-name siblings with equivalent review evidence."""
+
+    current = now or datetime.now(UTC)
+    now_ns = int(current.timestamp() * 1_000_000_000)
+    thresholds = tuple(
+        sorted(
+            {
+                1,
+                7,
+                30,
+                90,
+                rules.delete.classification.old_temp_days,
+                rules.delete.classification.stale_metadata_days,
+            }
+        )
+    )
+    grouped: dict[tuple[object, ...], list[TriageItem]] = {}
+    patterns: dict[tuple[object, ...], str | None] = {}
+    for index, item in enumerate(items):
+        if item.target_kind is not CleanupTargetKind.FILE:
+            raise ValueError("AI review grouping accepts files only")
+        pattern = reusable_path_pattern(item.path)
+        filename_pattern = os.path.basename(pattern) if pattern else None
+        if filename_pattern is None or not any(
+            token in filename_pattern for token in ("*", "?")
+        ):
+            key: tuple[object, ...] = ("single", index)
+            patterns[key] = None
+        else:
+            key = (
+                "generated-sibling",
+                normalise_path(os.path.dirname(item.path)),
+                filename_pattern.casefold(),
+                item.category,
+                item.source_domain,
+                item.lane,
+                item.risk_tier,
+                item.evidence_kind,
+                item.actionability,
+                item.execution_policy,
+                item.recovery,
+                item.reason,
+                item.tags,
+                item.record.allocation_uncertain,
+                item.record.hardlink_duplicate,
+                _ai_age_band(item, now_ns=now_ns, thresholds=thresholds),
+                _ai_size_band(item.logical_size),
+            )
+            patterns[key] = filename_pattern
+        grouped.setdefault(key, []).append(item)
+    groups = [
+        _AiExportGroup(tuple(members), patterns[key])
+        for key, members in grouped.items()
+    ]
+    return tuple(
+        sorted(
+            groups,
+            key=lambda group: group.total_logical_size,
+            reverse=True,
+        )
+    )
+
+
+def _open_path_in_explorer(path: str) -> Path:
+    """Open a directory or select a file, falling back to its nearest parent."""
+
+    target = Path(path)
+    if target.is_dir():
+        os.startfile(target)
+        return target
+    if target.exists():
+        subprocess.Popen(["explorer.exe", f"/select,{target}"])
+        return target
+    parent = target.parent
+    while parent != parent.parent and not parent.is_dir():
+        parent = parent.parent
+    if not parent.is_dir():
+        raise FileNotFoundError(f"路径及其父目录都不存在：{path}")
+    os.startfile(parent)
+    return parent
 
 
 def _system_drive() -> Path | None:
@@ -171,24 +341,61 @@ def _configured_delete_eligible(item: TriageItem) -> bool:
 
 def _rows_of(
     session: TriageSession, rules: UserRules
-) -> tuple[tuple[Row, ...], tuple[Row, ...]]:
-    """Render the current buckets as immutable rows, safe to cross threads."""
+) -> tuple[PartialBucket, PartialBucket]:
+    """Build bounded live previews without repeatedly sorting the full scan."""
 
-    def rows(items: tuple[TriageItem, ...]) -> tuple[Row, ...]:
-        rendered: list[Row] = []
-        for item in items:
-            is_directory = item.target_kind is CleanupTargetKind.DIRECTORY
-            size = (
-                session.subtree_totals(item.path).logical_bytes
-                if is_directory
-                else item.logical_size
+    kept_paths = session.configured_keep_paths(rules)
+    bucketed = tuple(
+        (item, _item_bucket(item, rules, kept_paths))
+        for item in session.iter_items()
+    )
+    effective_deletable = {
+        id(item)
+        for item in _drop_targets_covered_by_directory(
+            tuple(
+                item
+                for item, bucket in bucketed
+                if bucket == _DELETE_BUCKET
             )
-            rendered.append((item.path, size, is_directory))
-        rendered.sort(key=lambda row: row[1], reverse=True)
-        return tuple(rendered)
+        )
+    }
+    heaps: dict[int, list[tuple[int, int, Row]]] = {
+        _DELETE_BUCKET: [],
+        _UNSURE_BUCKET: [],
+    }
+    counts = {_DELETE_BUCKET: 0, _UNSURE_BUCKET: 0}
+    totals = {_DELETE_BUCKET: 0, _UNSURE_BUCKET: 0}
+    sequence = 0
+    for item, bucket in bucketed:
+        if bucket == _HIDDEN:
+            continue
+        if bucket == _DELETE_BUCKET and id(item) not in effective_deletable:
+            continue
+        is_directory = item.target_kind is CleanupTargetKind.DIRECTORY
+        size = (
+            session.subtree_totals(item.path).logical_bytes
+            if is_directory
+            else item.logical_size
+        )
+        counts[bucket] += 1
+        totals[bucket] += size
+        row = (item.path, size, is_directory)
+        heap = heaps[bucket]
+        ranked = (size, sequence, row)
+        sequence += 1
+        if len(heap) < _LIVE_ROWS_DRAWN:
+            heapq.heappush(heap, ranked)
+        elif size > heap[0][0]:
+            heapq.heapreplace(heap, ranked)
 
-    deletable, unsure = _partition_items(session, rules)
-    return (rows(deletable), rows(unsure))
+    def rendered(bucket: int) -> PartialBucket:
+        rows = tuple(
+            entry[2]
+            for entry in sorted(heaps[bucket], key=lambda entry: entry[0], reverse=True)
+        )
+        return (rows, counts[bucket], totals[bucket])
+
+    return (rendered(_DELETE_BUCKET), rendered(_UNSURE_BUCKET))
 
 
 def _partition_items(
@@ -198,49 +405,132 @@ def _partition_items(
 
     deletable: list[TriageItem] = []
     unsure: list[TriageItem] = []
-    for item in session.all_items():
-        decision = rules.decision_for(item.path)
-        if decision is RuleDecision.KEEP:
-            continue
-        if is_direct_cleanup_eligible(item) or (
-            decision is RuleDecision.DELETE
-            and _configured_delete_eligible(item)
-        ):
+    kept_paths = session.configured_keep_paths(rules)
+    for item in session.iter_items():
+        bucket = _item_bucket(item, rules, kept_paths)
+        if bucket == _DELETE_BUCKET:
             deletable.append(item)
-        elif is_ai_review_eligible(item):
+        elif bucket == _UNSURE_BUCKET:
             unsure.append(item)
-    return (tuple(deletable), tuple(unsure))
+    # A whole-directory row already represents every descendant. Showing its
+    # children as independent checkboxes would make an unticked child look
+    # excluded even though deleting the checked parent still removes it.
+    return (_drop_targets_covered_by_directory(deletable), tuple(unsure))
 
 
-def _verdicts_from_session_index(text: str) -> dict[str, tuple[str, str]]:
-    """Recover path verdicts from an answer whose export session is long gone."""
+def _item_bucket(
+    item: TriageItem,
+    rules: UserRules,
+    kept_paths: tuple[str, ...],
+) -> int:
+    decision = rules.decision_for(item.path)
+    if decision is RuleDecision.KEEP:
+        return _HIDDEN
+    if (
+        item.target_kind is CleanupTargetKind.DIRECTORY
+        and _directory_contains_kept_path(item.path, kept_paths)
+    ):
+        return _HIDDEN
+    if is_direct_cleanup_eligible(item) or (
+        decision is RuleDecision.DELETE and _configured_delete_eligible(item)
+    ):
+        return _DELETE_BUCKET
+    if is_ai_review_eligible(item):
+        return _UNSURE_BUCKET
+    return _HIDDEN
+
+
+def _directory_contains_kept_path(
+    directory: str,
+    kept_paths: tuple[str, ...],
+) -> bool:
+    normalized = normalise_path(directory)
+    prefix = normalized.rstrip(os.sep) + os.sep
+    return any(path == normalized or path.startswith(prefix) for path in kept_paths)
+
+
+def _drop_targets_covered_by_directory(
+    items: Sequence[TriageItem],
+) -> tuple[TriageItem, ...]:
+    """Return the effective actions represented by a checkbox selection."""
+
+    directories = sorted(
+        {
+            normalise_path(item.path).rstrip(os.sep) + os.sep
+            for item in items
+            if item.target_kind is CleanupTargetKind.DIRECTORY
+        },
+        key=len,
+    )
+    outer_directories = [
+        prefix
+        for prefix in directories
+        if not any(prefix.startswith(parent) for parent in directories if len(parent) < len(prefix))
+    ]
+
+    def is_effective(item: TriageItem) -> bool:
+        normalized = normalise_path(item.path)
+        if item.target_kind is CleanupTargetKind.DIRECTORY:
+            return normalized.rstrip(os.sep) + os.sep in outer_directories
+        return not any(normalized.startswith(prefix) for prefix in outer_directories)
+
+    return tuple(item for item in items if is_effective(item))
+
+
+def _verdicts_from_session_index(
+    text: str,
+) -> tuple[str, bool, dict[str, tuple[str, str]]]:
+    """Strictly validate supplied rows while allowing partial restart imports."""
 
     try:
         payload = json.loads(text)
-        session = str(payload["review_session_id"])
-        # "recommendations" is what the exported instructions ask for; some
-        # models answer with "responses" instead, and an answer that names its
-        # verdicts differently is still an answer the user paid for.
-        responses = payload.get("recommendations", payload.get("responses"))
-    except (AttributeError, KeyError, TypeError, ValueError):
-        return {}
+        session = payload["review_session_id"]
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        raise AiReviewContractError("AI response has no valid review_session_id") from error
+    if not isinstance(session, str):
+        raise AiReviewContractError("AI response review_session_id must be text")
     known = ai_sessions.recall_export(session)
-    if not known or not isinstance(responses, list):
-        return {}
-    recovered: dict[str, tuple[str, str]] = {}
-    allowed = {
-        AiRecommendation.KEEP.value,
-        AiRecommendation.RECOMMEND_RECYCLE.value,
-        AiRecommendation.UNSURE.value,
+    if known is None:
+        raise AiReviewContractError("AI response session is not in the persisted index")
+    recovered = parse_partial_ai_review_response(
+        text,
+        expected_session_id=session,
+        expected_nonce=known.nonce,
+        expected_package_digest=known.package_digest,
+        candidate_paths=known.candidate_paths,
+    )
+    members_by_path = {
+        known.candidate_paths[candidate_id]: members
+        for candidate_id, members in known.candidate_members.items()
     }
-    for entry in responses:
-        if not isinstance(entry, dict):
-            continue
-        path = known.get(str(entry.get("candidate_id", "")))
-        verdict = str(entry.get("recommendation", ""))
-        if path and verdict in allowed:
-            recovered[path] = (verdict, str(entry.get("reason", ""))[:500])
-    return recovered
+    expanded: dict[str, tuple[str, str]] = {}
+    for path, recommendation, reason in recovered:
+        for member_path in members_by_path.get(path, (path,)):
+            expanded[member_path] = (recommendation.value, reason)
+    return (
+        session,
+        len(recovered) == len(known.candidate_paths),
+        expanded,
+    )
+
+
+def _expanded_live_verdicts(
+    imported: AiReviewImport,
+    candidate_members: dict[str, tuple[str, ...]],
+) -> tuple[tuple[str, str, str], ...]:
+    """Apply one validated grouped answer to every represented live path."""
+
+    expanded: list[tuple[str, str, str]] = []
+    for entry in imported.recommendations:
+        verdict = {
+            AiRecommendation.DELETE: AiRecommendation.DELETE.value,
+            AiRecommendation.KEEP: AiRecommendation.KEEP.value,
+        }.get(entry.recommendation, AiRecommendation.UNSURE.value)
+        for member_path in candidate_members.get(
+            entry.candidate_id, (entry.item.path,)
+        ):
+            expanded.append((member_path, verdict, entry.reason))
+    return tuple(expanded)
 
 
 def _reason_of(error: BaseException) -> str:
@@ -323,10 +613,12 @@ class DevCleanWindow:
     def __init__(self, root: tk.Tk) -> None:
         self._root = root
         self._events: Queue[tuple[str, Any]] = Queue()
+        self._pending_event: tuple[str, Any] | None = None
         self._known_roots: tuple[KnownCleanupRoot, ...] = ()
         self._session: TriageSession | None = None
         self._cancel: CancellationToken | None = None
         self._scan_token = ""
+        self._delete_token = ""
         self._scan_session_id = uuid4().hex
 
         self._deletable: list[TriageItem] = []
@@ -336,6 +628,9 @@ class DevCleanWindow:
         # Every package exported this session, so an answer can be imported
         # whichever export it came from.
         self._ai_packages: dict[str, AiReviewPackage] = {}
+        self._ai_group_members: dict[
+            str, dict[str, tuple[str, ...]]
+        ] = {}
         # Only paths an imported answer explicitly left UNSURE may enter the
         # user's final-decision action.
         self._ai_unsure_reasons: dict[str, str] = {}
@@ -518,7 +813,10 @@ class DevCleanWindow:
             column=0,
             accent=_GREEN,
             title="可以删除",
-            hint="工具已确定是缓存或可再生产物。默认全部勾选，点方框可单独取消。",
+            hint=(
+                "工具已确定是缓存或可再生产物。默认全部勾选，点方框可单独取消；"
+                "双击任意行可在资源管理器中打开。"
+            ),
             total=self._deletable_total,
             buttons=(
                 ("all", "全选", "Muted", lambda: self._check_all(True)),
@@ -540,7 +838,9 @@ class DevCleanWindow:
             title="不确定，交 AI 判断",
             hint=(
                 "工具认不出这些是什么。导回结果后可删的会移到左边；"
-                "AI 仍不确定的，选中后由你最后决定。"
+                "AI 判断可能不准确，使用外部或付费模型可能产生费用。"
+                "导出文件包含本机完整路径，请自行选择可信的模型；"
+                "同目录生成型文件名会合并提问；AI 仍不确定的由你决定。"
             ),
             total=self._unsure_total,
             buttons=(
@@ -600,17 +900,33 @@ class DevCleanWindow:
         tree.heading("path", text="位置", anchor=tk.W)
         tree.column("check", width=32, anchor=tk.CENTER, stretch=False)
         tree.column("size", width=86, anchor=tk.E, stretch=False)
-        tree.column("path", width=400, anchor=tk.W)
+        tree.column(
+            "path",
+            width=1200,
+            minwidth=400,
+            anchor=tk.W,
+            stretch=False,
+        )
         tree.tag_configure("odd", background="#fafbfe")
         tree.grid(row=0, column=0, sticky="nsew")
-        bar = ttk.Scrollbar(holder, orient=tk.VERTICAL, command=tree.yview)
-        tree.configure(yscrollcommand=bar.set)
-        bar.grid(row=0, column=1, sticky="ns")
+        vertical = ttk.Scrollbar(
+            holder, orient=tk.VERTICAL, command=tree.yview
+        )
+        horizontal = ttk.Scrollbar(
+            holder, orient=tk.HORIZONTAL, command=tree.xview
+        )
+        tree.configure(
+            yscrollcommand=vertical.set,
+            xscrollcommand=horizontal.set,
+        )
+        vertical.grid(row=0, column=1, sticky="ns")
+        horizontal.grid(row=1, column=0, sticky="ew")
         if checkable:
             # ttk has no checkbox cell, so the first column draws one and a click
             # inside that column toggles it.  Clicking anywhere else just selects
             # the row, which never deletes anything on its own.
             tree.bind("<Button-1>", self._on_row_click)
+        tree.bind("<Double-1>", self._on_row_double_click)
 
         actions = ttk.Frame(shell, style="Card.TFrame", padding=(14, 12, 14, 14))
         actions.grid(row=2, column=1, sticky="ew")
@@ -687,6 +1003,7 @@ class DevCleanWindow:
         # Do not retain every old package and all of its TriageItems in memory
         # across scans.
         self._ai_packages.clear()
+        self._ai_group_members.clear()
         self._deletable_tree.delete(*self._deletable_tree.get_children())
         self._unsure_tree.delete(*self._unsure_tree.get_children())
         self._deletable_total.set("—")
@@ -727,7 +1044,11 @@ class DevCleanWindow:
         def progress(stats: ScanStats) -> None:
             self._events.put(("progress", (token, stats.files, stats.logical_bytes)))
 
-        session = TriageSession()
+        session = TriageSession(
+            review_sample_per_category=(
+                active_rules.scan.review_sample_per_category
+            )
+        )
         now = datetime.now(UTC)
         active_known_roots = (
             known_roots
@@ -739,7 +1060,7 @@ class DevCleanWindow:
             for path in expanded_scan_paths(active_rules.scan.excluded_paths)
         }
         # Protect the actual runtime state location precisely. Packaged builds
-        # use DevClean-data beside the EXE; source runs use LocalAppData.
+        # use DevClean-data beside the EXE; source runs use the working folder.
         configured_skip_paths.add(normalise_path(data_dir()))
         if not active_rules.scan.include_known_cleanup_roots:
             # The profile root contains most user-level package caches.  Merely
@@ -750,7 +1071,7 @@ class DevCleanWindow:
             )
         # The worker owns the session, so partial updates travel as plain rows.
         # Handing the live session to the UI thread mid-scan would be a race.
-        next_publish = time.monotonic() + 1.5
+        next_publish = time.monotonic() + _SCAN_PREVIEW_INTERVAL_SECONDS
         try:
             for record in scan_roots(
                 roots,
@@ -766,6 +1087,11 @@ class DevCleanWindow:
                 cancel,
                 progress,
             ):
+                if record.kind in {
+                    ScanRecordKind.FILE,
+                    ScanRecordKind.DIRECTORY,
+                }:
+                    session.observe_path(record.path, active_rules)
                 if record.kind is ScanRecordKind.FILE:
                     session.add(
                         triage_file(
@@ -786,9 +1112,17 @@ class DevCleanWindow:
                     if item is not None:
                         session.add(item)
                 if time.monotonic() >= next_publish:
-                    next_publish = time.monotonic() + 1.5
+                    # Building a preview walks every retained candidate.  Start
+                    # the next interval only after that work finishes: setting
+                    # the deadline beforehand made a preview slower than 1.5 s
+                    # immediately overdue, so almost every subsequent file
+                    # triggered another full walk.
+                    buckets = _rows_of(session, active_rules)
+                    next_publish = (
+                        time.monotonic() + _SCAN_PREVIEW_INTERVAL_SECONDS
+                    )
                     self._events.put(
-                        ("scan_partial", (token, _rows_of(session, active_rules)))
+                        ("scan_partial", (token, buckets))
                     )
         except (OSError, RuntimeError, ValueError) as error:
             self._events.put(("scan_error", (token, str(error))))
@@ -825,7 +1159,7 @@ class DevCleanWindow:
                     self._size_of(item),
                     item.target_kind is CleanupTargetKind.DIRECTORY,
                 )
-                for item in items
+                for item in items[:_ROWS_DRAWN]
             ),
         )
 
@@ -866,6 +1200,21 @@ class DevCleanWindow:
         self._sync_buttons()
         return "break"
 
+    def _on_row_double_click(self, event: tk.Event) -> str | None:
+        tree = cast(ttk.Treeview, event.widget)
+        if tree.identify_region(event.x, event.y) != "cell":
+            return None
+        row = tree.identify_row(event.y)
+        if not row:
+            return None
+        try:
+            opened = _open_path_in_explorer(row)
+        except OSError as error:
+            messagebox.showerror("无法打开位置", str(error))
+            return "break"
+        self._status.set(f"已在资源管理器中打开：{opened}")
+        return "break"
+
     def _check_all(self, checked: bool) -> None:
         tree = self._deletable_tree
         mark = self._TICKED if checked else self._UNTICKED
@@ -884,22 +1233,26 @@ class DevCleanWindow:
         return session.subtree_totals(item.path).logical_bytes
 
     def _refresh_totals(self) -> None:
-        found = sum(self._size_of(item) for item in self._deletable)
+        effective = _drop_targets_covered_by_directory(self._deletable)
+        found = sum(self._size_of(item) for item in effective)
         chosen = self._selected_items()
         shown = (
             f"，表中显示前 {_ROWS_DRAWN:,} 项"
             if len(self._deletable) > _ROWS_DRAWN
             else ""
         )
-        if len(chosen) == len(self._deletable):
+        if all(item.path in self._checked for item in self._deletable):
             self._deletable_total.set(
-                f"{_format_bytes(found)}（{len(chosen):,} 项{shown}）"
+                f"{_format_bytes(found)}（{len(self._deletable):,} 行{shown}）"
             )
         else:
+            checked_rows = sum(
+                item.path in self._checked for item in self._deletable
+            )
             self._deletable_total.set(
                 f"{_format_bytes(sum(self._size_of(item) for item in chosen))}"
                 f" / {_format_bytes(found)}"
-                f"（已勾选 {len(chosen):,} / {len(self._deletable):,}）"
+                f"（已勾选 {checked_rows:,} / {len(self._deletable):,} 行）"
             )
         unsure_shown = (
             f"，表中显示前 {_ROWS_DRAWN:,} 项"
@@ -926,23 +1279,7 @@ class DevCleanWindow:
         """
 
         ticked = tuple(item for item in self._deletable if item.path in self._checked)
-        enclosing = {
-            os.path.normcase(os.path.normpath(item.path)) + os.sep
-            for item in ticked
-            if item.target_kind is CleanupTargetKind.DIRECTORY
-        }
-        if not enclosing:
-            return ticked
-
-        def covered_by_another(item: TriageItem) -> bool:
-            normalized = os.path.normcase(os.path.normpath(item.path))
-            return any(
-                normalized.startswith(prefix)
-                for prefix in enclosing
-                if normalized + os.sep != prefix
-            )
-
-        return tuple(item for item in ticked if not covered_by_another(item))
+        return _drop_targets_covered_by_directory(ticked)
 
     def _selected_ai_unsure_items(self) -> tuple[TriageItem, ...]:
         """Return selected right-pane rows that an AI explicitly left UNSURE."""
@@ -972,6 +1309,7 @@ class DevCleanWindow:
             f"{len(items):,} 项…"
         )
         token = uuid4().hex
+        self._delete_token = token
         # Candidate construction opens a handle per object to pin its exact
         # identity.  Thousands of those on the UI thread freeze the window, so
         # the whole preparation runs in the worker.
@@ -986,13 +1324,19 @@ class DevCleanWindow:
     ) -> None:
         candidates: list[ScanCleanupCandidate] = []
         reasons: dict[str, int] = {}
-        for item in items:
+        for prepared, item in enumerate(items, start=1):
             try:
                 candidates.append(self._candidate(item))
             except (CleanupRefusal, OSError, TypeError, ValueError) as error:
                 # "N items could not be processed" answers nothing.  Group by
                 # what actually went wrong so the number is explainable.
                 reasons[_reason_of(error)] = reasons.get(_reason_of(error), 0) + 1
+            self._events.put(
+                (
+                    "delete_prepare_progress",
+                    (token, mode, prepared, len(items), len(candidates)),
+                )
+            )
         if not candidates:
             detail = "；".join(f"{name} {count:,} 项" for name, count in reasons.items())
             self._events.put(
@@ -1005,8 +1349,36 @@ class DevCleanWindow:
         except Exception as error:
             self._events.put(("delete_error", (token, str(error), ())))
             return
+        self._events.put(
+            ("delete_execute_started", (token, mode, len(plan.actions)))
+        )
         done = 0
         for batch in plan.batches:
+            last_update = 0.0
+
+            def report(
+                progress: CleanupExecutionProgress,
+                *,
+                completed_before: int = done,
+            ) -> None:
+                nonlocal last_update
+                now = time.monotonic()
+                if not progress.completed and now - last_update < 0.1:
+                    return
+                last_update = now
+                self._events.put(
+                    (
+                        "delete_action_progress",
+                        (
+                            token,
+                            mode,
+                            completed_before + progress.action_index,
+                            len(plan.actions),
+                            progress,
+                        ),
+                    )
+                )
+
             try:
                 results.append(
                     execute_cleanup_batch(
@@ -1015,15 +1387,19 @@ class DevCleanWindow:
                         known_roots=self._known_roots,
                         delete_config=self._scan_rules.delete.classification,
                         keep_config=self._scan_rules.keep.classification,
+                        on_progress=report,
                     )
                 )
             except Exception as error:
                 # One batch failing says nothing about the next.  Record why and
                 # carry on; stopping here is what made a single changed cache
                 # file end a 7,000-item run.
-                reasons[_reason_of(error)] = reasons.get(_reason_of(error), 0) + 1
+                reason = _reason_of(error)
+                reasons[reason] = reasons.get(reason, 0) + len(batch.actions)
             done += len(batch.actions)
-            self._events.put(("delete_progress", (token, done, len(plan.actions))))
+            self._events.put(
+                ("delete_progress", (token, mode, done, len(plan.actions)))
+            )
         self._events.put(("delete_done", (token, tuple(results), reasons)))
 
     def _candidate(self, item: TriageItem) -> ScanCleanupCandidate:
@@ -1054,26 +1430,49 @@ class DevCleanWindow:
         if not self._unsure:
             messagebox.showinfo("DevClean", "没有需要 AI 判断的项。")
             return
-        # Everything is exported.  A model cannot read hundreds of KB in one
-        # pass, so the export is split into numbered volumes rather than
-        # truncated: a silent "largest 300" leaves the user with no idea which
-        # 300 they got.  Import binds to whichever volume an answer came from.
+        groups = _group_ai_candidates(self._unsure, self._rules)
+        # Everything is represented. Generated-name siblings with equivalent
+        # evidence become one question; unrelated semantic filenames stay
+        # separate. A model cannot read hundreds of KB in one pass, so the
+        # questions are split into numbered volumes rather than truncated.
         volumes = [
-            self._unsure[offset : offset + _AI_VOLUME_ITEMS]
-            for offset in range(0, len(self._unsure), _AI_VOLUME_ITEMS)
+            groups[offset : offset + _AI_VOLUME_ITEMS]
+            for offset in range(0, len(groups), _AI_VOLUME_ITEMS)
         ]
-        built: list[tuple[AiReviewPackage, str]] = []
+        built: list[
+            tuple[
+                AiReviewPackage,
+                str,
+                dict[str, tuple[str, ...]],
+            ]
+        ] = []
         try:
             for chunk in volumes:
                 package = build_ai_review_package(
                     tuple(
-                        AiReviewCandidateInput(item=item, hard_protected=False)
-                        for item in chunk
+                        AiReviewCandidateInput(
+                            item=group.representative,
+                            hard_protected=False,
+                            similar_group=group.similarity_summary(),
+                        )
+                        for group in chunk
                     ),
                     scan_session_id=self._scan_session_id,
                     disclose_full_paths=True,
                 )
-                built.append((package, serialize_ai_review_package(package) + "\n"))
+                candidate_members = {
+                    entry.candidate_id: tuple(
+                        member.path for member in group.members
+                    )
+                    for entry, group in zip(package.entries, chunk, strict=True)
+                }
+                built.append(
+                    (
+                        package,
+                        serialize_ai_review_package(package) + "\n",
+                        candidate_members,
+                    )
+                )
         except (AiReviewContractError, TypeError, ValueError) as error:
             messagebox.showerror("导出失败", str(error))
             return
@@ -1081,7 +1480,10 @@ class DevCleanWindow:
         chosen = filedialog.asksaveasfilename(
             title="导出给 AI 判断",
             defaultextension=".json",
-            initialfile=f"devclean-ai-{len(self._unsure)}.json",
+            initialfile=(
+                f"devclean-ai-{len(groups)}questions-"
+                f"{len(self._unsure)}files.json"
+            ),
             filetypes=(("JSON", "*.json"),),
         )
         if not chosen:
@@ -1089,7 +1491,9 @@ class DevCleanWindow:
         base = Path(chosen)
         written: list[Path] = []
         try:
-            for index, (_package, rendered) in enumerate(built, start=1):
+            for index, (_package, rendered, _members) in enumerate(
+                built, start=1
+            ):
                 target = (
                     base
                     if len(built) == 1
@@ -1103,25 +1507,36 @@ class DevCleanWindow:
             messagebox.showerror("导出失败", str(error))
             return
 
-        for package, _rendered in built:
+        for package, _rendered, candidate_members in built:
             self._ai_packages[package.review_session_id] = package
+            self._ai_group_members[package.review_session_id] = (
+                candidate_members
+            )
             # Losing the index entry only costs the restart-proof import path.
             with contextlib.suppress(OSError):
                 ai_sessions.remember_export(
                     package.review_session_id,
+                    package.nonce,
+                    package.package_digest,
                     {entry.candidate_id: entry.item.path for entry in package.entries},
+                    candidate_members,
                 )
         self._sync_buttons()
+        merged = len(self._unsure) - len(groups)
+        summary = (
+            f"{len(self._unsure):,} 个文件合并为 {len(groups):,} 个 AI 判断"
+            f"（减少 {merged:,} 个重复问题）"
+        )
         if len(written) == 1:
             self._status.set(
-                f"已导出全部 {len(self._unsure):,} 项到 {written[0]}。"
-                "让 AI 按文件里的说明回答，然后点「导入结果」。"
+                f"{summary}，已导出到 {written[0]}。"
+                "AI 可能判断错误且可能产生费用；回答后点「导入结果」。"
             )
         else:
             self._status.set(
-                f"全部 {len(self._unsure):,} 项已分成 {len(written)} 卷导出到 "
+                f"{summary}，已分成 {len(written)} 卷导出到 "
                 f"{base.parent}，文件名 {base.stem}-1of{len(written)} 起。"
-                "每卷分别让 AI 回答，回答完的逐份导入即可。"
+                "AI 可能判断错误且可能产生费用；每卷分别回答并逐份导入。"
             )
 
     def _import_from_ai(self) -> None:
@@ -1135,29 +1550,39 @@ class DevCleanWindow:
         except OSError as error:
             messagebox.showerror("导入失败", str(error))
             return
-        # The answer belongs to exactly one volume, and the user picks files by
-        # hand, so every exported volume is tried rather than demanding they
-        # remember which one this was.
         imported = None
         imported_session = ""
-        first_error = ""
-        for package in self._ai_packages.values():
+        try:
+            routing_payload = json.loads(text)
+            response_session = routing_payload.get("review_session_id")
+        except (AttributeError, TypeError, ValueError):
+            response_session = None
+        live_package = (
+            self._ai_packages.get(response_session)
+            if isinstance(response_session, str)
+            else None
+        )
+        if live_package is not None:
             try:
-                imported = parse_ai_review_response(text, package)
-                imported_session = package.review_session_id
-                break
+                imported = parse_ai_review_response(text, live_package)
             except (AiReviewContractError, TypeError, ValueError) as error:
-                first_error = first_error or str(error)
+                # A package still held in memory must use the complete contract.
+                # The partial path exists only because a restart discarded that
+                # sealed package; it must never relax a same-run failed import.
+                messagebox.showerror("导入失败", str(error))
+                return
+            imported_session = live_package.review_session_id
         rule_verdicts: list[tuple[str, RuleDecision, str]] = []
-        recycle: set[str] = set()
+        deletable: set[str] = set()
         keep: set[str] = set()
         needs_user: set[str] = set()
+        fallback_complete = False
 
         def record(path: str, verdict: str, reason: str) -> None:
             key = normalise_path(path)
-            if verdict == AiRecommendation.RECOMMEND_RECYCLE.value:
+            if verdict == AiRecommendation.DELETE.value:
                 self._ai_unsure_reasons.pop(key, None)
-                recycle.add(key)
+                deletable.add(key)
                 rule_verdicts.append((path, RuleDecision.DELETE, reason))
             elif verdict == AiRecommendation.KEEP.value:
                 self._ai_unsure_reasons.pop(key, None)
@@ -1168,34 +1593,30 @@ class DevCleanWindow:
                 self._ai_unsure_reasons[key] = reason
 
         if imported is not None:
-            for entry in imported.recommendations:
-                record(
-                    entry.item.path,
-                    {
-                        AiRecommendation.RECOMMEND_RECYCLE: (
-                            AiRecommendation.RECOMMEND_RECYCLE.value
-                        ),
-                        AiRecommendation.KEEP: AiRecommendation.KEEP.value,
-                    }.get(entry.recommendation, AiRecommendation.UNSURE.value),
-                    entry.reason,
-                )
+            live_members = self._ai_group_members.get(
+                imported.review_session_id, {}
+            )
+            for member_path, verdict, reason in _expanded_live_verdicts(
+                imported, live_members
+            ):
+                record(member_path, verdict, reason)
         else:
             # The export this answers was made before a restart, so the sealed
             # package is gone.  The session index still knows which path each
-            # candidate id meant, and that is enough: importing only files rows into lists,
-            # and every object is re-verified by identity at deletion.  Refusing
-            # here would throw away answers the user paid a model for.
-            recovered = _verdicts_from_session_index(text)
-            if not recovered:
+            # candidate id meant, and that is enough: the strict partial parser
+            # still validates every supplied row, and every target is
+            # re-verified by identity at deletion.
+            try:
+                recovered_session, fallback_complete, recovered = (
+                    _verdicts_from_session_index(text)
+                )
+            except (AiReviewContractError, TypeError, ValueError) as error:
                 messagebox.showerror(
-                    "导入失败", first_error or "这份结果不属于任何已导出的卷。"
+                    "导入失败",
+                    str(error) or "这份结果不属于任何已导出的卷。",
                 )
                 return
-            try:
-                payload = json.loads(text)
-                imported_session = str(payload.get("review_session_id", ""))
-            except (AttributeError, TypeError, ValueError):
-                imported_session = ""
+            imported_session = recovered_session
             for path, (verdict, reason) in recovered.items():
                 record(path, verdict, reason)
         rules_saved = True
@@ -1212,9 +1633,9 @@ class DevCleanWindow:
 
         # A hand-authored KEEP rule wins even when the imported answer says
         # DELETE.  Apply that precedence immediately, not only on the next scan.
-        for key in tuple(recycle):
+        for key in tuple(deletable):
             if self._rules.decision_for(key) is RuleDecision.KEEP:
-                recycle.remove(key)
+                deletable.remove(key)
                 keep.add(key)
         if rules_saved and self._session is not None:
             # One classification function owns both queues.  Rebuilding from the
@@ -1224,7 +1645,7 @@ class DevCleanWindow:
             deletable_paths = {
                 normalise_path(item.path) for item in self._deletable
             }
-            moved_count = len(recycle & deletable_paths)
+            moved_count = len(deletable & deletable_paths)
         else:
             # Saving can fail if an externally edited rule file is invalid.  The
             # answer is still useful for this session, but must update both
@@ -1242,9 +1663,9 @@ class DevCleanWindow:
             moved = [
                 item
                 for item in self._unsure
-                if normalise_path(item.path) in recycle
+                if normalise_path(item.path) in deletable
             ]
-            settled = recycle | keep
+            settled = deletable | keep
             self._unsure = [
                 item
                 for item in self._unsure
@@ -1268,24 +1689,25 @@ class DevCleanWindow:
                 f"{len(needs_user):,} 项 AI 仍不确定；"
                 "在右侧选中后点“我来决定…”。"
             )
-        decided_paths = recycle | keep
+        decided_paths = deletable | keep
         status += (
-            f"已写入 {len(decided_paths):,} 条规则，同路径以后不再询问。"
+            f"已保存 {len(decided_paths):,} 项结论；同路径及可识别的同类动态路径"
+            "以后不再询问。"
             if rules_saved
             else "本次结果已应用，但未写入规则；下次仍可能再次询问。"
         )
         if (
             rules_saved
-            and imported is not None
             and imported_session
             and not needs_user
+            and (imported is not None or fallback_complete)
         ):
-            # A strict full-package import has consumed the complete index entry.
-            # Fallback imports may intentionally be partial, so those entries
-            # remain available until the bounded retention policy removes them.
+            # Complete imports consume the index entry. Partial restart imports
+            # remain available for later volumes by explicit product decision.
             with contextlib.suppress(OSError):
                 ai_sessions.forget_export(imported_session)
             self._ai_packages.pop(imported_session, None)
+            self._ai_group_members.pop(imported_session, None)
         self._status.set(status)
 
     def _decide_ai_unsure(self) -> None:
@@ -1417,9 +1839,26 @@ class DevCleanWindow:
     # ---- events -------------------------------------------------------------
 
     def _drain_events(self) -> None:
+        processed = 0
         try:
-            while True:
-                kind, payload = self._events.get_nowait()
+            while processed < _EVENTS_PER_TICK:
+                pending = getattr(self, "_pending_event", None)
+                if pending is None:
+                    kind, payload = self._events.get_nowait()
+                else:
+                    kind, payload = pending
+                    self._pending_event = None
+                processed += 1
+                # Progress and live previews are snapshots, not state
+                # transitions.  If newer snapshots are already queued, render
+                # only the newest one instead of making Tk replay stale screens.
+                if kind in {"progress", "scan_partial"}:
+                    kind, payload, consumed = self._newest_scan_snapshot(
+                        kind,
+                        payload,
+                        _EVENTS_PER_TICK - processed,
+                    )
+                    processed += consumed
                 if kind == "progress":
                     token, files, logical = cast(tuple[str, int, int], payload)
                     if token == self._scan_token:
@@ -1429,7 +1868,7 @@ class DevCleanWindow:
                         )
                 elif kind == "scan_partial":
                     token, buckets = cast(
-                        tuple[str, tuple[tuple[Row, ...], tuple[Row, ...]]], payload
+                        tuple[str, tuple[PartialBucket, PartialBucket]], payload
                     )
                     if token != self._scan_token:
                         continue
@@ -1437,15 +1876,19 @@ class DevCleanWindow:
                     # until the scan finishes, because a candidate has to be
                     # built from the completed session.
                     partial_deletable, partial_unsure = buckets
-                    self._fill_rows(self._deletable_tree, partial_deletable)
-                    self._fill_rows(self._unsure_tree, partial_unsure)
+                    deletable_rows, deletable_count, deletable_bytes = (
+                        partial_deletable
+                    )
+                    unsure_rows, unsure_count, unsure_bytes = partial_unsure
+                    self._fill_rows(self._deletable_tree, deletable_rows)
+                    self._fill_rows(self._unsure_tree, unsure_rows)
                     self._deletable_total.set(
-                        f"{_format_bytes(sum(row[1] for row in partial_deletable))}"
-                        f"（{len(partial_deletable):,} 项，扫描中）"
+                        f"{_format_bytes(deletable_bytes)}"
+                        f"（{deletable_count:,} 项，扫描中）"
                     )
                     self._unsure_total.set(
-                        f"{_format_bytes(sum(row[1] for row in partial_unsure))}"
-                        f"（{len(partial_unsure):,} 项，扫描中）"
+                        f"{_format_bytes(unsure_bytes)}"
+                        f"（{unsure_count:,} 项，扫描中）"
                     )
                 elif kind == "scan_done":
                     token, session, cancelled = cast(
@@ -1469,23 +1912,126 @@ class DevCleanWindow:
                     self._busy = None
                     self._sync_buttons()
                     self._status.set(f"扫描失败：{detail}")
+                elif kind == "delete_prepare_progress":
+                    token, mode, done, total, accepted = cast(
+                        tuple[str, CleanupMode, int, int, int], payload
+                    )
+                    if token != self._delete_token:
+                        continue
+                    self._progress.stop()
+                    self._progress.configure(
+                        mode="determinate", maximum=total, value=done
+                    )
+                    label = (
+                        "彻底删除"
+                        if mode is CleanupMode.PERMANENT
+                        else "删除（进回收站）"
+                    )
+                    self._status.set(
+                        f"正在准备{label}… {done:,} / {total:,}"
+                        f"（可处理 {accepted:,} 项）"
+                    )
+                elif kind == "delete_execute_started":
+                    token, mode, total = cast(
+                        tuple[str, CleanupMode, int], payload
+                    )
+                    if token != self._delete_token:
+                        continue
+                    if mode is CleanupMode.RECYCLE:
+                        self._progress.configure(mode="indeterminate", value=0)
+                        self._progress.start(60)
+                        self._status.set(
+                            f"Windows 正在移入回收站…共 {total:,} 项"
+                        )
+                    else:
+                        self._progress.stop()
+                        self._progress.configure(
+                            mode="determinate", maximum=total, value=0
+                        )
+                        self._status.set(f"正在彻底删除…共 {total:,} 项")
+                elif kind == "delete_action_progress":
+                    token, mode, before, total, progress = cast(
+                        tuple[
+                            str,
+                            CleanupMode,
+                            int,
+                            int,
+                            CleanupExecutionProgress,
+                        ],
+                        payload,
+                    )
+                    if token != self._delete_token:
+                        continue
+                    current = min(total, before + 1)
+                    if mode is CleanupMode.PERMANENT:
+                        fraction = (
+                            1.0
+                            if progress.completed
+                            else min(
+                                0.99,
+                                progress.files_processed
+                                / max(1, progress.files_total),
+                            )
+                        )
+                        self._progress.configure(
+                            mode="determinate",
+                            maximum=total,
+                            value=min(total, before + fraction),
+                        )
+                        if (
+                            progress.target_kind
+                            is CleanupTargetKind.DIRECTORY
+                            and not progress.completed
+                        ):
+                            self._status.set(
+                                f"正在彻底删除第 {current:,} / {total:,} 项："
+                                f"当前目录已处理 "
+                                f"{progress.files_processed:,} / "
+                                f"{progress.files_total:,} 个文件"
+                            )
+                        else:
+                            self._status.set(
+                                f"正在彻底删除… {min(total, before + int(progress.completed)):,}"
+                                f" / {total:,}"
+                            )
+                    else:
+                        # Windows owns a Recycle Bin directory operation and
+                        # exposes no reliable per-child counter. Keep the bar
+                        # moving and report the exact item ordinal.
+                        self._status.set(
+                            f"正在移入回收站第 {current:,} / {total:,} 项"
+                        )
                 elif kind == "delete_progress":
-                    _token, done, total = cast(tuple[str, int, int], payload)
-                    self._progress.configure(maximum=total, value=done)
-                    self._status.set(f"正在删除… {done:,} / {total:,}")
+                    token, mode, done, total = cast(
+                        tuple[str, CleanupMode, int, int], payload
+                    )
+                    if token != self._delete_token:
+                        continue
+                    if mode is CleanupMode.PERMANENT:
+                        self._progress.configure(
+                            mode="determinate", maximum=total, value=done
+                        )
+                    self._status.set(
+                        f"正在{'彻底删除' if mode is CleanupMode.PERMANENT else '移入回收站'}"
+                        f"… {done:,} / {total:,}"
+                    )
                 elif kind == "delete_done":
-                    _token, results, reasons = cast(
+                    token, results, reasons = cast(
                         tuple[str, tuple[CleanupExecutionResult, ...], dict[str, int]],
                         payload,
                     )
+                    if token != self._delete_token:
+                        continue
                     self._progress.stop()
                     self._progress.configure(mode="indeterminate", value=0)
                     self._busy = None
                     self._report_deletion(results, reasons)
                 elif kind == "delete_error":
-                    _token, detail, results = cast(
+                    token, detail, results = cast(
                         tuple[str, str, tuple[CleanupExecutionResult, ...]], payload
                     )
+                    if token != self._delete_token:
+                        continue
                     self._progress.stop()
                     self._progress.configure(mode="indeterminate", value=0)
                     done = sum(
@@ -1500,7 +2046,39 @@ class DevCleanWindow:
                     messagebox.showerror("删除中断", detail)
         except Empty:
             pass
-        self._root.after(120, self._drain_events)
+        finally:
+            self._root.after(
+                1 if processed >= _EVENTS_PER_TICK else _EVENT_POLL_MS,
+                self._drain_events,
+            )
+
+    def _newest_scan_snapshot(
+        self,
+        kind: str,
+        payload: Any,
+        limit: int,
+    ) -> tuple[str, Any, int]:
+        """Coalesce adjacent scan snapshots without crossing a real event.
+
+        ``scan_done`` and deletion events must stay ordered.  Queue has no
+        push-front, so the first different event is kept in one private slot and
+        becomes the next event processed.
+        """
+
+        newest = payload
+        consumed = 0
+        while consumed < limit:
+            try:
+                queued_kind, queued_payload = self._events.get_nowait()
+            except Empty:
+                break
+            if queued_kind == kind:
+                newest = queued_payload
+                consumed += 1
+                continue
+            self._pending_event = (queued_kind, queued_payload)
+            break
+        return kind, newest, consumed
 
     def _report_deletion(
         self,
@@ -1510,6 +2088,7 @@ class DevCleanWindow:
         finished = 0
         failed = 0
         freed = 0
+        unverified_recycles = 0
         for result in results:
             for _action, state in result.action_states:
                 if state in {ActionState.PURGED, ActionState.RECYCLED}:
@@ -1517,10 +2096,12 @@ class DevCleanWindow:
                 else:
                     failed += 1
             freed += result.purged_logical_bytes
+            unverified_recycles += len(result.unverified_recycle_paths)
+        failed += sum(reasons.values())
         gone = {
-            item.path
-            for item in self._deletable
-            if item.path in self._checked and not Path(item.path).exists()
+            path
+            for result in results
+            for path in result.completed_paths
         }
         if gone:
             self._deletable = [
@@ -1535,6 +2116,11 @@ class DevCleanWindow:
             parts.append(f"释放 {_format_bytes(freed)}")
         if failed:
             parts.append(f"{failed:,} 项未完成")
+        if unverified_recycles:
+            parts.append(
+                f"{unverified_recycles:,} 项已由 Windows 移除，但无法确认是否进入"
+                "回收站，可能无法恢复"
+            )
         for name, count in sorted(reasons.items(), key=lambda pair: -pair[1]):
             parts.append(f"{name} {count:,} 项")
         self._status.set("；".join(parts) + "。正在重新扫描以核对结果…")

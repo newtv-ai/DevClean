@@ -11,11 +11,13 @@ not a second copy of the rule data.
 from __future__ import annotations
 
 import fnmatch
+import glob
 import hashlib
 import json
 import os
 import re
 import zipfile
+from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -27,7 +29,7 @@ from devclean.core.json_contract import strict_json_loads
 from devclean.core.paths import data_dir
 from devclean.core.rule_schema import CleanupCategory, CleanupPolicy, SourceDomain
 
-SCHEMA_VERSION: Final = 2
+SCHEMA_VERSION: Final = 3
 MAX_DECISION_RULES: Final = 100_000
 MAX_REASON_CHARS: Final = 500
 MAX_RULE_VALUE_CHARS: Final = 32_767
@@ -53,8 +55,10 @@ _SCAN_TOP_LEVEL_KEYS: Final = frozenset(
         "_ai_editing_contract",
         "include_user_profile",
         "include_known_cleanup_roots",
+        "review_sample_per_category",
         "additional_paths",
         "excluded_paths",
+        "delete_root_ids",
         "skip_directory_groups",
         "known_cleanup_roots",
     }
@@ -132,7 +136,6 @@ _DELETE_CLASSIFICATION_KEYS: Final = frozenset(
         "downloads_segments",
         "inferred_ai_review_categories",
         "inferred_report_only_categories",
-        "permanent_approved_categories",
         "system_log_suffixes",
         "installer_suffixes",
         "category_source_domains",
@@ -198,8 +201,10 @@ class ScanRules:
     metadata: RuleDocumentMetadata
     include_user_profile: bool
     include_known_cleanup_roots: bool
+    review_sample_per_category: int
     additional_paths: tuple[str, ...]
     excluded_paths: tuple[str, ...]
+    delete_root_ids: frozenset[str]
     skip_directory_groups: dict[str, tuple[str, ...]]
     known_cleanup_roots: tuple[KnownRootRule, ...]
 
@@ -236,7 +241,6 @@ class DeleteClassification:
     downloads_segments: frozenset[str]
     inferred_ai_review_categories: frozenset[str]
     inferred_report_only_categories: frozenset[str]
-    permanent_approved_categories: frozenset[str]
     system_log_suffixes: frozenset[str]
     installer_suffixes: frozenset[str]
     category_source_domains: dict[str, str]
@@ -418,30 +422,49 @@ def default_rules() -> UserRules:
 def load_rules(*, create_missing: bool = True) -> UserRules:
     """Load the three current-format documents.
 
-    Missing files are copied from the packaged current templates.
+    Missing files are copied from the packaged templates once.  Complete
+    activity files are always read from ``DevClean-data`` beside the program.
+    If only the visible default backup was deleted, rebuilding it from the
+    packaged templates is best-effort and can never block activity-rule loading.
     """
 
     paths = (scan_rules_path(), delete_rules_path(), keep_rules_path())
     if create_missing:
         rules_dir().mkdir(parents=True, exist_ok=True)
-        packaged = _packaged_documents()
-        for path, text in zip(paths, packaged, strict=True):
-            if not path.exists():
-                _atomic_write(path, text)
-        _ensure_default_backup(packaged)
+        missing = tuple(path for path in paths if not path.is_file())
+        backup_source: tuple[str, str, str] | None = None
+        if missing:
+            defaults = (
+                _default_backup_documents()
+                if default_backup_path().is_file()
+                else _packaged_documents()
+            )
+            backup_source = defaults
+            for path, text in zip(paths, defaults, strict=True):
+                if not path.is_file():
+                    _atomic_write(path, text)
+        if not default_backup_path().is_file():
+            with suppress(
+                ImportError, OSError, RuleConfigError, UnicodeError
+            ):
+                _ensure_default_backup(
+                    backup_source or _packaged_documents()
+                )
+            # The three activity files remain authoritative and usable. Restore
+            # stays unavailable only when the packaged copy itself cannot be
+            # read or the sidecar directory cannot be written.
     return parse_rule_documents(*read_rule_documents())
 
 
 def restore_default_rules() -> UserRules:
-    """Restore all three active files from the current packaged defaults."""
+    """Restore all three active files from the visible sidecar backup."""
 
-    packaged = _packaged_documents()
-    restored = parse_rule_documents(*packaged)
+    defaults = _default_backup_documents()
+    restored = parse_rule_documents(*defaults)
     rules_dir().mkdir(parents=True, exist_ok=True)
-    _ensure_default_backup(packaged)
     for path, text in zip(
         (scan_rules_path(), delete_rules_path(), keep_rules_path()),
-        packaged,
+        defaults,
         strict=True,
     ):
         _atomic_write(path, text)
@@ -486,8 +509,10 @@ def render_rule_documents(rules: UserRules) -> tuple[str, str, str]:
         ),
         "include_user_profile": rules.scan.include_user_profile,
         "include_known_cleanup_roots": rules.scan.include_known_cleanup_roots,
+        "review_sample_per_category": rules.scan.review_sample_per_category,
         "additional_paths": list(rules.scan.additional_paths),
         "excluded_paths": list(rules.scan.excluded_paths),
+        "delete_root_ids": sorted(rules.scan.delete_root_ids),
         "skip_directory_groups": {
             group: list(names)
             for group, names in rules.scan.skip_directory_groups.items()
@@ -573,9 +598,9 @@ def add_ai_verdicts(
     rules: UserRules,
     verdicts: list[tuple[str, RuleDecision, str]],
 ) -> UserRules:
-    """Add exact-path AI decisions to DELETE/KEEP and persist them."""
+    """Persist AI decisions as portable exact and conservative shape rules."""
 
-    return _add_exact_verdicts(
+    return _add_verdict_rules(
         rules,
         verdicts,
         source="AI_IMPORT",
@@ -587,9 +612,9 @@ def add_user_verdicts(
     rules: UserRules,
     verdicts: list[tuple[str, RuleDecision, str]],
 ) -> UserRules:
-    """Persist the user's final decision for paths an AI left unsure."""
+    """Persist the user's final decision with the same reusable rule shapes."""
 
-    return _add_exact_verdicts(
+    return _add_verdict_rules(
         rules,
         verdicts,
         source="USER_DECISION",
@@ -597,7 +622,7 @@ def add_user_verdicts(
     )
 
 
-def _add_exact_verdicts(
+def _add_verdict_rules(
     rules: UserRules,
     verdicts: list[tuple[str, RuleDecision, str]],
     *,
@@ -608,29 +633,117 @@ def _add_exact_verdicts(
     for path, decision, reason in verdicts:
         normalized = normalise_path(path)
         incoming[normalized.casefold()] = (normalized, decision, reason)
-    replaced_paths = frozenset(incoming)
-    delete = _without_source_exact_paths(
-        rules.delete.rules,
-        replaced_paths,
-        source,
+
+    requested: dict[
+        tuple[RuleMatch, str],
+        list[tuple[str, RuleMatch, RuleDecision, str]],
+    ] = {}
+    removal_keys: set[tuple[RuleMatch, str]] = set()
+    for normalized, decision, reason in incoming.values():
+        removal_keys.add(_stored_rule_key(RuleMatch.EXACT_PATH, normalized))
+        for match, value in _decision_rule_shapes(
+            normalized, decision=decision, reason=reason
+        ):
+            key = _stored_rule_key(match, value)
+            removal_keys.add(key)
+            requested.setdefault(key, []).append((value, match, decision, reason))
+
+    # A reusable type rule is valid only while every observation of that shape
+    # agrees. Conflicting evidence removes the broad rule and leaves the
+    # portable exact-path decisions in place.
+    existing_decisions: dict[
+        tuple[RuleMatch, str], set[RuleDecision]
+    ] = {}
+    existing_exact: list[tuple[RuleDecision, str]] = []
+    for decision, decision_rules in (
+        (RuleDecision.DELETE, rules.delete.rules),
+        (RuleDecision.KEEP, rules.keep.rules),
+    ):
+        for rule in decision_rules:
+            if (
+                rule.enabled
+                and rule.match is RuleMatch.EXACT_PATH
+                and not (
+                    rule.source == source
+                    and _stored_rule_key(rule.match, rule.value)
+                    in removal_keys
+                )
+            ):
+                existing_exact.append(
+                    (
+                        decision,
+                        normalise_path(expand_path(rule.value)),
+                    )
+                )
+            if rule.source != source:
+                continue
+            shapes = (
+                _decision_rule_shapes(
+                    normalise_path(expand_path(rule.value)),
+                    decision=decision,
+                    reason=rule.reason,
+                )
+                if rule.match is RuleMatch.EXACT_PATH
+                else ((rule.match, rule.value),)
+            )
+            for match, value in shapes:
+                existing_decisions.setdefault(
+                    _stored_rule_key(match, value), set()
+                ).add(decision)
+    blocked_templates: set[tuple[RuleMatch, str]] = set()
+    for key, entries in requested.items():
+        if key[0] is not RuleMatch.PATH_GLOB:
+            continue
+        decisions = {entry[2] for entry in entries}
+        decisions.update(existing_decisions.get(key, set()))
+        template = entries[-1][0]
+        folded_template = os.path.normpath(expand_path(template)).casefold()
+        compared_exact = [
+            *existing_exact,
+            *(
+                (entry[1], entry[0])
+                for entry in incoming.values()
+            ),
+        ]
+        decisions.update(
+            exact_decision
+            for exact_decision, exact_path in compared_exact
+            if fnmatch.fnmatchcase(
+                normalise_path(exact_path).casefold(),
+                folded_template,
+            )
+        )
+        if len(decisions) > 1:
+            blocked_templates.add(key)
+            removal_keys.add(key)
+
+    delete = _without_source_rule_keys(
+        rules.delete.rules, frozenset(removal_keys), source
     )
-    keep = _without_source_exact_paths(
-        rules.keep.rules,
-        replaced_paths,
-        source,
+    keep = _without_source_rule_keys(
+        rules.keep.rules, frozenset(removal_keys), source
     )
     used_ids = {rule.rule_id for rule in (*delete, *keep)}
     now = datetime.now(UTC).isoformat()
-    for normalized, decision, reason in incoming.values():
-        rule_id = _unique_rule_id(_decision_rule_id(source, normalized), used_ids)
+    for key, entries in requested.items():
+        if key in blocked_templates:
+            continue
+        value, match, decision, reason = entries[-1]
+        rule_id = _unique_rule_id(
+            _decision_rule_id(source, f"{match.value}:{value}"), used_ids
+        )
         used_ids.add(rule_id)
+        reusable = match is RuleMatch.PATH_GLOB
         entry = DecisionRule(
             rule_id=rule_id,
             group=group,
-            match=RuleMatch.EXACT_PATH,
-            value=normalized,
+            match=match,
+            value=value,
             source=source,
-            reason=reason[:MAX_REASON_CHARS],
+            reason=(
+                ("同类动态路径模板；" if reusable else "")
+                + reason
+            )[:MAX_REASON_CHARS],
             updated_at=now,
         )
         (delete if decision is RuleDecision.DELETE else keep).append(entry)
@@ -642,6 +755,246 @@ def _add_exact_verdicts(
     )
     save_rules(updated)
     return updated
+
+
+_PORTABLE_PATH_VARIABLES: Final = (
+    "TEMP",
+    "LOCALAPPDATA",
+    "APPDATA",
+    "USERPROFILE",
+    "PROGRAMDATA",
+    "SYSTEMROOT",
+)
+_DATE_SEGMENT = re.compile(r"^(?:19|20)\d{2}$")
+_MONTH_SEGMENT = re.compile(r"^(?:0[1-9]|1[0-2])$")
+_DAY_SEGMENT = re.compile(r"^(?:0[1-9]|[12]\d|3[01])$")
+_VOLATILE_TEXT = re.compile(
+    r"(?:"
+    r"(?:19|20)\d{2}[-_.]\d{2}[-_.]\d{2}"
+    r"(?:[T_ -]\d{2}(?:[-_.:]\d{2}){1,3}(?:[-_.]\d+)?)?"
+    r"|(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])"
+    r"(?:[T_-]?\d{4,})?"
+    r"|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    r"|(?<=[._-])1[6-9](?:\d{8}|\d{11})(?=$|[._-])"
+    r"|(?<![0-9A-Za-z])[0-9a-f]{16,}(?![0-9A-Za-z])"
+    r"|(?<![0-9A-Za-z])\d{7,}(?![0-9A-Za-z])"
+    r")",
+    re.IGNORECASE,
+)
+_GENERIC_TEMPLATE_SEGMENTS: Final = frozenset(
+    {"temp", "tmp", "cache", "caches", "log", "logs"}
+)
+_CONTEXT_DEPENDENT_DECISION_REASON = re.compile(
+    r"(?:"
+    r"(?:超过|大于|至少)\s*\d+\s*天"
+    r"|(?:older\s+than|at\s+least)\s+\d+\s+days?"
+    r"|长期未"
+    r"|旧版本"
+    r"|被.{0,12}(?:更新|版本).{0,12}取代"
+    r"|今天|今日|当天|昨天|明天"
+    r"|正在使用|仍在使用|当前版本|最新版本"
+    r"|\btoday\b|\byesterday\b|\btomorrow\b"
+    r"|\bcurrently?\s+(?:active|used|in use)\b"
+    r"|\bcurrent\s+version\b|\blatest\s+version\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _decision_rule_shapes(
+    path: str,
+    *,
+    decision: RuleDecision | None = None,
+    reason: str = "",
+) -> tuple[tuple[RuleMatch, str], ...]:
+    portable = _portable_path_value(path)
+    exact = portable or path
+    shapes: list[tuple[RuleMatch, str]] = [(RuleMatch.EXACT_PATH, exact)]
+    if (
+        decision is not None
+        and _CONTEXT_DEPENDENT_DECISION_REASON.search(reason)
+    ):
+        return tuple(shapes)
+    template = _volatile_path_glob(exact)
+    if template is not None:
+        shapes.append((RuleMatch.PATH_GLOB, template))
+    return tuple(shapes)
+
+
+def reusable_path_pattern(path: str | Path) -> str | None:
+    """Return the conservative generated-name pattern used for AI reuse."""
+
+    normalized = normalise_path(path)
+    portable = _portable_path_value(normalized)
+    return _volatile_path_glob(portable or normalized)
+
+
+def _portable_path_value(path: str) -> str | None:
+    normalized = normalise_path(path)
+    candidates: list[tuple[int, str, str, str]] = []
+    seen_roots: set[str] = set()
+
+    # A learned rules file may be copied from Alice's computer to Bob's.  Match
+    # the conventional Windows profile layout independently of the environment
+    # of the computer doing the conversion.
+    profile_match = re.match(
+        r"^(?P<drive>[A-Za-z]:)\\Users\\(?P<username>[^\\]+)",
+        normalized,
+        re.IGNORECASE,
+    )
+    inferred_username = ""
+    if profile_match is not None:
+        inferred_username = profile_match.group("username")
+        profile_root = profile_match.group(0)
+        inferred_roots = (
+            (
+                profile_root + r"\AppData\Local\Temp",
+                "%TEMP%",
+            ),
+            (
+                profile_root + r"\AppData\Local",
+                "%LOCALAPPDATA%",
+            ),
+            (
+                profile_root + r"\AppData\Roaming",
+                "%APPDATA%",
+            ),
+            (profile_root, "%USERPROFILE%"),
+        )
+        for root, variable in inferred_roots:
+            folded = root.casefold()
+            if normalized.casefold() == folded:
+                candidates.append(
+                    (len(root), variable, "", inferred_username)
+                )
+            elif normalized.casefold().startswith(
+                folded.rstrip(os.sep) + os.sep
+            ):
+                candidates.append(
+                    (
+                        len(root),
+                        variable,
+                        normalized[len(root) :],
+                        inferred_username,
+                    )
+                )
+
+    for name in _PORTABLE_PATH_VARIABLES:
+        raw = os.environ.get(name)
+        if not raw:
+            continue
+        root = normalise_path(raw)
+        folded = root.casefold()
+        if folded in seen_roots:
+            continue
+        seen_roots.add(folded)
+        if normalized.casefold() == folded:
+            candidates.append(
+                (len(root), f"%{name}%", "", inferred_username)
+            )
+        elif normalized.casefold().startswith(
+            folded.rstrip(os.sep) + os.sep
+        ):
+            candidates.append(
+                (
+                    len(root),
+                    f"%{name}%",
+                    normalized[len(root) :],
+                    inferred_username,
+                )
+            )
+    if not candidates:
+        return None
+    _length, variable, tail, source_username = max(
+        candidates, key=lambda item: item[0]
+    )
+    username = source_username or os.environ.get("USERNAME")
+    if not username:
+        profile = os.environ.get("USERPROFILE")
+        username = Path(profile).name if profile else ""
+    if username:
+        tail = re.sub(
+            rf"(?<![0-9A-Za-z]){re.escape(username)}(?![0-9A-Za-z])",
+            "%USERNAME%",
+            tail,
+            flags=re.IGNORECASE,
+        )
+    return variable + tail
+
+
+def _volatile_path_glob(portable_path: str) -> str | None:
+    drive, tail = os.path.splitdrive(portable_path)
+    prefix = drive
+    if portable_path.startswith("%"):
+        end = portable_path.find("%", 1)
+        if end > 0:
+            prefix = portable_path[: end + 1]
+            tail = portable_path[end + 1 :]
+    parts = [part for part in re.split(r"[\\/]+", tail) if part]
+    rendered: list[str] = []
+    volatile = False
+    anchored_volatile = False
+    index = 0
+    while index < len(parts):
+        if (
+            index + 2 < len(parts)
+            and _DATE_SEGMENT.fullmatch(parts[index])
+            and _MONTH_SEGMENT.fullmatch(parts[index + 1])
+            and _DAY_SEGMENT.fullmatch(parts[index + 2])
+        ):
+            rendered.extend(("*", "*", "*"))
+            volatile = True
+            index += 3
+            continue
+        part = parts[index]
+        match = _volatile_segment_match(part)
+        if match is None:
+            rendered.append(glob.escape(part))
+        else:
+            before = glob.escape(part[: match.start()])
+            # Preserve only a real suffix that starts after the volatile token.
+            # pathlib treats ``urls.store.4_13429459072546848`` as having the
+            # suffix ``.4_134...``; appending that after ``*`` duplicated the
+            # very timestamp we meant to abstract.
+            suffix_start = part.rfind(".")
+            after = (
+                glob.escape(part[suffix_start:])
+                if suffix_start >= match.end()
+                else ""
+            )
+            rendered.append(before + "*" + after)
+            volatile = True
+            anchored_volatile = anchored_volatile or bool(before or after)
+        index += 1
+    if not volatile:
+        return None
+    stable = [
+        part.casefold()
+        for part in parts
+        if _volatile_segment_match(part) is None
+        and not _DATE_SEGMENT.fullmatch(part)
+        and part.casefold() not in _GENERIC_TEMPLATE_SEGMENTS
+    ]
+    if not anchored_volatile and len(stable) < 2:
+        return None
+    separator = os.sep
+    return prefix + separator + separator.join(rendered)
+
+
+def _volatile_segment_match(part: str) -> re.Match[str] | None:
+    matches = [match for match in (_VOLATILE_TEXT.search(part),) if match]
+    profile = os.environ.get("USERPROFILE")
+    if profile:
+        username = Path(profile).name
+        if username:
+            username_match = re.search(
+                rf"(?<![0-9A-Za-z]){re.escape(username)}(?![0-9A-Za-z])",
+                part,
+                re.IGNORECASE,
+            )
+            if username_match is not None:
+                matches.append(username_match)
+    return min(matches, key=lambda match: match.start(), default=None)
 
 
 def clear_ai_rules(rules: UserRules) -> UserRules:
@@ -803,6 +1156,15 @@ def _parse_scan_rules(payload: dict[str, object]) -> ScanRules:
                 ),
             )
         )
+    delete_root_ids = frozenset(
+        _strings(payload.get("delete_root_ids"), "delete_root_ids")
+    )
+    unknown_delete_roots = delete_root_ids - root_ids
+    if unknown_delete_roots:
+        raise RuleConfigError(
+            "delete_root_ids 只能引用 known_cleanup_roots 中存在的 id："
+            f"{sorted(unknown_delete_roots)}"
+        )
     return ScanRules(
         metadata=_parse_metadata(payload, SCAN_RULES_NAME),
         include_user_profile=_bool(
@@ -812,8 +1174,13 @@ def _parse_scan_rules(payload: dict[str, object]) -> ScanRules:
             payload.get("include_known_cleanup_roots"),
             "include_known_cleanup_roots",
         ),
+        review_sample_per_category=_positive_int(
+            payload.get("review_sample_per_category"),
+            "review_sample_per_category",
+        ),
         additional_paths=_strings(payload.get("additional_paths"), "additional_paths"),
         excluded_paths=_strings(payload.get("excluded_paths"), "excluded_paths"),
+        delete_root_ids=delete_root_ids,
         skip_directory_groups=_parse_string_groups(
             payload.get("skip_directory_groups"),
             "skip_directory_groups",
@@ -896,9 +1263,6 @@ def _parse_delete_rules(payload: dict[str, object]) -> DeleteRules:
         ),
         inferred_report_only_categories=_category_set(
             classification, "inferred_report_only_categories"
-        ),
-        permanent_approved_categories=_category_set(
-            classification, "permanent_approved_categories"
         ),
         system_log_suffixes=_folded_set(
             classification, "system_log_suffixes"
@@ -1070,9 +1434,6 @@ def _delete_classification_document(
         ),
         "inferred_report_only_categories": sorted(
             config.inferred_report_only_categories
-        ),
-        "permanent_approved_categories": sorted(
-            config.permanent_approved_categories
         ),
         "system_log_suffixes": sorted(config.system_log_suffixes),
         "installer_suffixes": sorted(config.installer_suffixes),
@@ -1342,9 +1703,25 @@ def _nonnegative_int(value: object, label: str) -> int:
     return value
 
 
-def _without_source_exact_paths(
+def _positive_int(value: object, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise RuleConfigError(f"{label} 必须是正整数")
+    return value
+
+
+def _stored_rule_key(match: RuleMatch, value: str) -> tuple[RuleMatch, str]:
+    if match in {
+        RuleMatch.EXACT_PATH,
+        RuleMatch.PATH_PREFIX,
+        RuleMatch.PATH_GLOB,
+    }:
+        return (match, os.path.normpath(value).casefold())
+    return (match, value.casefold())
+
+
+def _without_source_rule_keys(
     rules: tuple[DecisionRule, ...],
-    normalized_paths: frozenset[str],
+    keys: frozenset[tuple[RuleMatch, str]],
     source: str,
 ) -> list[DecisionRule]:
     return [
@@ -1352,8 +1729,7 @@ def _without_source_exact_paths(
         for rule in rules
         if not (
             rule.source == source
-            and rule.match is RuleMatch.EXACT_PATH
-            and normalise_path(rule.value).casefold() in normalized_paths
+            and _stored_rule_key(rule.match, rule.value) in keys
         )
     ]
 
@@ -1443,6 +1819,32 @@ def _ensure_default_backup(packaged: tuple[str, str, str]) -> None:
     os.replace(scratch, target)
 
 
+def _default_backup_documents() -> tuple[str, str, str]:
+    target = default_backup_path()
+    try:
+        with zipfile.ZipFile(target, "r") as archive:
+            if archive.namelist() != list(_CONFIG_NAMES):
+                raise RuleConfigError(
+                    f"默认备份内容不完整：{target}"
+                )
+            return tuple(
+                archive.read(name).decode("utf-8")
+                for name in _CONFIG_NAMES
+            )  # type: ignore[return-value]
+    except RuleConfigError:
+        raise
+    except (
+        OSError,
+        UnicodeError,
+        ValueError,
+        zipfile.BadZipFile,
+        KeyError,
+    ) as error:
+        raise RuleConfigError(
+            f"无法读取同目录默认备份：{target}：{error}"
+        ) from error
+
+
 __all__ = [
     "DEFAULT_BACKUP_NAME",
     "DELETE_RULES_NAME",
@@ -1476,6 +1878,7 @@ __all__ = [
     "read_rule_documents",
     "render_rule_documents",
     "restore_default_rules",
+    "reusable_path_pattern",
     "rules_dir",
     "save_rules",
     "scan_rules_path",

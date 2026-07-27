@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "document_type": "devclean.delete_rules",
   "_help": "DevClean 只从本文件读取可删除分类数据和用户/AI 删除规则。KEEP 规则始终优先。",
   "_ai_editing_contract": {
@@ -131,7 +131,6 @@
       "SYSTEM_LOGS"
     ],
     "inferred_report_only_categories": ["WINDOWS_UPDATE"],
-    "permanent_approved_categories": ["USER_TEMP", "CRASH_DUMPS"],
     "system_log_suffixes": [".dmp", ".log", ".etl", ".evtx", ".tmp"],
     "installer_suffixes": [
       ".msi",
@@ -202,8 +201,7 @@
     ],
     "workflow": [
       "inferred_ai_review_categories",
-      "inferred_report_only_categories",
-      "permanent_approved_categories"
+      "inferred_report_only_categories"
     ],
     "presentation": ["category_source_domains"]
   },

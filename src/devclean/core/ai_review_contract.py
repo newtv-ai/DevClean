@@ -38,10 +38,6 @@ AI_REVIEW_SCHEMA_VERSION: Final = 1
 AI_REVIEW_REQUEST_TYPE: Final = "DevClean_AI_REVIEW_REQUEST"
 AI_REVIEW_RESPONSE_TYPE: Final = "DevClean_AI_REVIEW_RESPONSE"
 AI_REVIEW_IMPORT_TYPE: Final = "DevClean_AI_REVIEW_RECOMMENDATIONS"
-# Only the *import* side is bounded: a response file is untrusted input.  What
-# DevClean exports is bounded by how much the receiving model can read, which
-# is why the UI splits a large selection into volumes instead of refusing it.
-MAX_AI_REQUEST_BYTES: Final = 64 * 1024 * 1024
 # An answered volume of 300 items ran to 133 KB, so the old 256 KB ceiling
 # was one busy volume away from rejecting real work.
 MAX_AI_RESPONSE_BYTES: Final = 512 * 1024
@@ -107,8 +103,76 @@ class AiRecommendation(StrEnum):
     """The complete model vocabulary; none is an execution action."""
 
     KEEP = "KEEP"
-    RECOMMEND_RECYCLE = "RECOMMEND_RECYCLE"
+    DELETE = "DELETE"
     UNSURE = "UNSURE"
+
+
+@dataclass(frozen=True, slots=True)
+class AiReviewSimilarityGroup:
+    """Bounded summary for generated filenames represented by one candidate."""
+
+    filename_pattern: str
+    member_count: int
+    total_logical_size_bytes: int
+    minimum_logical_size_bytes: int
+    maximum_logical_size_bytes: int
+    oldest_last_write_time_ns: int | None
+    newest_last_write_time_ns: int | None
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.filename_pattern, str)
+            or not self.filename_pattern
+            or len(self.filename_pattern) > MAX_PATH_CHARS
+            or _CONTROL.search(self.filename_pattern) is not None
+            or not any(token in self.filename_pattern for token in ("*", "?"))
+        ):
+            raise AiReviewContractError(
+                "similar filename pattern is invalid"
+            )
+        _bounded_integer(self.member_count, "group member_count", maximum=100_000)
+        if self.member_count < 2:
+            raise AiReviewContractError(
+                "similar filename group must contain at least two members"
+            )
+        for label, value in (
+            ("group total_logical_size", self.total_logical_size_bytes),
+            ("group minimum_logical_size", self.minimum_logical_size_bytes),
+            ("group maximum_logical_size", self.maximum_logical_size_bytes),
+        ):
+            _bounded_integer(value, label, maximum=(1 << 63) - 1)
+        if (
+            self.minimum_logical_size_bytes
+            > self.maximum_logical_size_bytes
+            or self.total_logical_size_bytes
+            < self.maximum_logical_size_bytes
+        ):
+            raise AiReviewContractError("similar filename group sizes are invalid")
+        for label, timestamp in (
+            ("group oldest_last_write_time", self.oldest_last_write_time_ns),
+            ("group newest_last_write_time", self.newest_last_write_time_ns),
+        ):
+            _optional_bounded_integer(timestamp, label, maximum=(1 << 63) - 1)
+        if (
+            self.oldest_last_write_time_ns is not None
+            and self.newest_last_write_time_ns is not None
+            and self.oldest_last_write_time_ns > self.newest_last_write_time_ns
+        ):
+            raise AiReviewContractError(
+                "similar filename group timestamps are invalid"
+            )
+
+    def payload(self) -> Mapping[str, object]:
+        return {
+            "decision_scope": "ALL_GROUP_MEMBERS",
+            "filename_pattern": self.filename_pattern,
+            "member_count": self.member_count,
+            "total_logical_size_bytes": self.total_logical_size_bytes,
+            "minimum_logical_size_bytes": self.minimum_logical_size_bytes,
+            "maximum_logical_size_bytes": self.maximum_logical_size_bytes,
+            "oldest_last_write_time_ns": self.oldest_last_write_time_ns,
+            "newest_last_write_time_ns": self.newest_last_write_time_ns,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,12 +185,19 @@ class AiReviewCandidateInput:
 
     item: TriageItem
     hard_protected: bool
+    similar_group: AiReviewSimilarityGroup | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.item, TriageItem):
             raise TypeError("item must be a TriageItem")
         if not isinstance(self.hard_protected, bool):
             raise TypeError("hard_protected must be a bool")
+        if self.similar_group is not None and not isinstance(
+            self.similar_group, AiReviewSimilarityGroup
+        ):
+            raise TypeError(
+                "similar_group must be an AiReviewSimilarityGroup or None"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +209,9 @@ class AiReviewEntry:
     snapshot_identity_digest: str
     hard_protected: bool
     model_metadata: Mapping[str, object]
+    similar_group: AiReviewSimilarityGroup | None = field(
+        default=None, repr=False
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,8 +310,13 @@ def build_ai_review_package(
                 snapshot_identity_digest=snapshot_digest,
                 hard_protected=hard_protected,
                 model_metadata=_model_metadata(
-                    item, hard_protected, snapshot_digest, disclose_full_paths
+                    item,
+                    hard_protected,
+                    snapshot_digest,
+                    disclose_full_paths,
+                    source.similar_group,
                 ),
+                similar_group=source.similar_group,
             )
         )
 
@@ -276,28 +355,6 @@ def serialize_ai_review_package(package: AiReviewPackage) -> str:
         sort_keys=True,
         separators=(",", ":"),
     )
-
-
-def validate_ai_review_package_text(
-    text: str,
-    package: AiReviewPackage,
-    *,
-    now: datetime | None = None,
-) -> None:
-    """Fail closed if an exported request was changed."""
-
-    payload = _strict_bounded_json(text, MAX_AI_REQUEST_BYTES, "AI review request")
-    _validate_package_object(package, now=now)
-    if not _json_exact_equal(payload, package.payload()):
-        raise AiReviewContractError("AI review request differs from the local package")
-    if not isinstance(payload, dict):
-        raise AiReviewContractError("AI review request must be a JSON object")
-    supplied_digest = payload.get("package_digest")
-    unsigned = {key: value for key, value in payload.items() if key != "package_digest"}
-    if not isinstance(supplied_digest, str) or not hmac.compare_digest(
-        supplied_digest, _digest_json(unsigned)
-    ):
-        raise AiReviewContractError("AI review request digest mismatch")
 
 
 def parse_ai_review_response(
@@ -367,8 +424,8 @@ def parse_ai_review_response(
             raise AiReviewContractError("AI response has an unknown recommendation") from error
         reason = _validate_model_reason(raw["reason"])
         entry = expected_entries[candidate_id]
-        if entry.hard_protected and recommendation is AiRecommendation.RECOMMEND_RECYCLE:
-            raise AiReviewContractError("AI cannot recommend recycling a hard-protected item")
+        if entry.hard_protected and recommendation is AiRecommendation.DELETE:
+            raise AiReviewContractError("AI cannot recommend deleting a hard-protected item")
         imported[candidate_id] = ImportedAiRecommendation(
             candidate_id=candidate_id,
             item=entry.item,
@@ -387,25 +444,98 @@ def parse_ai_review_response(
     )
 
 
-def response_template(package: AiReviewPackage) -> dict[str, object]:
-    """Return a closed inert response skeleton for a model or human reviewer."""
+def parse_partial_ai_review_response(
+    text: str,
+    *,
+    expected_session_id: str,
+    expected_nonce: str,
+    expected_package_digest: str,
+    candidate_paths: Mapping[str, str],
+) -> tuple[tuple[str, AiRecommendation, str], ...]:
+    """Validate a current-format partial answer using a persisted candidate index.
 
-    _validate_package_object(package, now=None)
-    return {
-        "schema_version": AI_REVIEW_SCHEMA_VERSION,
-        "document_type": AI_REVIEW_RESPONSE_TYPE,
-        "review_session_id": package.review_session_id,
-        "nonce": package.nonce,
-        "package_digest": package.package_digest,
-        "recommendations": [
-            {
-                "candidate_id": entry.candidate_id,
-                "recommendation": AiRecommendation.UNSURE.value,
-                "reason": "Insufficient metadata; local human review is required.",
-            }
-            for entry in package.entries
-        ],
-    }
+    The persisted index retains the package nonce, digest and exact
+    candidate-id/path map without retaining scan results. Partial coverage
+    remains allowed by product decision; every supplied row still has the same
+    closed fields, enum and non-empty explanation requirements as an in-process
+    import.
+    """
+
+    payload = _strict_bounded_json(text, MAX_AI_RESPONSE_BYTES, "AI review response")
+    if not isinstance(payload, dict) or set(payload) != {
+        "schema_version",
+        "document_type",
+        "review_session_id",
+        "nonce",
+        "package_digest",
+        "recommendations",
+    }:
+        raise AiReviewContractError("AI response has unknown or missing top-level fields")
+    if type(payload["schema_version"]) is not int or payload["schema_version"] != 1:
+        raise AiReviewContractError("AI response has an unsupported schema version")
+    if payload["document_type"] != AI_REVIEW_RESPONSE_TYPE:
+        raise AiReviewContractError("AI response has the wrong document type")
+    session_id = payload["review_session_id"]
+    if (
+        not isinstance(session_id, str)
+        or _SAFE_SESSION_ID.fullmatch(session_id) is None
+        or not hmac.compare_digest(session_id, expected_session_id)
+    ):
+        raise AiReviewContractError("AI response review_session_id mismatch")
+    for field_name, expected_value, pattern in (
+        ("nonce", expected_nonce, _SAFE_NONCE),
+        ("package_digest", expected_package_digest, _SAFE_DIGEST),
+    ):
+        value = payload[field_name]
+        if (
+            not isinstance(value, str)
+            or pattern.fullmatch(value) is None
+            or not hmac.compare_digest(value, expected_value)
+        ):
+            raise AiReviewContractError(f"AI response {field_name} mismatch")
+    if not candidate_paths:
+        raise AiReviewContractError("AI response session has no persisted candidates")
+    raw_recommendations = payload["recommendations"]
+    if (
+        not isinstance(raw_recommendations, list)
+        or not raw_recommendations
+        or len(raw_recommendations) > len(candidate_paths)
+    ):
+        raise AiReviewContractError(
+            "partial AI response must cover between one and all persisted candidates"
+        )
+    imported: list[tuple[str, AiRecommendation, str]] = []
+    seen: set[str] = set()
+    for raw in raw_recommendations:
+        if not isinstance(raw, dict) or set(raw) != {
+            "candidate_id",
+            "recommendation",
+            "reason",
+        }:
+            raise AiReviewContractError("AI recommendation has unknown or missing fields")
+        candidate_id = raw["candidate_id"]
+        if (
+            not isinstance(candidate_id, str)
+            or candidate_id not in candidate_paths
+            or candidate_id in seen
+        ):
+            raise AiReviewContractError("AI response contains an unknown or duplicate candidate")
+        recommendation_value = raw["recommendation"]
+        if not isinstance(recommendation_value, str):
+            raise AiReviewContractError("AI recommendation token must be a string")
+        try:
+            recommendation = AiRecommendation(recommendation_value)
+        except ValueError as error:
+            raise AiReviewContractError("AI response has an unknown recommendation") from error
+        seen.add(candidate_id)
+        imported.append(
+            (
+                candidate_paths[candidate_id],
+                recommendation,
+                _validate_model_reason(raw["reason"]),
+            )
+        )
+    return tuple(imported)
 
 
 def _unsigned_request_payload(package: AiReviewPackage) -> dict[str, object]:
@@ -429,8 +559,14 @@ def _unsigned_request_payload(package: AiReviewPackage) -> dict[str, object]:
                 else "Use only the supplied metadata; paths are redacted."
             ),
             "Say plainly in 'reason' why the file is or is not safe to remove.",
-            "Return KEEP, RECOMMEND_RECYCLE, or UNSURE for every candidate exactly once.",
-            "RECOMMEND_RECYCLE is advice only and never grants execution authority.",
+            "Return KEEP, DELETE, or UNSURE for every candidate exactly once.",
+            (
+                "When similar_path_group is not null, the one candidate "
+                "represents every file in that same-directory generated-name "
+                "group. Return DELETE or KEEP only when the conclusion applies "
+                "uniformly to all members; otherwise return UNSURE."
+            ),
+            "DELETE is advice only and never grants execution authority.",
             "Hard-protected candidates must be KEEP or UNSURE.",
         ],
         "response_contract": {
@@ -453,6 +589,7 @@ def _model_metadata(
     hard_protected: bool,
     snapshot_digest: str,
     disclose_full_paths: bool = False,
+    similar_group: AiReviewSimilarityGroup | None = None,
 ) -> Mapping[str, object]:
     reason = _bounded_source_text(item.reason, MAX_SOURCE_REASON_CHARS, "reason")
     tags = []
@@ -478,6 +615,11 @@ def _model_metadata(
         "last_write_time_ns": item.record.last_write_time_ns,
         "reason": reason,
         "tags": tags,
+        "similar_path_group": (
+            dict(similar_group.payload())
+            if similar_group is not None
+            else None
+        ),
         "hard_protected": hard_protected,
         "snapshot_identity_digest": snapshot_digest,
     }
@@ -663,6 +805,7 @@ def _validate_package_object(
             entry.hard_protected,
             entry.snapshot_identity_digest,
             package.disclose_full_paths,
+            entry.similar_group,
         )
         if not _json_exact_equal(dict(entry.model_metadata), dict(expected_metadata)):
             raise AiReviewContractError("local candidate metadata mismatch")
@@ -856,7 +999,6 @@ __all__ = [
     "DEFAULT_TTL",
     "MAX_AI_JSON_DEPTH",
     "MAX_AI_REASON_CHARS",
-    "MAX_AI_REQUEST_BYTES",
     "MAX_AI_RESPONSE_BYTES",
     "AiRecommendation",
     "AiReviewCandidateInput",
@@ -864,10 +1006,10 @@ __all__ = [
     "AiReviewEntry",
     "AiReviewImport",
     "AiReviewPackage",
+    "AiReviewSimilarityGroup",
     "ImportedAiRecommendation",
     "build_ai_review_package",
     "parse_ai_review_response",
-    "response_template",
+    "parse_partial_ai_review_response",
     "serialize_ai_review_package",
-    "validate_ai_review_package_text",
 ]

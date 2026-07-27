@@ -18,13 +18,15 @@ import os
 import secrets
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 
-from devclean.core.cleanup_catalog import CleanupCategory, KnownCleanupRoot
+from devclean.core.cleanup_catalog import (
+    CleanupCategory,
+    KnownCleanupRoot,
+    known_root_for_path,
+)
 from devclean.core.cleanup_journal import (
     ActionState,
-    BatchState,
     CleanupIntent,
     CleanupJournal,
     CleanupMode,
@@ -43,6 +45,7 @@ from devclean.core.triage import (
 )
 from devclean.core.user_rules import DeleteClassification, KeepClassification
 from devclean.platform.windows.exact_cleanup import (
+    DirectoryPurgeProgress,
     DirectoryPurgeResult,
     ExactDirectorySnapshot,
     ExactFileSnapshot,
@@ -74,9 +77,7 @@ type Recycler = Callable[
 type PermanentPurger = Callable[
     [Path, ExactFileSnapshot, ExactRootBoundary], ExactMutationResult
 ]
-type DirectoryTreePurger = Callable[
-    [Path, ExactDirectorySnapshot, ExactRootBoundary], DirectoryPurgeResult
-]
+type DirectoryTreePurger = Callable[..., DirectoryPurgeResult]
 
 
 class CleanupRefusal(ValueError):
@@ -147,7 +148,6 @@ class PreparedCleanupBatch:
     batch_id: str
     actions: tuple[CleanupAction, ...]
     digest: str
-    created_at: datetime
     _seal: object = field(repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -159,10 +159,7 @@ class PreparedCleanupBatch:
 class PreparedCleanupPlan:
     """One user-visible manifest split into independently journaled batches."""
 
-    plan_id: str
     batches: tuple[PreparedCleanupBatch, ...]
-    digest: str
-    created_at: datetime
     _seal: object = field(repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -176,13 +173,26 @@ class PreparedCleanupPlan:
 
 @dataclass(frozen=True, slots=True)
 class CleanupExecutionResult:
-    batch_id: str
-    mode: CleanupMode
-    batch_state: BatchState
     action_states: tuple[tuple[str, ActionState], ...]
-    selected_logical_bytes: int
     purged_logical_bytes: int
-    immediate_reclaim_upper_bound: int
+    completed_paths: tuple[str, ...]
+    unverified_recycle_paths: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class CleanupExecutionProgress:
+    """One non-authoritative UI update from an executing cleanup batch."""
+
+    action_index: int
+    action_count: int
+    path: str
+    target_kind: CleanupTargetKind
+    files_processed: int
+    files_total: int
+    completed: bool
+
+
+type CleanupProgressReporter = Callable[[CleanupExecutionProgress], None]
 
 
 def candidate_from_triage_item(
@@ -263,7 +273,11 @@ def candidate_from_directory_item(
     if record.kind is not ScanRecordKind.DIRECTORY or item.path != record.path:
         raise CleanupRefusal("candidate must be an exact directory item from the scan")
     path = _absolute_local_path(Path(record.path), "candidate directory")
-    scan_root = _absolute_local_path(Path(record.root), "scan root")
+    scan_root = _directory_execution_boundary(
+        path,
+        _absolute_local_path(Path(record.root), "scan root"),
+        known_roots,
+    )
     _require_strict_descendant(path, scan_root)
     _reject_protected_path(path, known_roots, keep_config)
     if not is_local_fixed_path(path) or not is_local_fixed_path(scan_root):
@@ -273,7 +287,7 @@ def candidate_from_directory_item(
     )
     if totals.files < 0 or totals.logical_bytes < 0:
         raise CleanupRefusal("directory subtree totals must be non-negative")
-    snapshot = _directory_snapshot(path, "candidate directory")
+    snapshot = _snapshot_selected_directory(item)
     root_snapshot = _directory_snapshot(scan_root, "original scan root")
     candidate_id = "candidate_" + secrets.token_hex(16)
     integrity = _candidate_integrity(
@@ -310,8 +324,8 @@ def _reject_overlapping_candidates(candidates: Sequence[ScanCleanupCandidate]) -
     Once whole directories can be selected, a plan can hold both a tree and
     something inside it. Executing that would delete the tree and then fail
     on the now-missing child, spending the user's deletion choice to reach a
-    first-failure stop.  Refusing while the plan is still being prepared says so
-    before anything is typed.
+    redundant second action. Refusing it while the plan is prepared keeps the
+    execution list and reclaimed-byte total unambiguous.
     """
 
     directories = sorted(
@@ -378,9 +392,8 @@ def prepare_cleanup_batch(
         for candidate in candidates
     )
     batch_id = "batch_" + secrets.token_hex(16)
-    created_at = datetime.now(UTC)
     digest = _batch_digest(batch_id, actions)
-    return PreparedCleanupBatch(batch_id, actions, digest, created_at, _SEAL)
+    return PreparedCleanupBatch(batch_id, actions, digest, _SEAL)
 
 
 def prepare_cleanup_plan(
@@ -405,15 +418,7 @@ def prepare_cleanup_plan(
         prepare_cleanup_batch(selected[offset : offset + MAX_CLEANUP_BATCH_FILES])
         for offset in range(0, len(selected), MAX_CLEANUP_BATCH_FILES)
     )
-    plan_id = "plan_" + secrets.token_hex(16)
-    created_at = datetime.now(UTC)
-    return PreparedCleanupPlan(
-        plan_id,
-        batches,
-        _plan_digest(plan_id, batches),
-        created_at,
-        _SEAL,
-    )
+    return PreparedCleanupPlan(batches, _SEAL)
 
 
 def execute_cleanup_batch(
@@ -426,13 +431,14 @@ def execute_cleanup_batch(
     recycler: Recycler = recycle_exact_object,
     purger: PermanentPurger = purge_exact_file,
     directory_purger: DirectoryTreePurger = purge_exact_directory_tree,
+    on_progress: CleanupProgressReporter | None = None,
     known_roots: tuple[KnownCleanupRoot, ...] = (),
 ) -> CleanupExecutionResult:
     """Execute a durable, post-scan batch once; there is no replay path.
 
     Two outcomes, matching what the user chose: ``RECYCLE`` sends the object to
     the Windows Recycle Bin, where they already know how to get it back, and the
-    permanent modes delete the verified handle outright.  Nothing is staged
+    permanent mode deletes the verified handle outright.  Nothing is staged
     anywhere in between -- a private holding area would not free the space the
     user is trying to reclaim.
     """
@@ -448,8 +454,17 @@ def execute_cleanup_batch(
     active_journal.record_batch(batch.batch_id, mode, intents)
 
     purged_directory_bytes: dict[str, int] = {}
-    for action in batch.actions:
+    unverified_recycle_paths: list[str] = []
+    for action_index, action in enumerate(batch.actions):
         candidate = action.candidate
+        _report_cleanup_progress(
+            on_progress,
+            action_index=action_index,
+            action_count=len(batch.actions),
+            candidate=candidate,
+            files_processed=0,
+            completed=False,
+        )
         try:
             active_journal.transition(
                 action.action_id,
@@ -487,14 +502,22 @@ def execute_cleanup_batch(
             if mode is CleanupMode.RECYCLE:
                 outcome = recycler(candidate.path, candidate.snapshot, boundary)
                 if not outcome.recycled:
-                    # The object is gone but not in the bin, which Windows does
-                    # silently when an item does not fit.  Say so rather than
-                    # reporting a recoverable deletion that is not recoverable.
-                    raise CleanupRefusal(
-                        "Windows removed the object without placing it in the Recycle Bin, "
-                        "so it is not recoverable; it was too large for the bin or the bin "
-                        "is disabled for this volume"
+                    # The source is gone and the Shell accepted a recycle
+                    # request, but a non-increasing *total* bin item count
+                    # cannot distinguish permanent fallback from eviction or a
+                    # concurrent bin change. Remove the completed row without
+                    # claiming either recovery or freed disk space.
+                    unverified_recycle_paths.append(str(candidate.path))
+                    active_journal.transition(
+                        action.action_id,
+                        expected=(ActionState.EXECUTING,),
+                        new_state=ActionState.RECYCLED,
+                        detail=(
+                            "Windows removed the object after a recycle request, "
+                            "but Recycle Bin placement could not be verified"
+                        ),
                     )
+                    continue
                 active_journal.transition(
                     action.action_id,
                     expected=(ActionState.EXECUTING,),
@@ -510,7 +533,30 @@ def execute_cleanup_batch(
                 )
                 if is_directory:
                     identity = _directory_identity(candidate.snapshot)
-                    tree = directory_purger(candidate.path, identity, boundary)
+
+                    def report_directory(
+                        progress: DirectoryPurgeProgress,
+                        *,
+                        current_index: int = action_index,
+                        current_candidate: ScanCleanupCandidate = candidate,
+                    ) -> None:
+                        _report_cleanup_progress(
+                            on_progress,
+                            action_index=current_index,
+                            action_count=len(batch.actions),
+                            candidate=current_candidate,
+                            files_processed=(
+                                progress.files_removed + progress.links_removed
+                            ),
+                            completed=False,
+                        )
+
+                    tree = directory_purger(
+                        candidate.path,
+                        identity,
+                        boundary,
+                        on_progress=report_directory,
+                    )
                     if not tree.completed or not tree.root_absent:
                         # A tree that stopped partway is neither done nor undone,
                         # so the action stays unresolved rather than claiming
@@ -540,11 +586,18 @@ def execute_cleanup_batch(
             # siblings unattempted -- measured as 984 unattempted against 4,369
             # deleted on one real run.  Record it and carry on.
             _record_failure(active_journal, action.action_id, error)
-            continue
+        finally:
+            _report_cleanup_progress(
+                on_progress,
+                action_index=action_index,
+                action_count=len(batch.actions),
+                candidate=candidate,
+                files_processed=max(1, candidate.subtree_files),
+                completed=True,
+            )
 
-    state = active_journal.finalize_batch(batch.batch_id)
+    active_journal.finalize_batch(batch.batch_id)
     actions = active_journal.actions_for_batch(batch.batch_id)
-    selected_bytes = sum(action.candidate.selected_logical_bytes for action in batch.actions)
     # A purged directory reports the bytes its walk actually removed, not the
     # subtree total observed during the scan, so the reclaim figure never
     # overstates what left the volume.
@@ -557,17 +610,53 @@ def execute_cleanup_batch(
     purged_bytes = sum(
         sizes[action.action_id] for action in actions if action.state is ActionState.PURGED
     )
+    action_states = tuple((action.action_id, action.state) for action in actions)
+    completed_ids = {
+        action_id
+        for action_id, state in action_states
+        if state in {ActionState.PURGED, ActionState.RECYCLED}
+    }
     return CleanupExecutionResult(
-        batch_id=batch.batch_id,
-        mode=mode,
-        batch_state=state,
-        action_states=tuple((action.action_id, action.state) for action in actions),
-        selected_logical_bytes=selected_bytes,
+        action_states=action_states,
         purged_logical_bytes=purged_bytes,
-        # Compatibility name: this is an exact logical-byte sum of journaled
-        # PURGED actions, never a claim about physical allocation or free space.
-        immediate_reclaim_upper_bound=purged_bytes,
+        completed_paths=tuple(
+            str(action.candidate.path)
+            for action in batch.actions
+            if action.action_id in completed_ids
+        ),
+        unverified_recycle_paths=tuple(unverified_recycle_paths),
     )
+
+
+def _report_cleanup_progress(
+    reporter: CleanupProgressReporter | None,
+    *,
+    action_index: int,
+    action_count: int,
+    candidate: ScanCleanupCandidate,
+    files_processed: int,
+    completed: bool,
+) -> None:
+    """Report progress without allowing presentation failures to stop deletion."""
+
+    if reporter is None:
+        return
+    try:
+        reporter(
+            CleanupExecutionProgress(
+                action_index=action_index,
+                action_count=action_count,
+                path=str(candidate.path),
+                target_kind=candidate.target_kind,
+                files_processed=max(0, files_processed),
+                files_total=max(1, candidate.subtree_files),
+                completed=completed,
+            )
+        )
+    except Exception:
+        # Progress is presentation only. A closed window or faulty observer must
+        # not turn an already-authorised deletion into a partial failed batch.
+        return
 
 def _snapshot_from_record(item: TriageItem) -> ExactFileSnapshot:
     record = item.record
@@ -604,6 +693,33 @@ def _snapshot_from_record(item: TriageItem) -> ExactFileSnapshot:
         creation_time_ns=int(record.creation_time_ns),
         last_write_time_ns=int(record.last_write_time_ns),
     )
+
+
+def _snapshot_selected_directory(item: TriageItem) -> ExactFileSnapshot:
+    """Pin the same directory object that produced the visible scan row."""
+
+    record = item.record
+    if (
+        record.volume_serial is None
+        or record.file_id is None
+        or record.file_id_kind is None
+        or record.creation_time_ns is None
+    ):
+        raise CleanupRefusal("scan item lacks a stable directory identity")
+    if record.file_id_kind != "file_id_128":
+        raise CleanupRefusal("cleanup requires a Windows 128-bit directory identity")
+    if (record.attributes or 0) & FILE_ATTRIBUTE_REPARSE_POINT or record.reparse_tag is not None:
+        raise CleanupRefusal("reparse-point records cannot become cleanup actions")
+    expected = ExactDirectorySnapshot(
+        volume_serial=int(record.volume_serial),
+        file_id=str(record.file_id),
+        file_id_kind=str(record.file_id_kind),
+        creation_time_ns=int(record.creation_time_ns),
+    )
+    metadata = read_file_metadata(item.path)
+    if not directory_metadata_matches_snapshot(metadata, expected):
+        raise CleanupRefusal("selected directory was replaced since the completed scan")
+    return _snapshot_from_directory_metadata(metadata, "candidate directory")
 
 
 def _snapshot_from_live_read(item: TriageItem) -> ExactFileSnapshot:
@@ -799,26 +915,6 @@ def _require_batch(batch: PreparedCleanupBatch) -> None:
         raise CleanupRefusal("prepared cleanup batch was altered")
 
 
-def _require_plan(plan: PreparedCleanupPlan) -> None:
-    if not isinstance(plan, PreparedCleanupPlan) or plan._seal is not _SEAL:
-        raise CleanupRefusal("expected an opaque prepared cleanup plan")
-    if not plan.batches:
-        raise CleanupRefusal("cleanup plan has no batches")
-    for batch in plan.batches:
-        _require_batch(batch)
-    if not hmac.compare_digest(plan.digest, _plan_digest(plan.plan_id, plan.batches)):
-        raise CleanupRefusal("prepared cleanup plan was altered")
-
-
-def _plan_digest(plan_id: str, batches: Sequence[PreparedCleanupBatch]) -> str:
-    digest = hashlib.sha256()
-    digest.update(plan_id.encode("ascii"))
-    for batch in batches:
-        digest.update(b"\0")
-        digest.update(batch.digest.encode("ascii"))
-    return digest.hexdigest()
-
-
 def _batch_digest(batch_id: str, actions: Sequence[CleanupAction]) -> str:
     digest = hashlib.sha256()
     digest.update(batch_id.encode("ascii"))
@@ -927,6 +1023,13 @@ def _normalized(path: Path) -> str:
 
 def _directory_snapshot(path: Path, label: str) -> ExactFileSnapshot:
     metadata = read_file_metadata(path)
+    return _snapshot_from_directory_metadata(metadata, label)
+
+
+def _snapshot_from_directory_metadata(
+    metadata: FileSystemMetadata,
+    label: str,
+) -> ExactFileSnapshot:
     if (
         not metadata.is_directory
         or metadata.is_reparse_point
@@ -983,9 +1086,32 @@ def _reject_system_anchor(
         raise CleanupRefusal("anchored Windows system-file deny-list blocked the path")
 
 
+def _directory_execution_boundary(
+    path: Path,
+    scan_root: Path,
+    known_roots: tuple[KnownCleanupRoot, ...],
+) -> Path:
+    """Use the parent only for a configured cleanup root that may itself go."""
+
+    if _normalized(path) != _normalized(scan_root):
+        return scan_root
+    known = known_root_for_path(path, known_roots)
+    if (
+        known is None
+        or _normalized(known.path) != _normalized(path)
+        or not known.delete_root_itself
+    ):
+        raise CleanupRefusal("the scan boundary itself is not a cleanup candidate")
+    parent = path.parent
+    if parent == path:
+        raise CleanupRefusal("a volume root can never become a cleanup candidate")
+    return _absolute_local_path(parent, "cleanup-root parent boundary")
+
+
 __all__ = [
     "MAX_CLEANUP_BATCH_FILES",
     "CleanupAction",
+    "CleanupExecutionProgress",
     "CleanupExecutionResult",
     "CleanupRefusal",
     "PreparedCleanupBatch",

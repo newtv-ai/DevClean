@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "document_type": "devclean.keep_rules",
   "_help": "DevClean 只从本文件读取确定不删分类数据和用户/AI KEEP 规则。KEEP 规则始终优先。",
   "_ai_editing_contract": {

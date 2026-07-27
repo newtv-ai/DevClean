@@ -1,4 +1,4 @@
-"""Windows-only, read-only platform primitives for the current milestone."""
+"""Windows-only file-system metadata primitives used by scanning and cleanup."""
 
 from .filesystem import (
     FILE_ATTRIBUTE_OFFLINE,

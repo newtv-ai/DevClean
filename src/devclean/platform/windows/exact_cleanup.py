@@ -226,9 +226,11 @@ def recycle_exact_object(
     destroyed one, and the alternative was a private staging directory that
     never frees any space, so the pathname call is the right trade here.
 
-    Windows silently deletes outright when an item does not fit the volume's
-    bin, which is why this verifies afterwards that the bin actually grew.  A
-    caller that gets ``recycled=False`` knows the object is gone for good.
+    Windows may delete outright when an item cannot enter the volume's bin, so
+    this also checks whether the bin's total item count grew.  That count can
+    stay level if an older bin entry was removed or another process changed the
+    bin concurrently.  Therefore ``recycled=False`` means only that placement
+    could not be independently verified; it does not prove permanent deletion.
     """
 
     source_path = _ordinary_absolute_path(source, "source")
