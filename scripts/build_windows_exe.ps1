@@ -90,6 +90,7 @@ try {
         --uac-admin `
         --name DevClean `
         --paths src `
+        --hidden-import devclean.config `
         --add-data "$defaultRuleDirectory\scan-rules.json;devclean\config" `
         --add-data "$defaultRuleDirectory\delete-rules.json;devclean\config" `
         --add-data "$defaultRuleDirectory\keep-rules.json;devclean\config" `
@@ -104,12 +105,15 @@ try {
     }
     $archiveListing = @(
         & uv run --frozen --python $Python python -m `
-            PyInstaller.utils.cliutils.archive_viewer -l $executable
+            PyInstaller.utils.cliutils.archive_viewer -r -l $executable
     )
     if ($LASTEXITCODE -ne 0) {
         throw "could not inspect the packaged EXE archive"
     }
     $archiveText = $archiveListing -join "`n"
+    if (-not $archiveText.Contains("'devclean.config'")) {
+        throw "packaged EXE is missing the devclean.config resource package"
+    }
     foreach ($ruleName in $defaultRuleFiles) {
         $packagedRule = "devclean\config\$ruleName"
         # archive_viewer prints member names as Python repr strings, so each

@@ -9,8 +9,8 @@
 
 `G:\clean\release\DevClean.exe`
 
-- 文件大小：12,754,891 字节（约 12.16 MiB）
-- SHA-256：`079dd98bb6088cacd2052ecf4ae8bfa737360c7e56b52c6cb6d032ead92af870`
+- 文件大小：12,754,298 字节（约 12.16 MiB）
+- SHA-256：`c6b21f2bc61ccd9ef2c94f834c417b3a53f7d8d96481bc08a411ef23ebc5212c`
 - 用户是否需要安装 Python：不需要
 - 构建方式：PyInstaller `--onefile --windowed --uac-admin`
 - 发布载荷：一个 EXE 加四份运行时许可证
@@ -21,11 +21,11 @@ Git 仓库已经直接恢复在 `G:\clean`，不再有两个同名目录套壳�
 
 ### 2.1 构建成功后仍被发布白名单判失败
 
-原因：旧构建脚本运行成品 `--uac-admin` EXE 做 `--ui-smoke`。它既会在 `dist` 旁生成 `DevClean-data`，也可能因 UAC 参数转交或无交互 CI 桌面而无法退出，导致发布白名单失败或构建永久等待。
+原因：旧构建脚本运行成品 `--uac-admin` EXE 做 `--ui-smoke`，会在 `dist` 旁生成 `DevClean-data`。本轮清除 Python wheel 安装后，PyInstaller 的旧 `--collect-data devclean` 又只留下三份 JSON 数据而漏掉 `devclean.config` 包；`importlib.resources` 无法导入资源包，于是成品启动时报 `ModuleNotFoundError`，异常窗口等待关闭，看起来像构建卡住。
 
-修复：GUI 构造冒烟改为在打包前使用同一 Python 3.13 环境运行真实 Tk 入口；PyInstaller 随后完成依赖分析和单文件构建。构建流程不再启动带 `--uac-admin` 的最终 EXE，因此不会在发布目录生成运行时状态，也不会被 UAC/CI 桌面卡住。
+修复：GUI 构造冒烟在打包前使用同一 Python 3.13 环境运行真实 Tk 入口；PyInstaller 显式加入 `devclean.config` 隐藏导入和三份 JSON。构建后递归检查成品归档，资源包模块或任何一份规则缺失都会直接失败。本轮还实际启动最终 `release\DevClean.exe --ui-smoke`，退出码为 0，且没有残留 DevClean 进程。
 
-为什么这样改：用户收到的发布包仍只有 EXE 和许可证；三份可编辑规则仍由用户首次正常启动时在 EXE 旁生成。构建校验不应留下构建机状态，更不应依赖交互式 UAC。
+为什么这样改：只确认 JSON 文件名存在并不等于 `importlib.resources` 能使用；资源包代码和资源数据必须同时验证。用户收到的发布包仍只有 EXE 和许可证，三份可编辑规则仍由用户首次正常启动时在 EXE 旁生成。
 
 ### 2.2 “整个目录”可以彻底删除，却不能进回收站
 
@@ -207,7 +207,8 @@ Claude 复审确认，本地仓库仍同时保留 Reclaimer 时代的 pytest、�
 - GUI 入口可达性复核：没有不可达的非初始化运行时模块
 - PyInstaller 单文件构建：通过
 - 源码入口 `--ui-smoke` GUI 构造与退出码检查：通过
-- 成品 EXE 内三份默认规则归档检查：通过
+- 成品 EXE 内 `devclean.config` 模块及三份默认规则归档检查：通过
+- 最终 `release\DevClean.exe --ui-smoke` 实际启动：退出码 0
 - EXE 50 MB 体积门槛：通过
 - 发布载荷白名单：通过
 - 最终 release EXE SHA-256 复核：通过
