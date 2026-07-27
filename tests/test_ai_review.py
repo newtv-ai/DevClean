@@ -297,8 +297,18 @@ def test_grouped_restart_import_expands_contextual_answer_to_every_member(
         for path in paths
     }
 
+    baseline = load_rules()
+    baseline_exact = sum(
+        rule.match is RuleMatch.EXACT_PATH
+        for rule in baseline.delete.rules
+    )
+    baseline_templates = {
+        rule.value
+        for rule in baseline.delete.rules
+        if rule.match is RuleMatch.PATH_GLOB
+    }
     updated = add_ai_verdicts(
-        load_rules(),
+        baseline,
         [
             (path, RuleDecision(verdict), reason)
             for path, (verdict, reason) in recovered.items()
@@ -307,10 +317,12 @@ def test_grouped_restart_import_expands_contextual_answer_to_every_member(
     assert all(updated.decision_for(path) is RuleDecision.DELETE for path in paths)
     assert sum(
         rule.match is RuleMatch.EXACT_PATH for rule in updated.delete.rules
-    ) == 2
-    assert not any(
-        rule.match is RuleMatch.PATH_GLOB for rule in updated.delete.rules
-    )
+    ) == baseline_exact + 2
+    assert {
+        rule.value
+        for rule in updated.delete.rules
+        if rule.match is RuleMatch.PATH_GLOB
+    } == baseline_templates
 
 
 def test_grouped_same_run_import_expands_to_every_member() -> None:

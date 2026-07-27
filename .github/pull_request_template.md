@@ -8,4 +8,5 @@
 
 ## 验证
 
-附 ruff、mypy 和 Windows EXE 构建结果；如果没有执行某项验证，直接说明。
+附 `ruff`、`mypy`、`pytest` 和 Windows EXE 构建结果；如果没有执行某项验证，
+直接说明。

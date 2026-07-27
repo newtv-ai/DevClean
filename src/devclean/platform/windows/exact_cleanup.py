@@ -126,9 +126,8 @@ class ExactMutationResult:
     source_name_absent: bool
     source_name_replaced: bool
     destination_matches: bool
-    # Only recycling sets this.  ``False`` after a recycle means the item did not
-    # reach the bin -- Windows deletes outright when an item does not fit -- so
-    # the caller must not report it as recoverable.
+    # Only recycling sets this. ``False`` means placement could not be verified:
+    # the caller must claim neither recoverability nor permanent deletion.
     recycled: bool = False
 
 
@@ -846,7 +845,7 @@ def _require_final_path(handle: wintypes.HANDLE, expected_path: str) -> None:
     """Refuse when the opened object no longer answers to the recorded name.
 
     Identity alone cannot detect that a directory was renamed between the scan
-    and the confirmation the user typed.  Comparing the handle's resolved path
+    and the user clicking a cleanup button. Comparing the handle's resolved path
     with the path shown in the plan closes that gap.
     """
 

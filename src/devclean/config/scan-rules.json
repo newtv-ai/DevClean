@@ -9,7 +9,7 @@
       "返回完整 JSON 对象，不要使用 Markdown 代码块、注释或省略号。",
       "不得修改 schema_version、document_type 或 _ai_editing_contract。",
       "不得增加、删除或改名字段；只修改现有字段的值或数组内容。",
-      "review_sample_per_category 是每个分类最多进入界面和 AI 审核队列的项目数；原始产品规则为 500。",
+      "review_sample_per_category 是每个处理通道和分类（lane/category）组合最多进入界面和 AI 审核队列的项目数；原始产品规则为 500。",
       "known_cleanup_roots 每项必须保留全部字段，id 必须唯一，group 用于人工分组；delete_root_ids 只能引用其中已有的 id。",
       "不确定的路径不要加入 known_cleanup_roots，先保留原配置。"
     ]

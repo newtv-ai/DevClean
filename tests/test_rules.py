@@ -85,7 +85,7 @@ def test_ai_verdict_is_persisted_and_default_backup_is_complete(
 
     assert updated.decision_for(target) is RuleDecision.DELETE
     assert load_rules().decision_for(target) is RuleDecision.DELETE
-    assert updated.ai_rule_count == 1
+    assert updated.ai_rule_count == rules.ai_rule_count + 1
     backup = default_backup_path()
     assert backup.name == DEFAULT_BACKUP_NAME
     with zipfile.ZipFile(backup) as archive:
@@ -243,20 +243,26 @@ def test_dynamic_number_does_not_get_duplicated_as_a_fake_suffix(
         r"\urlsoceng.store.4_13429460000000000"
     )
 
+    baseline = load_rules()
+    baseline_templates = {
+        rule.value
+        for rule in baseline.delete.rules
+        if rule.match is RuleMatch.PATH_GLOB
+    }
     updated = add_ai_verdicts(
-        load_rules(),
+        baseline,
         [(source, RuleDecision.DELETE, "regenerable browser data")],
     )
 
     assert updated.decision_for(next_generated) is RuleDecision.DELETE
-    templates = [
+    templates = {
         rule.value
         for rule in updated.delete.rules
         if rule.match is RuleMatch.PATH_GLOB
-    ]
-    assert templates == [
-        r"%LOCALAPPDATA%\browser\safe browsing\urlsoceng.store.4_*"
-    ]
+    }
+    expected = r"%LOCALAPPDATA%\browser\safe browsing\urlsoceng.store.4_*"
+    assert expected in templates
+    assert templates - baseline_templates == {expected}
 
 
 def test_age_dependent_delete_is_portable_but_not_generalized(
@@ -273,8 +279,14 @@ def test_age_dependent_delete_is_portable_but_not_generalized(
         r"\rollout-2026-07-27T10-20-30.jsonl"
     )
 
+    baseline = load_rules()
+    baseline_templates = {
+        (rule.match, rule.value)
+        for rule in (*baseline.delete.rules, *baseline.keep.rules)
+        if rule.match is RuleMatch.PATH_GLOB
+    }
     updated = add_ai_verdicts(
-        load_rules(),
+        baseline,
         [
             (
                 old_session,
@@ -286,9 +298,11 @@ def test_age_dependent_delete_is_portable_but_not_generalized(
 
     assert updated.decision_for(old_session) is RuleDecision.DELETE
     assert updated.decision_for(new_session) is None
-    assert not any(
-        rule.match is RuleMatch.PATH_GLOB for rule in updated.delete.rules
-    )
+    assert {
+        (rule.match, rule.value)
+        for rule in (*updated.delete.rules, *updated.keep.rules)
+        if rule.match is RuleMatch.PATH_GLOB
+    } == baseline_templates
     assert all(
         "person" not in rule.value.casefold() for rule in updated.delete.rules
     )
@@ -310,10 +324,11 @@ def test_age_dependent_delete_is_portable_but_not_generalized(
     assert updated.decision_for(old_session) is RuleDecision.DELETE
     assert updated.decision_for(new_session) is RuleDecision.KEEP
     assert updated.decision_for(unseen_session) is None
-    assert not any(
-        rule.match is RuleMatch.PATH_GLOB
+    assert {
+        (rule.match, rule.value)
         for rule in (*updated.delete.rules, *updated.keep.rules)
-    )
+        if rule.match is RuleMatch.PATH_GLOB
+    } == baseline_templates
 
 
 def test_conflicting_ai_shape_removes_template_and_keeps_exact_answers(
@@ -334,8 +349,14 @@ def test_conflicting_ai_shape_removes_template_and_keeps_exact_answers(
         r"\rollout-2026-07-29T10-20-30-1122334455.jsonl"
     )
 
+    baseline = load_rules()
+    baseline_templates = {
+        (rule.match, rule.value)
+        for rule in (*baseline.delete.rules, *baseline.keep.rules)
+        if rule.match is RuleMatch.PATH_GLOB
+    }
     rules = add_ai_verdicts(
-        load_rules(),
+        baseline,
         [(first, RuleDecision.DELETE, "delete first")],
     )
     rules = add_ai_verdicts(
@@ -346,10 +367,11 @@ def test_conflicting_ai_shape_removes_template_and_keeps_exact_answers(
     assert rules.decision_for(first) is RuleDecision.DELETE
     assert rules.decision_for(second) is RuleDecision.KEEP
     assert rules.decision_for(third) is None
-    assert not any(
-        rule.match is RuleMatch.PATH_GLOB
+    assert {
+        (rule.match, rule.value)
         for rule in (*rules.delete.rules, *rules.keep.rules)
-    )
+        if rule.match is RuleMatch.PATH_GLOB
+    } == baseline_templates
 
     # A later same-shape answer must not resurrect a template after conflict.
     rules = add_ai_verdicts(
@@ -357,7 +379,8 @@ def test_conflicting_ai_shape_removes_template_and_keeps_exact_answers(
         [(third, RuleDecision.DELETE, "delete third")],
     )
     assert rules.decision_for(third) is RuleDecision.DELETE
-    assert not any(
-        rule.match is RuleMatch.PATH_GLOB
+    assert {
+        (rule.match, rule.value)
         for rule in (*rules.delete.rules, *rules.keep.rules)
-    )
+        if rule.match is RuleMatch.PATH_GLOB
+    } == baseline_templates

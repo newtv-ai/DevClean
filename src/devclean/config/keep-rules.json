@@ -15,7 +15,10 @@
     ]
   },
   "classification": {
-    "application_data_segments": ["appdata", "programdata"],
+    "application_data_segments": [
+      "appdata",
+      "programdata"
+    ],
     "protected_system_root_names": [
       "Windows",
       "Program Files",
@@ -79,7 +82,11 @@
       ".lnk",
       ".url"
     ],
-    "installed_payload_segments": ["extensions", "plugins", "modulardata"],
+    "installed_payload_segments": [
+      "extensions",
+      "plugins",
+      "modulardata"
+    ],
     "application_state_names": [
       "environments.txt",
       "locked-directories",
@@ -124,5 +131,456 @@
     "path_regex": "正则搜索完整路径，路径分隔符统一写成 /",
     "filename_regex": "正则搜索文件名"
   },
-  "rules": []
+  "rules": [
+    {
+      "id": "ai_aae515f92023610aa5177fa8",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.local\\share\\claude\\versions\\2.1.220",
+      "source": "AI_IMPORT",
+      "reason": "这是本机保存的多个 Claude Code CLI 版本目录中版本号最高的一个，很可能是当前实际使用的版本，不建议删除。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_4f4b8dfe6cc2f97c7d2d4cff",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.jdks\\graalvm-jdk-25\\lib\\modules",
+      "source": "AI_IMPORT",
+      "reason": "这是 JDK 运行时的核心模块数据文件(lib/modules)，java 命令能否运行完全依赖它，删除会直接导致这个 JDK 安装无法使用，只能通过卸载/重装整个 JDK 版本来清理，不应单独删除此文件。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_46e191acb0e3f7ece3891e8f",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.jdks\\graalvm-jdk-17.0.12\\lib\\modules",
+      "source": "AI_IMPORT",
+      "reason": "这是 JDK 运行时的核心模块数据文件(lib/modules)，java 命令能否运行完全依赖它，删除会直接导致这个 JDK 安装无法使用，只能通过卸载/重装整个 JDK 版本来清理，不应单独删除此文件。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_4e1311d58f499cda8beec6ac",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\c--users-%USERNAME%--claude-mem-observer-sessions\\e4b3139f-6dc7-4470-b002-6f3a0a91d822.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ae5d8b0c77acc431c21129a8",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%USERPROFILE%\\.claude\\projects\\c--users-%USERNAME%--claude-mem-observer-sessions\\*.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_d41a11427ffed040cf968e63",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\wechatpadpro-docker\\mysql\\data\\mysql.ibd",
+      "source": "AI_IMPORT",
+      "reason": "这是数据库(InnoDB)的实际数据/系统表空间或撤销日志文件，属于运行中数据库的存储内容，不是缓存。删除会导致数据库损坏或数据丢失，绝不能删。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_bbd6486f3a0e45c05a1b6124",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\g--------\\e0c9289c-ae5e-49f6-bb19-c90bd917c389.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_a1ab468a1a451367869cdd53",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%USERPROFILE%\\.claude\\projects\\g--------\\*.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_2d1743fc28268297eebec6c7",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\g--clean\\ee1402ff-dbe5-4318-9935-ca821d2a0660.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ae9c3aa7c7001bed3408d604",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%USERPROFILE%\\.claude\\projects\\g--clean\\*.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_72a6fdb3d620a93001e8b1c0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.codex\\logs_2.sqlite-wal",
+      "source": "AI_IMPORT",
+      "reason": "这是 SQLite 数据库的预写日志(WAL)文件，与同名主数据库文件配对使用。在数据库仍在使用/未完成检查点时删除 WAL 可能造成最近写入丢失或数据库状态不一致，不建议单独删除。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_527cb40de41d5248fb912895",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\wechatpadpro-docker\\mysql\\data\\undo_002",
+      "source": "AI_IMPORT",
+      "reason": "这是数据库(InnoDB)的实际数据/系统表空间或撤销日志文件，属于运行中数据库的存储内容，不是缓存。删除会导致数据库损坏或数据丢失，绝不能删。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_45df892a52e97e82017a2ff5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\wechatpadpro-docker\\mysql\\data\\undo_001",
+      "source": "AI_IMPORT",
+      "reason": "这是数据库(InnoDB)的实际数据/系统表空间或撤销日志文件，属于运行中数据库的存储内容，不是缓存。删除会导致数据库损坏或数据丢失，绝不能删。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_17f2bde67c28632cdcf064f0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\g--------\\de0af7f2-845c-45c0-8953-1b4ee0c4ec7b.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e58e5de9cf7383f06653f6ef",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\c--users-%USERNAME%--claude-mem-observer-sessions\\bc15d6c4-b1ca-4b82-9f37-9d72aea9b27a.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1a7bbcfca9e6623346891ffa",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\wechatpadpro-docker\\mysql\\data\\ibdata1",
+      "source": "AI_IMPORT",
+      "reason": "这是数据库(InnoDB)的实际数据/系统表空间或撤销日志文件，属于运行中数据库的存储内容，不是缓存。删除会导致数据库损坏或数据丢失，绝不能删。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_5f22042230a94da1338bef34",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\g--------\\323a5b8d-50bb-4403-8d0d-b7ce6899c0e0.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_75d6fdefbf97f939375e0854",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\g--smokefire\\71c877d4-6258-4833-bd9a-c31fc7d2764e.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_64f3e11d38123ebb0d5ddcfb",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%USERPROFILE%\\.claude\\projects\\g--smokefire\\*.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_11e5b445a50ecc2110146c9d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\c--users-%USERNAME%--claude-mem-observer-sessions\\f38ff225-0fa0-410b-b957-7782c3ad0596.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_46581dd976b23a2e3cac1c99",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\wechatpadpro-docker\\mysql\\data\\#ib_16384_1.dblwr",
+      "source": "AI_IMPORT",
+      "reason": "这是数据库(InnoDB)的实际数据/系统表空间或撤销日志文件，属于运行中数据库的存储内容，不是缓存。删除会导致数据库损坏或数据丢失，绝不能删。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b8a29a1c24329428935be223",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\g--------\\b5fd46a6-7010-4e31-b89e-330ae478cfa2.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ec27797bbfcddbe22c28db06",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\g--------\\de5b601f-2394-4118-a8f0-0080b8a6638d.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_16abbeef60e3ef96e916cc97",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\default\\history",
+      "source": "AI_IMPORT",
+      "reason": "这是浏览器的浏览历史记录数据库，属于真实用户数据而非缓存，删除会清空该浏览器的历史记录，不建议删除。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1db35ce4376189706b59a040",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\c--users-%USERNAME%--claude-mem-observer-sessions\\4efae88d-5923-4326-8874-fecca9dbb496.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_6aaaa331c31267cda05de49b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\c--users-%USERNAME%--claude-mem-observer-sessions\\c911e1d6-5c93-487f-b99d-718b49ce2148.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_53073894e1f6b9a5c0a17d34",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\c--users-%USERNAME%--claude-mem-observer-sessions\\4d36307d-f5d9-4aea-b85e-ba9b8fb63e46.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_017510b4513f2b0d7dc0944d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\g--------\\9cd48067-a206-47bb-8f9b-da85c7a0a83c.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_62eaaa2068174559eb212370",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\g--newtv\\75801ba1-a64e-42b2-9ec0-256975d37670.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_f2510b0c6bf0f5da3023b455",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%USERPROFILE%\\.claude\\projects\\g--newtv\\*.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_6817ad0aa1da9ef8c0fd9a96",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\c--users-%USERNAME%--claude-mem-observer-sessions\\33b8bd88-306f-4f92-afd4-963735df2612.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_31e25e3a6b91a9c907016771",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\c--users-%USERNAME%--claude-mem-observer-sessions\\22430d27-c45b-43f0-86b2-06029d0e5fc9.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_852b3233c6abf1c5a0cf1649",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\c--users-%USERNAME%--claude-mem-observer-sessions\\26020da2-35bd-4eed-badb-1c5574c0021f.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_96f848532103ed1d1def5182",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\c--users-%USERNAME%--claude-mem-observer-sessions\\0698d84f-2c8b-4b05-b8cc-3371c5617268.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_7bbf1305f6cbed3c334481a5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\c--users-%USERNAME%--claude-mem-observer-sessions\\8ab3ed9e-4e66-4595-8828-271b8f826650.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ec44a63453aea976a642e34e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\projects\\c--users-%USERNAME%--claude-mem-observer-sessions\\e7bb231f-22b2-4506-a296-0a3498e5eba1.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Claude Code 自身的会话记录文件(部分用于 claude-mem 记忆管道的观测数据)，是当前正在使用的工具链的运行数据，不是可再生缓存，删除会丢失历史会话且可能影响 claude-mem 记忆功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1c1e1b5d6eb2f982bd04afbe",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\plugins\\marketplaces\\thedotmack\\docker\\e2e\\server-e2e.mjs",
+      "source": "AI_IMPORT",
+      "reason": "这是已安装的 Claude Code 插件市场源码/脚本文件，属于当前在用工具的一部分，不是缓存，删除会影响该插件的功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_5bae949de9c691816c504290",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\plugins\\marketplaces\\thedotmack\\docker\\claude-mem\\readme.md",
+      "source": "AI_IMPORT",
+      "reason": "这是已安装的 Claude Code 插件市场源码/脚本文件，属于当前在用工具的一部分，不是缓存，删除会影响该插件的功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_2ba684944d304aac68a602db",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\plugins\\marketplaces\\thedotmack\\docker\\claude-mem\\entrypoint.sh",
+      "source": "AI_IMPORT",
+      "reason": "这是已安装的 Claude Code 插件市场源码/脚本文件，属于当前在用工具的一部分，不是缓存，删除会影响该插件的功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_2b5f2171532bc27f80e3c54e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\dify-on-wechat\\docker\\entrypoint.sh",
+      "source": "AI_IMPORT",
+      "reason": "这是用户自己项目仓库中的源码/脚本文件(非构建产物缓存目录)，删除会直接损失项目代码，应保留。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_fc5f55b57efc23de66f83d9a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\plugins\\marketplaces\\thedotmack\\docker\\claude-mem\\dockerfile",
+      "source": "AI_IMPORT",
+      "reason": "这是已安装的 Claude Code 插件市场源码/脚本文件，属于当前在用工具的一部分，不是缓存，删除会影响该插件的功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_f4fb7a781637157e56054e0d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\plugins\\marketplaces\\thedotmack\\docker\\claude-mem\\run.sh",
+      "source": "AI_IMPORT",
+      "reason": "这是已安装的 Claude Code 插件市场源码/脚本文件，属于当前在用工具的一部分，不是缓存，删除会影响该插件的功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_4d81717f9994acb9901e50a0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\dify-on-wechat\\docker\\dockerfile.latest",
+      "source": "AI_IMPORT",
+      "reason": "这是用户自己项目仓库中的源码/脚本文件(非构建产物缓存目录)，删除会直接损失项目代码，应保留。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_3e1fba71183b618fbcd3d500",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.claude\\plugins\\marketplaces\\thedotmack\\docker\\claude-mem\\build.sh",
+      "source": "AI_IMPORT",
+      "reason": "这是已安装的 Claude Code 插件市场源码/脚本文件，属于当前在用工具的一部分，不是缓存，删除会影响该插件的功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_2a30857c40303a163cb03051",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\dify-on-wechat\\docker\\build.latest.sh",
+      "source": "AI_IMPORT",
+      "reason": "这是用户自己项目仓库中的源码/脚本文件(非构建产物缓存目录)，删除会直接损失项目代码，应保留。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    }
+  ]
 }

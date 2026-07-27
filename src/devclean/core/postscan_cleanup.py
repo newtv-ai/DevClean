@@ -7,8 +7,8 @@ selected by the user.  AI is optional classification advice only and cannot
 invoke this layer.
 """
 
-# Confirmation text is Chinese prose shown to the user, so it uses fullwidth
-# punctuation.  Matches ``core/triage.py``, which carries this for the same reason.
+# User-facing cleanup text is Chinese prose, so it uses fullwidth punctuation.
+# Matches ``core/triage.py``, which carries this for the same reason.
 
 from __future__ import annotations
 

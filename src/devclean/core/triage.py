@@ -522,10 +522,10 @@ def _classify(
                 ExecutionPolicy.USER_CHOICE_DELETE,
                 RecoveryCapability.UNKNOWN,
                 (
-                    f"{known.label}：未达到 {delete_config.old_temp_days} 天阈值；"
-                    "可人工选择或先做 AI 复核"
+                    f"{known.label}：属于配置列明的已知临时目录，但未达到 "
+                    f"{delete_config.old_temp_days} 天阈值；左栏默认勾选，可自行取消"
                 ),
-                ("known_root", "recent", "ai_review_optional"),
+                ("known_root", "recent"),
             )
         if known.policy is CleanupPolicy.VENDOR_MANAGED:
             return _Classification(
@@ -537,10 +537,10 @@ def _classify(
                 ExecutionPolicy.USER_CHOICE_DELETE,
                 RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT,
                 (
-                    f"{known.label}：属于厂商管理存储；可人工选择或先做 AI 复核，"
-                    "永久清除需独立强确认"
+                    f"{known.label}：属于配置列明的厂商管理存储；工具判定可清理，"
+                    "实际方式仍由你在左栏选择"
                 ),
-                ("known_root", "vendor_managed", "ai_review_optional"),
+                ("known_root", "vendor_managed"),
             )
         if known.policy is CleanupPolicy.REPORT_ONLY:
             return _Classification(
@@ -565,8 +565,8 @@ def _classify(
                 Actionability.AI_REVIEW,
                 ExecutionPolicy.USER_CHOICE_DELETE,
                 RecoveryCapability.UNKNOWN,
-                f"{known.label}：已知缓存位置，但需确认应用状态与文件用途",
-                ("known_root", "manual_review", "ai_review_optional"),
+                f"{known.label}：配置列明的已知缓存位置；清理前可自行关闭相关应用",
+                ("known_root", "manual_review"),
             )
 
     root = temp_root or Path(tempfile.gettempdir())
@@ -973,7 +973,7 @@ def _whole_tree_known_roots(known_roots: tuple[KnownCleanupRoot, ...]) -> frozen
     candidate, so removing the tree would contradict the reason the root is
     listed.  It also covers the active ``%TEMP%`` directory, and renaming that
     out from under every running application is disruptive in a way no amount of
-    confirmation makes reasonable.  Those roots keep the per-file aged flow,
+    user approval makes reasonable.  Those roots keep the per-file aged flow,
     which already handles them well.
     """
 

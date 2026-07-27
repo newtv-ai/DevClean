@@ -1,9 +1,10 @@
-"""DevClean: scan on launch, sort into two buckets, delete.
+"""DevClean GUI: scan selected fixed drives, sort into two buckets, delete.
 
 Two buckets, because the tool has exactly two answers about any file: it is sure
 the file can go, or it is not sure and the question goes to a model.  The
-three public rule files define where to scan and what to delete or keep.  There
-is no bucket where the user is expected to adjudicate files one by one.
+three public rule files define where to scan and what to delete or keep.  Only
+items the model explicitly leaves UNSURE can be decided by the user in the same
+right-hand bucket; there is no third queue.
 
 Mutation lives in ``core.postscan_cleanup`` and nothing here can widen it.
 """
@@ -1458,6 +1459,9 @@ class DevCleanWindow:
                         for group in chunk
                     ),
                     scan_session_id=self._scan_session_id,
+                    # Product decision: a path-redacted cleanup question usually
+                    # produces UNSURE and wastes the model cost. The UI warns
+                    # that the export contains local paths before this action.
                     disclose_full_paths=True,
                 )
                 candidate_members = {
@@ -2123,10 +2127,7 @@ class DevCleanWindow:
             )
         for name, count in sorted(reasons.items(), key=lambda pair: -pair[1]):
             parts.append(f"{name} {count:,} 项")
-        self._status.set("；".join(parts) + "。正在重新扫描以核对结果…")
-        self._status.set(
-            self._status.get().replace("正在重新扫描以核对结果…", "点「扫描」可核对结果。")
-        )
+        self._status.set("；".join(parts) + "。点「扫描」可核对结果。")
 
 
 def main(argv: Sequence[str] | None = None) -> int:

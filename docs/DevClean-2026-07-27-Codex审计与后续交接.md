@@ -9,13 +9,21 @@
 
 `G:\clean\release\DevClean.exe`
 
-- 文件大小：12,774,642 字节（约 12.18 MiB）
-- SHA-256：`be989ff8b8be40a0ed8dd161f29a1f1a858fe0f7e62960f42d7757d342048efe`
+- 文件大小：12,796,352 字节（约 12.20 MiB）
+- SHA-256：`8c856f0ca910d1c3b9f17257f441976b781c6d633aaeb3e144191fb39dee1ac6`
 - 用户是否需要安装 Python：不需要
 - 构建方式：PyInstaller `--onefile --windowed --uac-admin`
 - 发布载荷：一个 EXE 加四份运行时许可证
 
-Git 仓库已经直接恢复在 `G:\clean`，不再有两个同名目录套壳。当前分支为 `main`，远端为 `https://github.com/newtv-ai/DevClean.git`。产品实现提交为 `97b67a7487f393a360b9d46cb9ead4a52b69779e`（`feat: complete configurable cleanup workflow and Windows release`）；Claude 复审后的旧架构清理提交为 `b5855786d5961c2210f6495281fcb35aa4551fc0`（`refactor: remove legacy pipeline and streamline EXE build`）。作者和提交者均为 `newtv-ai <267045021+newtv-ai@users.noreply.github.com>`。当前本地提交尚未 push；不得未经用户明确要求上传到 GitHub。
+Git 仓库已经直接恢复在 `G:\clean`，不再有两个同名目录套壳。当前分支为
+`main`，远端为 `https://github.com/newtv-ai/DevClean.git`。本交接覆盖的审计
+实现基线包含 `40e56528c885e0de648b31c01ca749f27211ed5e`
+（`feat: finalize audited DevClean cleanup workflow`）；更早的产品实现提交为
+`97b67a7487f393a360b9d46cb9ead4a52b69779e`，旧架构清理提交为
+`b5855786d5961c2210f6495281fcb35aa4551fc0`。提交作者和提交者配置为
+`newtv-ai <267045021+newtv-ai@users.noreply.github.com>`。提交或推送状态应以
+`git status`、`git log` 和远端引用为准，不依赖这份静态文档；不得未经用户明确
+要求上传到 GitHub。
 
 ## 2. 本轮确认并修复的问题
 
@@ -85,8 +93,10 @@ Claude 复审确认，本地仓库仍同时保留 Reclaimer 时代的 pytest、�
 
 本轮按用户明确决定直接删除，不保留“以后可能会用”的并行架构：
 
-- 删除全部旧测试、测试 transcripts 和 pytest/coverage 配置及依赖。
-- CI 收敛为单个 Windows / Python 3.13 作业，只做静态检查并构建单文件 EXE。
+- 删除全部 Reclaimer 旧测试、测试 transcripts 及其 pytest/coverage 配置和依赖；
+  2.8 后来为当前 DevClean 重新建立了精简 pytest。
+- CI 收敛为单个 Windows / Python 3.13 功能作业；2.8 后当前作业会运行新 pytest，
+  再构建单文件 EXE 和许可证载荷。
 - 删除 wheel/SBOM、JSON Schema、gate evidence、broker 与旧发布校验脚本。
 - 删除旧 CLI、adapters、evidence、state/reporting/doctor/duplicates 等不可达模块。
 - 删除旧 quarantine/restore/replay 状态、旧日志迁移和自动永久清理分支。
@@ -177,9 +187,9 @@ pytest；旧 Reclaimer 测试仍不恢复。
 - 删除不属于原规则的 5 条宽泛 `BASELINE` KEEP 规则；不再用新判断覆盖用户
   原有分类设计。
 - 从 4 份已支付 AI 审核结果中严格恢复 205 条 DELETE 和 40 条 KEEP 结论；
-  758 条 `UNSURE` 不伪造成确定规则。结论只写入本机
-  `release\DevClean-data`，不进入开源默认配置；后续已迁移为环境变量路径和
-  受约束的同类动态规则，详见 2.11。
+  758 条 `UNSURE` 不伪造成确定规则。明确结论已迁移为环境变量路径和受约束的
+  同类动态规则；用户随后明确决定把这批规则连同本轮新增结论纳入开源默认规则
+  库，当前状态详见 2.16。
 - 真实只读扫描遍历 75 万多个文件后，AI 队列为 909 项，不再是 24,987 项。
 
 ### 2.10 删除进度停在“正在准备”
@@ -213,8 +223,9 @@ pytest；旧 Reclaimer 测试仍不恢复。
   导入同形态答案也不会让已冲突模板复活。
 - 明确依赖“超过 N 天”“长期未使用”或“被更新版本取代”的 DELETE 不生成跨
   时间通配，避免把今天的新文件或当前版本套进旧结论。
-- 本机已有 245 条付费 AI 结论已迁移为 245 条可移植精确规则和 53 条同类动态
-  规则；逐条回验原结论 0 处变化，规则值中本机用户名由 245 处降为 0。
+- 当前默认规则库中的 446 条付费 AI 明确结论已迁移为 446 条可移植精确规则和
+  57 条同类动态规则；逐条回验原结论 0 处变化，规则值中本机用户名和
+  `C:\Users\...` 绝对用户路径均为 0。
 - 左右两栏都支持双击：目录直接打开，文件在资源管理器中选中，目标已不存在时
   打开最近仍存在的父目录。
 
@@ -256,6 +267,8 @@ pytest；旧 Reclaimer 测试仍不恢复。
   分别写入精确结论。即使年龄/版本理由抑制通配规则，也不会丢掉其余组员并再次
   收费。
 - 导出状态显示原始文件数、实际 AI 问题数和减少的问题数。
+- 合并后的问题每 300 个分成一卷；超过时完整输出带 `-1ofN` 编号的多份 JSON，
+  不为控制文件大小而截断候选，各卷分别回答和导入。
 - 明确依赖“今天/正在使用/当前版本”等上下文的 KEEP 与依赖年龄/旧版本的 DELETE
   一样只保存精确规则，避免将一次性的结论错误套到明天或其他版本。
 
@@ -272,6 +285,53 @@ pytest；旧 Reclaimer 测试仍不恢复。
 - 删除“整目录会分别询问 AI”的错误表述；整目录本来就不属于 AI 候选。
 - 回收站条目总数只能提供确认成功的正证据，不能提供永久删除的反证；相关状态、
   空间统计和用户提示已改为“结果无法确认”。
+- 删除结果状态改为一次写入最终文案，不再先写“正在重新扫描”后立即替换。AI
+  导出完整路径是当前 UI 的明确产品策略，而非未实现的用户开关：隐藏路径会增加
+  `UNSURE` 和重复费用；界面与说明必须持续告知路径会交给所选模型。
+- 清除源码里的过时说明：界面不是“启动即扫描”，已知清理根不会进入 AI 导出，
+  也不存在“永久清除需独立强确认”；左栏勾选后点击两种删除按钮之一就是授权。
+  同时修正回收核验字段注释，`recycled=False` 只表示无法验证进入回收站。
+
+### 2.15 文档、发布流程与源码事实对齐
+
+- README、使用说明、架构部署和本交接统一使用当前默认配置实数：33 条已知清理根
+  记录、65 个路径模板、6/7/3 个配置分组、500 项 lane/category 上限，以及
+  默认 DELETE/KEEP 路径规则 458/45 条。
+- 删除“默认 KEEP 已明确保护 `.env`、私钥和特定 AI 产品会话”等源码并不存在的
+  旧声明；文档改为逐项描述 `keep-rules.json.classification` 当前实际保护范围。
+- 使用说明补齐每 300 个 AI 问题自动分卷、精确相似合并条件、`DevClean-data`
+  的固定文件布局，以及回收核验失败后的真实提示和空间统计语义。
+- 部署文档区分 `artifacts\windows-exe\dist` 构建产物与 `release` 验收副本，
+  补齐同步、哈希复核、许可证白名单、主 CI 和 CodeQL 的当前流程。
+- PR 模板重新要求附当前 `pytest` 证据；旧 Reclaimer 生成物从 `artifacts`
+  清除，最终只重建当前 `windows-exe` 目录。
+
+### 2.16 三卷付费 AI 审核结果与默认规则库同步
+
+用户提供三份本机导出的当前格式审核包，共 871 个问题、覆盖 960 个文件。处理
+遵守用户确定的边界：只有能够从路径和文件类型明确证明为可重建缓存的对象才回答
+`DELETE`；无法确认安全删除的对象继续回答 `UNSURE`，本轮不新增 `KEEP`。
+
+- 201 个问题回答 `DELETE`：180 个位于 `__pycache__` 的 Python 字节码缓存，
+  以及 Chromium/WebView 图形缓存、BrowserMetrics 性能缓存、扩展包缓存、
+  Visual Studio/Blend 组件模型缓存和一个明确的网页缓存。
+- 670 个问题回答 `UNSURE`，覆盖其余 759 个文件；其中包括 Codex/Claude/
+  Gemini 会话与项目历史、数据库 WAL、模型、下载文件、JDK/Android SDK、
+  已安装运行时和无法证明可重建的项目内容。
+- 三份回复分别通过持久会话索引校验 review session、nonce、package digest、
+  候选 ID 完整性和分组成员展开；合计恰好覆盖 960 个唯一文件。
+- 201 个明确可删文件通过 DevClean 自己的 `add_ai_verdicts()` 写入活动规则，
+  没有直接拼接或绕过规则冲突处理。导入后 201/201 均命中 DELETE。
+- 用户明确要求将已经付费获得的规则库一并开源，因此活动库的规则数组同步到
+  `src\devclean\config\delete-rules.json` 和 `keep-rules.json`。三份原始审核
+  包和回复包仍位于仓库外，因其包含本机完整路径，不提交 GitHub。
+- 当前默认库共 503 条路径规则：DELETE 458 条（406 条 `exact_path`、52 条
+  `path_glob`），KEEP 45 条（40 条 `exact_path`、5 条 `path_glob`）。
+  这对应 446 条可移植精确结论和 57 条同类动态规则。
+- 对三份活动规则和打包默认规则逐值检查：生成时用户名出现 0 次，
+  `C:\Users\...` 绝对用户路径出现 0 次；用户根统一使用 `%USERPROFILE%`、
+  `%LOCALAPPDATA%`、`%APPDATA%` 等变量。日期、时间戳、UUID、长哈希和
+  生成型数字只在保留稳定目录边界时形成动态规则。
 
 ## 3. 当前实际产品流程
 
@@ -298,11 +358,12 @@ pytest；旧 Reclaimer 测试仍不恢复。
 审计解析结果：
 
 - 已知清理根记录：33 条（记录可包含多个路径模板）
+- 已知清理根路径模板：65 个
 - 扫描剪枝人工分组：6 组
 - DELETE 分类人工分组：7 组
 - KEEP 分类人工分组：3 组
-- 默认 DELETE 路径规则：0 条
-- 默认 KEEP 路径规则：0 条
+- 默认 DELETE 路径规则：458 条（406 条精确规则、52 条同类动态规则）
+- 默认 KEEP 路径规则：45 条（40 条精确规则、5 条同类动态规则）
 - AI 明确 DELETE/KEEP 规则合计上限：100,000 条
 - 支持 `exact_path`、`path_prefix`、`path_glob`、`filename_glob`、`path_regex`、`filename_regex`
 - 三份文件都含 `_ai_editing_contract`
@@ -391,17 +452,20 @@ pytest；旧 Reclaimer 测试仍不恢复。
 - GUI 入口可达性复核：没有不可达的非初始化运行时模块
 - PyInstaller 单文件构建：通过
 - 源码入口 `--ui-smoke` GUI 构造与退出码检查：通过
+- 最终 `release\DevClean.exe --ui-smoke` GUI 构造与退出码检查：通过
 - 成品 EXE 内 `devclean.config` 模块及三份默认规则归档检查：通过
-- 直接读取成品归档确认三份当前规则均已打包，默认 DELETE/KEEP 路径规则均为
-  0 条：通过
+- 直接读取成品归档确认三份当前规则均已打包，默认 DELETE/KEEP 路径规则为
+  458/45 条，且三份归档内容分别与源码模板逐字节一致：通过
+- 将本轮 201 个 DELETE 路径整体切换为另一 Windows 用户后回验规则命中：
+  201/201；另行替换时间戳、哈希和生成型 ID 的四种动态样本：4/4 命中
 - EXE 50 MB 体积门槛：通过
 - 发布载荷白名单：通过
 - 最终 release EXE SHA-256 复核：通过
 
 本轮最终 EXE：
 
-- 大小：12,774,642 字节（低于 50 MB 门槛）
-- SHA-256：`BE989FF8B8BE40A0ED8DD161F29A1F1A858FE0F7E62960F42D7757D342048EFE`
+- 大小：12,796,352 字节（低于 50 MB 门槛）
+- SHA-256：`8C856F0CA910D1C3B9F17257F441976B781C6D633AAEB3E144191FB39DEE1AC6`
 
 构建警告仅为 Windows 上不存在的 POSIX/Java 可选模块，以及 PyInstaller 对 `collections.abc` 的已知分析提示；GUI 冒烟已实际导入并构造应用窗口，因此不是缺失的运行时依赖。
 

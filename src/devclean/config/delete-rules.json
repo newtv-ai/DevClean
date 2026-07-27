@@ -116,22 +116,55 @@
       "app",
       "update"
     ],
-    "cache_segments": ["cache", "cacheddata", "gpucache", "caches"],
-    "container_segments": ["docker", "podman", "containers", "wsl", "wsl2"],
-    "container_suffixes": [".vhd", ".vhdx"],
-    "windows_update_segments": ["windows.old", "winsxs"],
-    "windows_update_segment_groups": [
-      ["softwaredistribution", "download"]
+    "cache_segments": [
+      "cache",
+      "cacheddata",
+      "gpucache",
+      "caches"
     ],
-    "conda_segments": [".conda", "conda-meta"],
-    "downloads_segments": ["downloads"],
+    "container_segments": [
+      "docker",
+      "podman",
+      "containers",
+      "wsl",
+      "wsl2"
+    ],
+    "container_suffixes": [
+      ".vhd",
+      ".vhdx"
+    ],
+    "windows_update_segments": [
+      "windows.old",
+      "winsxs"
+    ],
+    "windows_update_segment_groups": [
+      [
+        "softwaredistribution",
+        "download"
+      ]
+    ],
+    "conda_segments": [
+      ".conda",
+      "conda-meta"
+    ],
+    "downloads_segments": [
+      "downloads"
+    ],
     "inferred_ai_review_categories": [
       "PROJECT_BUILD_OUTPUT",
       "INSTALLERS_DOWNLOADS",
       "SYSTEM_LOGS"
     ],
-    "inferred_report_only_categories": ["WINDOWS_UPDATE"],
-    "system_log_suffixes": [".dmp", ".log", ".etl", ".evtx", ".tmp"],
+    "inferred_report_only_categories": [
+      "WINDOWS_UPDATE"
+    ],
+    "system_log_suffixes": [
+      ".dmp",
+      ".log",
+      ".etl",
+      ".evtx",
+      ".tmp"
+    ],
     "installer_suffixes": [
       ".msi",
       ".msix",
@@ -189,7 +222,10 @@
       "conda_segments",
       "downloads_segments"
     ],
-    "containers": ["container_segments", "container_suffixes"],
+    "containers": [
+      "container_segments",
+      "container_suffixes"
+    ],
     "stale_versions": [
       "version_name_regex",
       "version_separators_regex",
@@ -203,7 +239,9 @@
       "inferred_ai_review_categories",
       "inferred_report_only_categories"
     ],
-    "presentation": ["category_source_domains"]
+    "presentation": [
+      "category_source_domains"
+    ]
   },
   "match_help": {
     "exact_path": "仅匹配一个完整路径",
@@ -213,5 +251,4586 @@
     "path_regex": "正则搜索完整路径，路径分隔符统一写成 /",
     "filename_regex": "正则搜索文件名"
   },
-  "rules": []
+  "rules": [
+    {
+      "id": "ai_a331c94edd5fd73a22c6987d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.jdks\\graalvm-jdk-25\\lib\\svm\\profile_inference\\onnx\\native\\onnxruntime.pdb",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e200a022c81527e5ca0a7f48",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\nvidia\\dxcache\\fa36a93b2312ab7f.nvph",
+      "source": "AI_IMPORT",
+      "reason": "这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_8683409556960e4efd9e73a6",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\nvidia\\dxcache\\*.nvph",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_dcd956775c7f1543cf6aa966",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\nvidia\\dxcache\\0002a93b2312ab7f.nvph",
+      "source": "AI_IMPORT",
+      "reason": "这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_19a92e85b7c43e0a83818538",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.local\\share\\claude\\versions\\2.1.81",
+      "source": "AI_IMPORT",
+      "reason": "这是已被更新版本取代、且超过90天未被访问的旧版本 Claude Code CLI 安装目录，通常只需保留最新版本用于回滚，此项可以清理，工具更新时会自动重新获取。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b566b1ac2dcdb9afbd6da082",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.gradle\\wrapper\\dists\\gradle-8.10.2-all\\ezxzryhqdbf6stsda8vkgso9x\\gradle-8.10.2-all.zip",
+      "source": "AI_IMPORT",
+      "reason": "这是 Gradle/Maven wrapper 自动下载的构建工具发行包缓存，删除后下次构建会自动重新下载，不影响项目本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_2fd3db3a6f14f8b608d22788",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.codex\\sessions\\2026\\03\\13\\rollout-2026-03-13t11-09-13-019ce52b-6999-7a22-9da8-8a5a38774081.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Codex CLI 的历史会话记录文件，超过90天未被修改/访问，属于长期未再查看的旧对话记录，工具运行不依赖它，可以安全清理(仅进回收站，可找回)。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_691adfe126e405ab9ba6532b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\edge\\user data\\provenancedata\\2025.10.7.5\\vti-b-p32-visual.quant.ort",
+      "source": "AI_IMPORT",
+      "reason": "这是 Edge 浏览器的组件校验数据或本地 AI 模型缓存，浏览器会自动按需重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_d6167d75432c8bc85069dc12",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.codex\\sessions\\2026\\03\\19\\rollout-2026-03-19t10-47-33-019d03fd-b9ad-7130-af3c-49c4ed8b9cf0.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Codex CLI 的历史会话记录文件，超过90天未被修改/访问，属于长期未再查看的旧对话记录，工具运行不依赖它，可以安全清理(仅进回收站，可找回)。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_f93f4724e61aa31afe9e9fb0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\edge\\user data\\component_crx_cache\\f081de18a604e95a175eaf4dd91b35b7f17ad4de24ee2f20eeb034c979bbcccb",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_82f6d8e8e7fbf12e6e2fc6ed",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\microsoft\\edge\\user data\\component_crx_cache\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_6af1e83cc79bbdbce1f90407",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\trae cn\\cachedextensionvsixs\\.4153de52-dc05-4ead-b956-b4952ff2538e",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器扩展安装包的下载缓存(VSIX)，仅用于加速安装，删除不影响已安装的扩展，需要时会重新下载。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_d9ee4cd81358a133b85e11b0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\trae cn\\cachedextensionvsixs\\.*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是编辑器扩展安装包的下载缓存(VSIX)，仅用于加速安装，删除不影响已安装的扩展，需要时会重新下载。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1a4579b956f6d31c0fdf97d5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\trae cn\\cachedextensionvsixs\\.9e2bbe61-81c1-4c5c-b43f-373e36112cf6",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器扩展安装包的下载缓存(VSIX)，仅用于加速安装，删除不影响已安装的扩展，需要时会重新下载。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_50edf356f785b8724d9fe61d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.easyocr\\model\\craft_mlt_25k.pth",
+      "source": "AI_IMPORT",
+      "reason": "这是 EasyOCR 库的模型权重文件，该库在检测到模型缺失时会自动从官方地址重新下载，删除不会导致程序报错崩溃，只是下次使用时需要重新下载。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_0c3e07c3e49d274838989833",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\trae cn\\cachedextensionvsixs\\.4adb74e1-5efe-40d4-8e95-cd8cd9ef082d",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器扩展安装包的下载缓存(VSIX)，仅用于加速安装，删除不影响已安装的扩展，需要时会重新下载。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e352acc9edac84434561af35",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.antigravity\\extensions\\meta.pyrefly-1.0.0-win32-x64\\bin\\pyrefly.pdb",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_2f8f854d794a7eeafdf1b085",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\nvidia\\glcache\\b4ca50b276932b39b279a27044b194fa\\ebc7fb29f4897ba0\\87b1ec4d4af1d2e0.bin",
+      "source": "AI_IMPORT",
+      "reason": "这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_c6a7f828573b973170548c2f",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\nvidia\\glcache\\*\\*\\*.bin",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_559e564f9f2679c479431ed5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.codex\\sessions\\2026\\03\\12\\rollout-2026-03-12t17-53-48-019ce177-7488-78b1-bf64-fddd2aaddcb3.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Codex CLI 的历史会话记录文件，超过90天未被修改/访问，属于长期未再查看的旧对话记录，工具运行不依赖它，可以安全清理(仅进回收站，可找回)。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_d3b486b63cff6ad89e2026c5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.jdks\\graalvm-jdk-17.0.12\\lib\\src.zip",
+      "source": "AI_IMPORT",
+      "reason": "这是 JDK 附带的标准库源码压缩包，仅用于 IDE 查看源码，删除不影响编译和运行，只是 IDE 里看不到 JDK 源码，需要时可通过重装 JDK 找回。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_880b317d04eb50208056e333",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\antigravity\\user\\workspacestorage\\52773df640dd8d352a09027be51f25bf\\redhat.java\\jdt_ws\\.metadata\\.plugins\\org.eclipse.jdt.core\\946828075.index",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_02417f6039db1347f5a74ed1",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\antigravity\\user\\workspacestorage\\*\\redhat.java\\jdt_ws\\.metadata\\.plugins\\org.eclipse.jdt.core\\*.index",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_933bf48867ae7936cca75841",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.jdks\\graalvm-jdk-25\\lib\\src.zip",
+      "source": "AI_IMPORT",
+      "reason": "这是 JDK 附带的标准库源码压缩包，仅用于 IDE 查看源码，删除不影响编译和运行，只是 IDE 里看不到 JDK 源码，需要时可通过重装 JDK 找回。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_94e49295a5743d92b0b0521f",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\trae cn\\user\\workspacestorage\\acc4c5f9b995bcbc4458bc4664c9d76a\\redhat.java\\jdt_ws\\.metadata\\.plugins\\org.eclipse.jdt.core\\3837412422.index",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ca80a0cbd430ff1153fc3bb4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\trae cn\\user\\workspacestorage\\*\\redhat.java\\jdt_ws\\.metadata\\.plugins\\org.eclipse.jdt.core\\*.index",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e8c04074d223f2efbe589f2c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.jdks\\graalvm-jdk-25\\lib\\svm\\adopted_profiles\\jdk_profile.iprof",
+      "source": "AI_IMPORT",
+      "reason": "这是 GraalVM Native Image 的性能分析(PGO)数据文件，删除后下次构建原生镜像会跳过该优化或重新生成，不影响正常使用。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_fda03278fad4ef41dd5ea533",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\android\\sdk\\.downloadintermediates\\x86-34_r03.zip.asdownload",
+      "source": "AI_IMPORT",
+      "reason": "这是 Android SDK 组件下载过程中产生的未完成/中间下载文件，属于残留临时文件，可以安全删除。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_f8facd13fc14586c94324f00",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\dynamicresourcepackage\\19a46036c57aed759d46340a48126b61.zip",
+      "source": "AI_IMPORT",
+      "reason": "这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_81867c77826070007c3fecd2",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\dynamicresourcepackage\\*.zip",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_4c2bdf85ea31f0336e72f00a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.gemini\\antigravity-browser-profile\\optimization_guide_model_store\\43\\63922a0c010c80a5\\766e13c34f451c7f\\model.tflite",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_c5e8693591f3dac05dc026be",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%USERPROFILE%\\.gemini\\antigravity-browser-profile\\optimization_guide_model_store\\43\\*\\*\\model.tflite",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_5e82ec491f308ac0f154203c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\optimization_guide_model_store\\43\\63922a0c010c80a5\\7febf08fba79b819\\model.tflite",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ce181a225ef21d9014c4dec7",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\optimization_guide_model_store\\43\\*\\*\\model.tflite",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_cfbfbd41ed160ed15d6baa82",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\dynamicresourcepackage\\bf199e124777c18e5c9a3f09a93db615.zip",
+      "source": "AI_IMPORT",
+      "reason": "这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ebd41e5333854de8beff00aa",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\androidstudio2024.2\\index\\trigram.index\\trigram.index.storage.values",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_9dbd34bc9e6630ca22fea67d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\antigravity\\user\\workspacestorage\\52773df640dd8d352a09027be51f25bf\\redhat.java\\jdt_ws\\.metadata\\.plugins\\org.eclipse.jdt.core\\3278512323.index",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_68f38d412d344a8e52909488",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\dynamicresourcepackage\\b9a13512ff6cea6c2df0276865fa3418.zip",
+      "source": "AI_IMPORT",
+      "reason": "这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b6e6c0f7025d3f2932fb0960",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\qq\\qqex\\dynamic_package\\exminidocv2\\3.9.21.209.zip",
+      "source": "AI_IMPORT",
+      "reason": "这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_6c2036054f11a567c3fb3239",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\qq\\qqex\\dynamic_package\\exminidocv2\\3.9.21.209\\application.asar",
+      "source": "AI_IMPORT",
+      "reason": "这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1a3aafa9d24c390bd89aea03",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.gradle\\wrapper\\dists\\gradle-8.10.2-all\\ezxzryhqdbf6stsda8vkgso9x\\gradle-8.10.2\\docs\\userguide\\userguide.pdf",
+      "source": "AI_IMPORT",
+      "reason": "这是 Gradle/Maven wrapper 自动下载的构建工具发行包缓存，删除后下次构建会自动重新下载，不影响项目本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ae3d473022650e46b3634af8",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.codex\\sessions\\2026\\03\\06\\rollout-2026-03-06t09-07-51-019cc0af-c6b7-7a12-ad7f-16337e772ef6.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Codex CLI 的历史会话记录文件，超过90天未被修改/访问，属于长期未再查看的旧对话记录，工具运行不依赖它，可以安全清理(仅进回收站，可找回)。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b8012a07350657efe07ecfba",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\extensions_crx_cache\\a76ebd5f6c0be6bd02766309c9a4b5704cc14817b3729b676d58d84096b38405",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_25124d9cc4b2dc2e2af14807",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\extensions_crx_cache\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_da43d8a059196bcb9fda96b0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\androidstudio2024.2\\index\\idindex\\idindex.storage.values",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b104b5880c506fa9536bb880",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.android\\avd\\television_1080p_api_30_2.avd\\snapshots\\default_boot\\textures.bin",
+      "source": "AI_IMPORT",
+      "reason": "这是 Android 模拟器(AVD)的快速启动快照缓存，删除后模拟器会执行一次完整冷启动并可重新生成快照，不影响虚拟设备本身的配置和数据。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_a3de74376d07de489e61a735",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\antigravity\\cachedextensionvsixs\\.f5f38fa5-3fba-43bd-8c44-4ad3da5bd233",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器扩展安装包的下载缓存(VSIX)，仅用于加速安装，删除不影响已安装的扩展，需要时会重新下载。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_3deb7b477bced0543a692b0d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\antigravity\\cachedextensionvsixs\\.*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是编辑器扩展安装包的下载缓存(VSIX)，仅用于加速安装，删除不影响已安装的扩展，需要时会重新下载。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_8bed9bb291994a395abf7360",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\1f\\e8\\5712ff6075542e0d3827a83f9241f7e85a873439fe7d012b52cd3123fdf7964c102749f483dfe0ea97566bb894319b2913fc9558d1d13c29aef3d031f587",
+      "source": "AI_IMPORT",
+      "reason": "这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_0de2e37c2bc4399b6eda3b0b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\1f\\e8\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_900bc7ffa02f12fdcf24d6e6",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\packages\\openai.codex_2p2nqsd0c76g0\\localcache\\roaming\\codex\\web\\codex\\component_crx_cache\\c8c2fd0acdb7eecaf4f66d5164204c4e8e5ebbabb6398e0ee6ec6d8af71ea672",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_9f0d5de570c45d30a5210f5e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\packages\\openai.codex_2p2nqsd0c76g0\\localcache\\roaming\\codex\\web\\codex\\component_crx_cache\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_6fe1a90d1cdb0aed5dee93f1",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\component_crx_cache\\c8c2fd0acdb7eecaf4f66d5164204c4e8e5ebbabb6398e0ee6ec6d8af71ea672",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_df28ad0b71209cc79b97c5fc",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\component_crx_cache\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_fd65bd132c779c1911d40f59",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.gemini\\antigravity-browser-profile\\component_crx_cache\\209b99dc8daaafd06a4e9f68405278143a0a25d9e609cea7bc87229f20842ce9",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e868b651429c792c6d803258",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%USERPROFILE%\\.gemini\\antigravity-browser-profile\\component_crx_cache\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_aba3d84e34c8e36011228e51",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\packages\\openai.codex_2p2nqsd0c76g0\\localcache\\roaming\\codex\\web\\codex\\component_crx_cache\\7b81444b063f81e77c527c5589e86836cc2f7328deb2772300ccc7dc9e2510c3",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_faf73857dfc56fe87af407e6",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.codex\\sessions\\2026\\03\\10\\rollout-2026-03-10t15-25-57-019cd6a3-6092-7ff3-8419-a9a411ad1881.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Codex CLI 的历史会话记录文件，超过90天未被修改/访问，属于长期未再查看的旧对话记录，工具运行不依赖它，可以安全清理(仅进回收站，可找回)。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_95ffb53cfb35aa4b956923c4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\antigravity\\user\\workspacestorage\\52773df640dd8d352a09027be51f25bf\\redhat.java\\jdt_ws\\.metadata\\.plugins\\org.eclipse.jdt.core\\1865797976.index",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_c82f36596b2307bf00041992",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\androidstudio2024.2\\index\\idindex\\idindex_inputs.values",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e25d12f7b75b29b5f759f06f",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\androidstudio2024.2\\index\\stubs\\stubs.storage.values",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_17a4389cc28c8a044a0b42d0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.gemini\\antigravity-browser-profile\\safe browsing\\urlsoceng.store.4_13420385410759998",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_4912d0ccb13d8cefac7369f6",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%USERPROFILE%\\.gemini\\antigravity-browser-profile\\safe browsing\\urlsoceng.store.4_*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_d89ebb0d2e8d776ef38f1010",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.gemini\\antigravity-browser-profile\\safe browsing\\urlsoceng.store.4_13420383604047123",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_6a4cbdeca47acd3c824bebd8",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\safe browsing\\urlsoceng.store.4_13429457286713202",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_5de0f9657b5671334de86ff8",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\safe browsing\\urlsoceng.store.4_*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ecd266f5724e7d6fbcbd2a25",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\safe browsing\\urlsoceng.store.4_13429459072546848",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_718c3c0bfe034a071b989126",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\packages\\microsoftwindows.client.webexperience_cw5n1h2txyewy\\localstate\\ebwebview\\component_crx_cache\\7b178e210609ce91b858acfd7f2d9456ce71f6a45e773862cb3c3efa3a6ab999",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_9b125de9ddd15d2e72a28839",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\packages\\microsoftwindows.client.webexperience_cw5n1h2txyewy\\localstate\\ebwebview\\component_crx_cache\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_4cb3f9074775b3d68e88935a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\edge\\user data\\component_crx_cache\\7b178e210609ce91b858acfd7f2d9456ce71f6a45e773862cb3c3efa3a6ab999",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_5c27dbd746258a1e6de784db",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\packages\\microsoftwindows.client.cbs_cw5n1h2txyewy\\localstate\\ebwebview\\component_crx_cache\\7b178e210609ce91b858acfd7f2d9456ce71f6a45e773862cb3c3efa3a6ab999",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e633732df7c78b1db8212b2c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\packages\\microsoftwindows.client.cbs_cw5n1h2txyewy\\localstate\\ebwebview\\component_crx_cache\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b1da34f540f1edace1739d7d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\antigravity\\user\\workspacestorage\\52773df640dd8d352a09027be51f25bf\\redhat.java\\jdt_ws\\.metadata\\.plugins\\org.eclipse.jdt.core\\2876908930.index",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_09e8600dc60b7641352c0598",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\dynamicresourcepackage\\a9ee03cc35f14134138f8547b8a809dd.zip",
+      "source": "AI_IMPORT",
+      "reason": "这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_cec4809e1e1613ba62edae72",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\nvidia\\dxcache\\fa36a93be55dc0b8.nvph",
+      "source": "AI_IMPORT",
+      "reason": "这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_6fad5fc08a080d1511ba72ce",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\nvidia\\dxcache\\583ba93b2312ab7f.nvph",
+      "source": "AI_IMPORT",
+      "reason": "这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_67c6d421cb24bec997d1e8a3",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\nvidia\\dxcache\\fa36a93b78152508.nvph",
+      "source": "AI_IMPORT",
+      "reason": "这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_7ce819addb4062790b76424a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\nvidia\\dxcache\\89d160c2d7c96e3d3e78db5940b1c82b_fce8395c8fd8a93b_0277b0c5cd77db3b_0_1.2.bin",
+      "source": "AI_IMPORT",
+      "reason": "这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_08ec69d68c88d8513125bdf4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\nvidia\\dxcache\\*.bin",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_d577dc2bfa887a92c6105405",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\nvidia\\dxcache\\0002a93b78152508.nvph",
+      "source": "AI_IMPORT",
+      "reason": "这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b03a67f25a14fd87d13571e7",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\nvidia\\dxcache\\89d160c2d7c96e3d3e78db5940b1c82b_fce8395c8fd8a93b_0277b0c5cd77db3b_0_0.2.bin",
+      "source": "AI_IMPORT",
+      "reason": "这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_60ef9b46c303a76368866036",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\androidstudio2024.2\\index\\trigram.index\\trigram.index_inputs.values",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_73ab16443214cce3fb745928",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.jdks\\graalvm-jdk-25\\bin\\server\\classes.jsa",
+      "source": "AI_IMPORT",
+      "reason": "这是 JVM 的类数据共享(CDS)归档文件，属于可选的启动加速优化，删除后 JVM 会退回普通启动方式，不影响功能，通常可重新生成。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_c298e20bb1f391b336e0abc1",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\antigravity\\user\\workspacestorage\\52773df640dd8d352a09027be51f25bf\\redhat.java\\jdt_ws\\.metadata\\.plugins\\org.eclipse.jdt.core\\3193935347.index",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_a78186883f749b6fda9d4f20",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.easyocr\\model\\english_g2.pth",
+      "source": "AI_IMPORT",
+      "reason": "这是 EasyOCR 库的模型权重文件，该库在检测到模型缺失时会自动从官方地址重新下载，删除不会导致程序报错崩溃，只是下次使用时需要重新下载。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1540ecc625e5fab198440e56",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\ylh\\1210833281\\ebwebview\\component_crx_cache\\2d2f683649600db91050fb41cd9ffea403ae024de38a0647b18e7f6106f6c55d",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_c2936edee20b4cc614efd0ec",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\ylh\\*\\ebwebview\\component_crx_cache\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_de1ef6ad1143a864ca69b09b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\androidstudio2024.2\\lint\\private-apis-17-7541949.bin",
+      "source": "AI_IMPORT",
+      "reason": "这是 Android Studio Lint 检查功能的内部缓存文件，重新分析代码时会自动重建，删除不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_4a1879da09a9627d9abebd9b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\google\\androidstudio2024.2\\lint\\private-apis-17-*.bin",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Android Studio Lint 检查功能的内部缓存文件，重新分析代码时会自动重建，删除不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b6b99eed8060b1600838477b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\dynamicresourcepackage\\f4fba118a16208f939e104807b7c71e0.zip",
+      "source": "AI_IMPORT",
+      "reason": "这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_006af28d0d4d4ce1bc6fb966",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\edge\\user data\\component_crx_cache\\806ab1cfec1435f895d6be471d00b8f035884fe1605371a4b80a1099b65b9fe9",
+      "source": "AI_IMPORT",
+      "reason": "这是 Chrome/Edge 浏览器的组件更新缓存或本地模型缓存，浏览器会按需自动重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_94593517f0b25bdaee953afb",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\70\\e6\\593958434ae9602b499e4ec4e498d5dbd5a855be64e65a67f1f60441c1cea1abdf304bd24fdf911222836adf1a846a7f9437e827f35f3b67a13834a84bb3",
+      "source": "AI_IMPORT",
+      "reason": "这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1b9131dbef43a353be09a45c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\70\\e6\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_a65478c879e78658af050dd4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.jdks\\graalvm-jdk-17.0.12\\bin\\server\\classes.jsa",
+      "source": "AI_IMPORT",
+      "reason": "这是 JVM 的类数据共享(CDS)归档文件，属于可选的启动加速优化，删除后 JVM 会退回普通启动方式，不影响功能，通常可重新生成。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_830382548bcc6449a837569c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\nvidia\\glcache\\b4ca50b276932b39b279a27044b194fa\\239d5c0a3548b05a\\f452c563f8c73bef.bin",
+      "source": "AI_IMPORT",
+      "reason": "这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_cf55d3247e8f75791f5929c9",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\audiomodel\\19a46036c57aed759d46340a48126b61\\audio_ai_model\\speaker_resnet34_stream_tnne.bin",
+      "source": "AI_IMPORT",
+      "reason": "这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_cc3c3c8e7a81307f0be66879",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\audiomodel\\*\\audio_ai_model\\speaker_resnet34_stream_tnne.bin",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_f7b4f4a1deef851b7f404efb",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\appdata\\locallow\\microsoft\\cryptneturlcache\\content\\1e2dbd58769a756a24a9d033f9b07f3d",
+      "source": "AI_IMPORT",
+      "reason": "这是 Windows 系统级的网络内容缓存(CryptnetUrlCache)，用于证书吊销列表等内容缓存，删除后系统会按需重新获取，安全。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_489d94c800c08b88822c6a9e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%USERPROFILE%\\appdata\\locallow\\microsoft\\cryptneturlcache\\content\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 Windows 系统级的网络内容缓存(CryptnetUrlCache)，用于证书吊销列表等内容缓存，删除后系统会按需重新获取，安全。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_53269b0ee42d249aa95f665f",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\blend\\17.0_765d4269\\imagelibrary\\imagelibrary.cache",
+      "source": "AI_IMPORT",
+      "reason": "文件名或所在目录明确标注为 cache，属于应用自行管理的缓存数据，删除后应用会在需要时自动重建，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ef35b38ad77454aa872dee1e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\8b\\5c\\fd366893a1a2c22cdfaece0905975b3152868bcc4dc2fe896a5730ae2da10e3261da16a177f3b72d44299e4983cbea45007c0ff5bb4aa35a1504c5b7827d",
+      "source": "AI_IMPORT",
+      "reason": "这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_61074875bb19f6435b61a53e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\8b\\5c\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_0f44a1e18d86535ee2a5dbab",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\a1\\36\\d54ec5df2ae121c5fb47a8be71a6b80ba1cd24eee49c030b6bc8281617a84f6052d1c0e50788598718204a3f934f14d903568a4e89ec94a98187f056b790",
+      "source": "AI_IMPORT",
+      "reason": "这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_07132f1d18e51bf5fa7c936d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\a1\\36\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_de2944b44c85feed2969489a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\androidstudio2024.2\\index\\idindex\\idindex.storage_i",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_fdcd3e8f6535cafc407e85b1",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.codex\\sessions\\2026\\02\\27\\rollout-2026-02-27t12-13-51-019c9d4d-8dda-7ea1-828e-30b890f819ef.jsonl",
+      "source": "AI_IMPORT",
+      "reason": "这是 Codex CLI 的历史会话记录文件，超过90天未被修改/访问，属于长期未再查看的旧对话记录，工具运行不依赖它，可以安全清理(仅进回收站，可找回)。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b33644906b50ab6f02ac995a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.m2\\wrapper\\dists\\apache-maven-3.6.2-bin\\795eh28tki48bv3l67maojf0ra\\apache-maven-3.6.2-bin.zip",
+      "source": "AI_IMPORT",
+      "reason": "这是 Gradle/Maven wrapper 自动下载的构建工具发行包缓存，删除后下次构建会自动重新下载，不影响项目本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_f092040a2cd2b3a37d817f83",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\antigravity\\user\\workspacestorage\\52773df640dd8d352a09027be51f25bf\\redhat.java\\jdt_ws\\.metadata\\.plugins\\org.eclipse.jdt.core\\2201781640.index",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_f2ad05927fca9ada99752c6e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\archive-3.6.1\\test\\tests\\res\\test_100k_files.zip",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_95c5148969101becd80a1879",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\edge\\user data\\edge entity extraction\\2026.6.30.7\\pre-release\\onnx.product.desktop.zh\\3.2.3\\asset",
+      "source": "AI_IMPORT",
+      "reason": "这是 Edge 浏览器的组件校验数据或本地 AI 模型缓存，浏览器会自动按需重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_35e04e2431259b4ace26f093",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\edge\\user data\\edge entity extraction\\2026.6.30.7\\onnx.product.desktop.zh\\3.1.0\\asset",
+      "source": "AI_IMPORT",
+      "reason": "这是 Edge 浏览器的组件校验数据或本地 AI 模型缓存，浏览器会自动按需重新下载，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_9cefc8f3bd75223b7553c387",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\33\\41\\cb381c8f59b61f1584dda749218bb2d95bb5922a8923d10bb23ca77cecf46af29bd205c0a456981fe7c17732638021467ede476c2251e9cde1ce5ccad49b",
+      "source": "AI_IMPORT",
+      "reason": "这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ff8ecc837936f72cb010c1f9",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\33\\41\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_984449a6f49ba22b6b10917a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\52\\d5\\b13c1a47b85bc490cfb91557dc146f59284599408ebe3d992f2c4aebf19b39bb1f8eeff290dc98d252f01f3a531e32077fefbaa51e93b0d321cbec953973",
+      "source": "AI_IMPORT",
+      "reason": "这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_aa6a1658e8310ec1b9a8d748",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\52\\d5\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_7d80af4069985aa366456aa3",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\aa\\e6\\32198aa43a8e42fbc81876e795e9a802d4c6bc47a296921678272890b5bcd06f83d66ada627d392c207a0f66d6eab8c971511a9cebea9ff3b1d674881a9e",
+      "source": "AI_IMPORT",
+      "reason": "这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_6f43c2f179a57809247e9e4d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\aa\\e6\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_7a1685cac0124552e17e0270",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\packages\\openai.codex_2p2nqsd0c76g0\\localcache\\roaming\\codex\\web\\codex\\grshadercache\\data_3",
+      "source": "AI_IMPORT",
+      "reason": "这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_a093410f5ac596cc56f85a18",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.gemini\\antigravity-browser-profile\\grshadercache\\data_3",
+      "source": "AI_IMPORT",
+      "reason": "这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_f811eb59207a18f6d376a8b0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\grshadercache\\data_3",
+      "source": "AI_IMPORT",
+      "reason": "这是显卡驱动的着色器缓存，由驱动自动管理和重建，删除只会导致下次使用时短暂重新编译着色器，不影响功能。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e877933ea7b6b7b693895a25",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\androidstudio2024.2\\index\\bytecodeanalysis\\bytecodeanalysis.storage.keystream",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_d3b7b166bc5559455971a8b5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\antigravity\\user\\workspacestorage\\52773df640dd8d352a09027be51f25bf\\redhat.java\\jdt_ws\\.metadata\\.plugins\\org.eclipse.jdt.core\\2168762559.index",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_2c6750e33c78053ef188c347",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\trae cn\\user\\workspacestorage\\147bc1577979f2bfd073d48115047b72\\state.vscdb",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器某个工作区的界面状态数据库(记录最近打开的文件等)，删除不影响项目文件，重新打开该工作区时会自动重建为空白状态。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_202cb06e5ab359111e799202",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\trae cn\\user\\workspacestorage\\*\\state.vscdb",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是编辑器某个工作区的界面状态数据库(记录最近打开的文件等)，删除不影响项目文件，重新打开该工作区时会自动重建为空白状态。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ec2042a8ba87357fdff34447",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\trae cn\\user\\workspacestorage\\147bc1577979f2bfd073d48115047b72\\state.vscdb.backup",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器某个工作区的界面状态数据库(记录最近打开的文件等)，删除不影响项目文件，重新打开该工作区时会自动重建为空白状态。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_efee112ee38608c5581b9323",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\trae cn\\user\\workspacestorage\\*\\state.vscdb.backup",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是编辑器某个工作区的界面状态数据库(记录最近打开的文件等)，删除不影响项目文件，重新打开该工作区时会自动重建为空白状态。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_17c262a29bded94239ec7763",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\4a\\9c\\e984e52755a1bcb4ead83a8d12cfa3cec8b5fa874fa4c7faf9e2335bbea424b5078d155ffeb0f1c6205e1909f2493b031bb7cd01aadba806d64edac03440",
+      "source": "AI_IMPORT",
+      "reason": "这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_4bbdc8b68e133c48847fd326",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\4a\\9c\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_d74c472c067527f5a3d4815d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\default\\service worker\\scriptcache\\0c80f64eb5a77a43_0",
+      "source": "AI_IMPORT",
+      "reason": "这是基于 Chromium 内核的应用(浏览器/内置网页组件)的脚本或 GPU 渲染缓存，程序会自动重新生成，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_791e97c4bc91380157c108a0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\default\\service worker\\scriptcache\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是基于 Chromium 内核的应用(浏览器/内置网页组件)的脚本或 GPU 渲染缓存，程序会自动重新生成，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_0a3000610af79f42d323e965",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\66\\3c\\e6d4d9c55c6855e0b619e997bdb243e5622d81e0a026375f052fadc0dcf65c8e10dfae81f086d33a444f01a2794e3c75d49cf4329c7d0181aa047ef86b1b",
+      "source": "AI_IMPORT",
+      "reason": "这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b72e9a3eb4cbd97ee2b47b65",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\66\\3c\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_8c5ecaccc97e3589b075526d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\antigravity\\user\\workspacestorage\\52773df640dd8d352a09027be51f25bf\\redhat.java\\jdt_ws\\.metadata\\.plugins\\org.eclipse.jdt.core\\72558351.index",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_cc7240b4e19fc627779ecaf3",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\eb\\01\\f160643ded5d6e0c6c40b99e6d4a48125b7b69297749d1d205140d3f6736743fc829d3a172325f1f9d2a7b4d870f307f615ffc3681e50cafa52dde9262f8",
+      "source": "AI_IMPORT",
+      "reason": "这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_7f96242a5477b9eb962feb48",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\npm-cache\\_cacache\\content-v2\\sha512\\eb\\01\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 npm 的本地包缓存，删除后 npm 会在下次安装依赖时按需重新下载，不影响已安装的项目。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_89b91bd4f4e0927812bd9f62",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\antigravity\\user\\workspacestorage\\52773df640dd8d352a09027be51f25bf\\redhat.java\\jdt_ws\\.metadata\\.plugins\\org.eclipse.jdt.core\\3889145515.index",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ec57162d806d496f1779d9ec",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\89\\896c9f3619c54fd04ab38682f3c3a4f2.linked",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_3eeac95d2d7226f7cab0c521",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\89\\*.linked",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_c1a0fa319bea41a4c18db07e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\e2\\e2c60b18f7aada89a4a0ba46d0a5c2d9.linked",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_833421a8d257a13681619496",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\e2\\*.linked",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_a677f158a12d32fb709ef2ef",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\audiomodel\\19a46036c57aed759d46340a48126b61\\audio_ai_model\\mscnn_16k_lite.bin",
+      "source": "AI_IMPORT",
+      "reason": "这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_619138cf48e82f6b761cffeb",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\audiomodel\\*\\audio_ai_model\\mscnn_16k_lite.bin",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_71b8fc49e8a0252c55305b27",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\antigravity\\cachedextensionvsixs\\.b582fcf4-782e-4ce3-a473-a0c3602e369d",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器扩展安装包的下载缓存(VSIX)，仅用于加速安装，删除不影响已安装的扩展，需要时会重新下载。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_3266f99006ab05eac505e321",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\blend\\17.0_765d4269\\itemtemplatescache_{00000000-0000-0000-0000-000000000000}\\cache.bin",
+      "source": "AI_IMPORT",
+      "reason": "文件名或所在目录明确标注为 cache，属于应用自行管理的缓存数据，删除后应用会在需要时自动重建，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_991d16c618f1e0a8c16a8142",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\microsoft\\blend\\17.0_765d4269\\itemtemplatescache_{*\\cache.bin",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；文件名或所在目录明确标注为 cache，属于应用自行管理的缓存数据，删除后应用会在需要时自动重建，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_9070974c7463ec50ed3ccfb5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\default\\service worker\\scriptcache\\0c80f64eb5a77a43_1",
+      "source": "AI_IMPORT",
+      "reason": "这是基于 Chromium 内核的应用(浏览器/内置网页组件)的脚本或 GPU 渲染缓存，程序会自动重新生成，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1aebd8a8b89c33fcd10d8e69",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\tencent\\wechat\\radium\\web\\profiles\\multitab_9068020e72f1ed2ea2a68a9bb2704d64\\code cache\\js\\3b755720cdea31a5_0",
+      "source": "AI_IMPORT",
+      "reason": "这是基于 Chromium 内核的应用(浏览器/内置网页组件)的脚本或 GPU 渲染缓存，程序会自动重新生成，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_7ec76245c35780f8b1815ddb",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\tencent\\wechat\\radium\\web\\profiles\\multitab_*\\code cache\\js\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是基于 Chromium 内核的应用(浏览器/内置网页组件)的脚本或 GPU 渲染缓存，程序会自动重新生成，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_37fe4683edc8e802d07b2fa4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\androidstudio2024.2\\index\\bytecodeanalysis\\bytecodeanalysis.storage_i",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_5f97cb17a9171ab917a9fe60",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\antigravity\\user\\workspacestorage\\52773df640dd8d352a09027be51f25bf\\redhat.java\\jdt_ws\\.metadata\\.plugins\\org.eclipse.jdt.core\\720644018.index",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_5b6c2c1200d112806210ad7b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\sass\\sass.dart.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_efafe0960b47760a47106734",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\sass\\sass.dart.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_cc07313d8cfeb65464e4d287",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\dynamicresourcepackage\\b12a2e73fa59eaef0c5bf1f7338bf5e0.zip",
+      "source": "AI_IMPORT",
+      "reason": "这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_d9ac57cc0a98ab6f29a2f090",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\dynamicresource\\b12a2e73fa59eaef0c5bf1f7338bf5e0\\screen_capture_setting_vip_pay_guide.gif",
+      "source": "AI_IMPORT",
+      "reason": "这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_69beb07806d89975d51154b7",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\dynamicresource\\*\\screen_capture_setting_vip_pay_guide.gif",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1d37a5e953d1a82898094beb",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\dynamicresourcepackage\\8b2f39903373b6423815cca2b0c40909.zip",
+      "source": "AI_IMPORT",
+      "reason": "这是应用自身按需下载的动态资源包/AI模型缓存，应用在需要时会自动重新拉取，可以安全清理。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_a341e8ec45aaf61dedee5bdf",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.jdks\\graalvm-jdk-17.0.12\\lib\\svm\\adopted_profiles\\jdk_profile.iprof",
+      "source": "AI_IMPORT",
+      "reason": "这是 GraalVM Native Image 的性能分析(PGO)数据文件，删除后下次构建原生镜像会跳过该优化或重新生成，不影响正常使用。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_327363f6021cfb74704a5b65",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\bc\\bc50ccdc10c37b586bb2e6336e79aaa4.linked",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b9aae327488066d464c2e1c0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\bc\\*.linked",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_9abd977fe70ccfb2084bf0be",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\bc50ccdc10c37b586bb2e6336e79aaa4.linked-temp-353672",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_09aa07fe689d82987b3eba01",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\*.linked-temp-353672",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_149777bc78b691aca6e95993",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\8a\\8a96f9b6b0031077d36bc333cba01569.linked",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_d4698a92b28b99c3b99d9956",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\8a\\*.linked",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_c0d8c1a6e91e58fc1dfe66c4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\4f\\4f00963a69c546d8baa732872fce7b8a.linked",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_3afcd1c5018b8a2b2b2a1dd9",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\4f\\*.linked",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_397575ebb88141847e8ff255",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\47\\47c8e507f25a71645864b88c5a0ebe09.linked",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1b765d1d31ca14b1a2e0b19d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\47\\*.linked",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_d82aced988eb09a89ff0dc2f",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\4f00963a69c546d8baa732872fce7b8a.linked-temp-3964",
+      "source": "AI_IMPORT",
+      "reason": "这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_4292eae11cbf5918f93512cf",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\.dartserver\\.analysis-driver\\*.linked-temp-3964",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；这是 IDE/语言服务器的索引缓存(代码分析索引)，重新打开项目时会自动重建，删除不会丢失代码本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_2961357b574af8015b585601",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\types-registry\\index.json",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_da8e57cb2cc94a7eec3e3702",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\types-registry\\index.json",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ca7fdf8c4929fabbd1df5adf",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\shared_preferences-2.5.4\\extension\\devtools\\build\\main.dart.js",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_c3ed4fa69ecfa86592eaab51",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\@dimforge\\rapier3d-compat\\rapier.cjs.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_53ba0d0ca01deb5b675f7b00",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\@dimforge\\rapier3d-compat\\rapier.es.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_c5c5757c6526efaa11ae3231",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\shared_preferences-2.5.4\\extension\\devtools\\build\\assets\\fonts\\materialicons-regular.otf",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b32096fe8c32b80d07fba256",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\shared_preferences-2.5.4\\extension\\devtools\\build\\canvaskit\\skwasm_heavy.js.symbols",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_396ff38214428a88d5d66fd2",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\shared_preferences-2.5.4\\extension\\devtools\\build\\canvaskit\\skwasm.js.symbols",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_c4f4299c226d51c582c250e2",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\shared_preferences-2.5.4\\extension\\devtools\\build\\assets\\notices",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_879669ef4558e983a2a2d574",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\shared_preferences-2.5.4\\extension\\devtools\\build\\canvaskit\\canvaskit.js.symbols",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e957e2ad8f983977fd133fb4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\shared_preferences-2.5.4\\extension\\devtools\\build\\canvaskit\\chromium\\canvaskit.js.symbols",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_9d4284579b18568bf2e48cb4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\terser\\dist\\bundle.min.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_3e0c08e1750af7fffb25ba7a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\csstype\\index.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_355ccc973ea9e5515077528d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\@dimforge\\rapier3d-compat\\rapier.cjs.js.map",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_8989c57033bd512f95bfb1e9",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\@dimforge\\rapier3d-compat\\rapier.es.js.map",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_f016a1255a0ecf5dd74b142d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\webpack\\types.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_3a7e7ba3ce980ca5f55055dc",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.lmstudio\\extensions\\backends\\vendor\\_amphibian\\cpython3.11-win-x86@6\\lib\\pydoc_data\\__pycache__\\topics.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_464ccfa9c4a0edd4195a6bef",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\@types\\jquery\\jquerystatic.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b2a46b3bb72b1c77f1a2e703",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\@types\\jquery\\jquery.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_8f2bfe83bd0376cb52119f1e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.gradle\\wrapper\\dists\\gradle-8.10.2-all\\ezxzryhqdbf6stsda8vkgso9x\\gradle-8.10.2\\docs\\javadoc\\jquery\\jszip\\dist\\jszip.js",
+      "source": "AI_IMPORT",
+      "reason": "这是 Gradle/Maven wrapper 自动下载的构建工具发行包缓存，删除后下次构建会自动重新下载，不影响项目本身。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_16834f8f10b0256b9f7175b5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\@types\\lodash\\fp.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_04102fb44de4d779c6e27440",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\@types\\lodash\\fp.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_d0f596f7a7cdbca8af1cbe62",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\csstype\\index.js.flow",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_f30451eb1bf19726efcfc74e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\webpack\\schemas\\webpackoptions.check.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_2ea4eefab1b414e325760bf1",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\source-map\\dist\\source-map.debug.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ea12b34c0a61b4f87d20f77a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\source-map\\dist\\source-map.debug.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_b3313e0c9d6b0751699d75a3",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\@types\\jquery\\misc.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_63185d4dbd7e84618b98a659",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.lmstudio\\extensions\\backends\\vendor\\_amphibian\\cpython3.11-win-x86@6\\lib\\tkinter\\__pycache__\\__init__.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e8afbe6d81d21fe74710bcf7",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\tkinter\\__pycache__\\__init__.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_23fd859ae568a2ba7692db00",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\source-map\\dist\\source-map.min.js.map",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ac23cd5b340bad2b572728e8",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\source-map\\dist\\source-map.min.js.map",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_8329d3d95d4c78cfce28fffa",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\tkinter\\__pycache__\\__init__.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_eb2fe2169bbbc448af76bd96",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.lmstudio\\extensions\\backends\\vendor\\_amphibian\\cpython3.11-win-x86@6\\lib\\__pycache__\\_pydecimal.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_67fd6c505f9919339a6ff08c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\acorn\\dist\\acorn.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_415130b69a497a2fd5a4dcaa",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\neo-async\\async.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_10a38388a16cb948733145bb",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\@types\\video.js\\index.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1d80a667b3278c57330239a9",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\acorn\\dist\\acorn.mjs",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_4061284cc435a313f9c26fa7",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\@types\\fabric\\fabric-impl.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_655f103262052c0c188a68da",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\node-addon-api\\napi-inl.h",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_c2a8dba5cfa26e3858282f90",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\node-addon-api\\napi-inl.h",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_fd1d44ddd4d6c83babcbebc0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\@types\\node\\inspector.generated.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1d34abf7f0da06f4e2bb937e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\@types\\node\\inspector.generated.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_397259e6b5ee88169357ef2f",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\webpack\\schemas\\webpackoptions.json",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_4fdbcfa3bc2afaf8b57686c6",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\immutable\\dist\\immutable.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_c5a104982adcf0da423cc298",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\immutable\\dist\\immutable.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e6ae9705482f83691f05f512",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\terser\\tools\\domprops.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_921e229d665861b71003c315",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\@types\\node\\fs.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_5c5f482198eb9d6d554f3581",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\@types\\node\\fs.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_f3114d0e3a3c80dd7ce0b179",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.lmstudio\\extensions\\backends\\vendor\\_amphibian\\cpython3.11-win-x86@6\\lib\\__pycache__\\turtle.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_3d39847d489dd250c151e2ee",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\@dimforge\\rapier3d-compat\\rapier_wasm3d.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_ab1d842cb0a93c13850d27e9",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\mime-db\\db.json",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1f3e19e3f9c9826827b6c708",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\immutable\\dist\\immutable.es.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_d7e979fe69eccab57bbd642c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\immutable\\dist\\immutable.es.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_85651a9a49663d983dac0dc0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\@types\\react\\index.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_90c01194e9c62ac955f7a1ef",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\webpack\\lib\\compilation.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e96adbc4957030fc363e48ad",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\@types\\react\\ts5.0\\index.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_732be761b9a7946a0919a445",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\@types\\node\\crypto.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_afc853fcb1518e5c8468c713",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\@types\\node\\crypto.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_5c73c5f982adbf1216dbfc6a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\shared_preferences-2.5.4\\extension\\devtools\\build\\assets\\packages\\devtools_app_shared\\fonts\\roboto\\roboto-medium.ttf",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_425d8943d4bf9202cd1c638a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\shared_preferences-2.5.4\\extension\\devtools\\build\\assets\\packages\\devtools_app_shared\\fonts\\roboto\\roboto-thin.ttf",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1d5b9f94cc50b5c1522d78f3",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\shared_preferences-2.5.4\\extension\\devtools\\build\\assets\\packages\\devtools_app_shared\\fonts\\roboto\\roboto-regular.ttf",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_62fe346c6cd2e7f7025cba4c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\shared_preferences-2.5.4\\extension\\devtools\\build\\assets\\packages\\devtools_app_shared\\fonts\\roboto\\roboto-black.ttf",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_383da3e69016fa2c490cdf97",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\shared_preferences-2.5.4\\extension\\devtools\\build\\assets\\packages\\devtools_app_shared\\fonts\\roboto\\roboto-bold.ttf",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_c7a6fd8fffa17e4f0ea4fb66",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.puro\\shared\\pub_cache\\hosted\\pub.dev\\shared_preferences-2.5.4\\extension\\devtools\\build\\assets\\packages\\devtools_app_shared\\fonts\\roboto\\roboto-light.ttf",
+      "source": "AI_IMPORT",
+      "reason": "这是 Dart/Flutter 包管理器(pub)的依赖包缓存，可以通过 flutter pub get 重新下载，删除不影响项目源码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_2a098b10f36fe4baed2b70cd",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\immutable\\dist\\immutable.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_25ecfe26763e9d0a8e0a1ab5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.9\\node_modules\\immutable\\dist\\immutable.d.ts",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e86031bc52b50d4be1c11143",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\webpack\\lib\\javascript\\javascriptparser.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_5322718b6e862754932f9ecf",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.lmstudio\\extensions\\backends\\vendor\\_amphibian\\cpython3.11-win-x86@6\\lib\\__pycache__\\typing.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1be60390b5ac311be56c2151",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\typing.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_79a4341f31776b4a86b877f5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.lmstudio\\extensions\\backends\\vendor\\_amphibian\\cpython3.11-win-x86@6\\lib\\__pycache__\\pydoc.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_53ba21dc41617199eef27ee1",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\typing.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_728e72d3f5e35e6ed3591825",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\typescript\\5.7\\node_modules\\terser\\lib\\compress\\index.js",
+      "source": "AI_IMPORT",
+      "reason": "这是编辑器 TypeScript 语言服务的自动类型获取(ATA)缓存，用于给 JS 项目提供类型提示，删除后编辑器会按需自动重新下载，不影响项目代码。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_f28798b6219ac578449d4b62",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\email\\__pycache__\\_header_value_parser.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_7f32da5522b5a2f2ca6016a4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.lmstudio\\extensions\\backends\\vendor\\_amphibian\\cpython3.11-win-x86@6\\lib\\email\\__pycache__\\_header_value_parser.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_e2ea7afc3c98303c96f784b3",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.lmstudio\\extensions\\backends\\vendor\\_amphibian\\cpython3.11-win-x86@6\\lib\\__pycache__\\inspect.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_8973f418c12b11b62033c5bc",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\inspect.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_f85204cb299b0d48d756f32c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\email\\__pycache__\\_header_value_parser.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "这是 Python 字节码缓存或调试符号(.pdb)文件，属于运行时自动生成/可选的调试信息，删除不影响程序正常运行，需要时会自动重新生成或可通过重新安装来源软件获得。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_32527a57516280aa44987af2",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\docker\\unleash-v2-docker-desktop.json",
+      "source": "AI_IMPORT",
+      "reason": "这是 Docker Desktop 的本地设置/功能开关缓存文件，删除后 Docker Desktop 下次启动会以默认设置重建，最多需要重新调整个别偏好设置。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_cc36b67dbc3f353e3edbfaa8",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\docker\\install-log.1.txt",
+      "source": "AI_IMPORT",
+      "reason": "这是 Docker Desktop 安装过程的日志文件或内部时间同步标记文件，纯粹是历史记录/内部标记，删除不影响 Docker 使用。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_7ae2385c1e59986dfc6ca6b7",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\docker\\install-log.txt",
+      "source": "AI_IMPORT",
+      "reason": "这是 Docker Desktop 安装过程的日志文件或内部时间同步标记文件，纯粹是历史记录/内部标记，删除不影响 Docker 使用。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_1c47673c44ae194002550174",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\docker\\install-log.2.txt",
+      "source": "AI_IMPORT",
+      "reason": "这是 Docker Desktop 安装过程的日志文件或内部时间同步标记文件，纯粹是历史记录/内部标记，删除不影响 Docker 使用。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_09cee550ff06633930c076c5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\docker\\install-log.0.txt",
+      "source": "AI_IMPORT",
+      "reason": "这是 Docker Desktop 安装过程的日志文件或内部时间同步标记文件，纯粹是历史记录/内部标记，删除不影响 Docker 使用。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_05a5c8d63420fd09cfceecdc",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\docker\\settings-store.json",
+      "source": "AI_IMPORT",
+      "reason": "这是 Docker Desktop 的本地设置/功能开关缓存文件，删除后 Docker Desktop 下次启动会以默认设置重建，最多需要重新调整个别偏好设置。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_2ce14a61bbebabe92a3d6ed0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\docker\\localtime：rw",
+      "source": "AI_IMPORT",
+      "reason": "这是 Docker Desktop 安装过程的日志文件或内部时间同步标记文件，纯粹是历史记录/内部标记，删除不影响 Docker 使用。",
+      "updated_at": "2026-07-27T03:33:07.450600+00:00"
+    },
+    {
+      "id": "ai_a16c6aa5ac8b58ba86ddd828",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\packages\\openai.codex_2p2nqsd0c76g0\\localcache\\roaming\\codex\\web\\codex\\extensions_crx_cache\\6c718d76c27849a7789777ae8e9d7ac81170f6d4ffeff8b6736d9c6db37600d7",
+      "source": "AI_IMPORT",
+      "reason": "Chromium 扩展安装包缓存，可按已安装扩展重新下载或生成；不属于扩展本体和用户配置。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_37f78b2d10cc410c9e682a60",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\packages\\openai.codex_2p2nqsd0c76g0\\localcache\\roaming\\codex\\web\\codex\\extensions_crx_cache\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；Chromium 扩展安装包缓存，可按已安装扩展重新下载或生成；不属于扩展本体和用户配置。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_dfa8d0193beb5b646eeac3b2",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\blend\\17.0_765d4269\\componentmodelcache\\microsoft.visualstudio.default.catalogs",
+      "source": "AI_IMPORT",
+      "reason": "Visual Studio/Blend 组件模型索引缓存，可在下次启动时重建；不属于项目文件。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_f8fa981b646b6711e2e1562d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\doubao\\user data\\gecko_cache\\f27e9d719abe85bee2e0e7362cd12035\\flow_web_entries\\515986946",
+      "source": "AI_IMPORT",
+      "reason": "应用的网页与网络缓存目录，可由应用重新生成；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_e570bfeb4657a7299860bff5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\doubao\\user data\\gecko_cache\\*\\flow_web_entries\\*",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；应用的网页与网络缓存目录，可由应用重新生成；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_2f5e199ca302a96db4656a40",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\antigravity\\dawnwebgpucache\\data_3",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 图形着色器缓存，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_3b25ddcd4520b7491abdf1d5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\claude\\dawnwebgpucache\\data_3",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 图形着色器缓存，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_d2b5628360c4848df5f7b703",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\trae solo cn\\partitions\\icube-web-crawler-shared-session-v1.0\\dawnwebgpucache\\data_3",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 图形着色器缓存，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_26af3a625cd649fe486e7031",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\default\\dawnwebgpucache\\data_3",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 图形着色器缓存，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_db1ab9f22bc30ac5e8ca8063",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\edge\\user data\\default\\dawnwebgpucache\\data_3",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 图形着色器缓存，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_27e35e105007c81ad4193161",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\trae cn\\dawnwebgpucache\\data_3",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 图形着色器缓存，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_fa4f7c17e4a847c73b903c27",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\tencent\\wechat\\radium\\web\\profiles\\multitab_9068020e72f1ed2ea2a68a9bb2704d64\\dawnwebgpucache\\data_3",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 图形着色器缓存，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_dc1314812c54c6ae95d78da5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\tencent\\wechat\\radium\\web\\profiles\\multitab_*\\dawnwebgpucache\\data_3",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；Chromium/WebView 图形着色器缓存，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_df717e3e6fcced19c2a209d2",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\webkitcachedata\\3_cache_1770271267640\\browsermetrics-spare.pma",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 性能度量缓存文件，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_99f60284f144bddb29d54e3a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%APPDATA%\\tencent\\wemeet\\global\\data\\webkitcachedata\\3_cache_*\\browsermetrics-spare.pma",
+      "source": "AI_IMPORT",
+      "reason": "同类动态路径模板；Chromium/WebView 性能度量缓存文件，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_7d328de84892f6bcba3013bc",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\doubao\\user data\\browsermetrics-spare.pma",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 性能度量缓存文件，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_026c74cfd6509843fd4e90ad",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\packages\\openai.codex_2p2nqsd0c76g0\\localcache\\roaming\\codex\\web\\codex\\browsermetrics-spare.pma",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 性能度量缓存文件，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_a37a7a19ff7e7d55ea52095a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\google\\chrome\\user data\\browsermetrics-spare.pma",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 性能度量缓存文件，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_fe40e0a56a744b1fda0db501",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\edge\\user data\\browsermetrics-spare.pma",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 性能度量缓存文件，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_ec95901bf10305f9b5beafc6",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\ms-playwright-mcp\\mcp-chrome-531bf57\\browsermetrics-spare.pma",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 性能度量缓存文件，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_03a5926de01dc99cb7bf7204",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\microsoft\\edge\\user data\\browsermetrics\\browsermetrics-6a641abe-a910.pma",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 性能度量缓存文件，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_64c5fa7e303ed4618ec1be13",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\.gemini\\antigravity-browser-profile\\browsermetrics-spare.pma",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 性能度量缓存文件，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_f910a248ca43b292c106cf5e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\ms-playwright-mcp\\mcp-chrome-6b7403c\\browsermetrics-spare.pma",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 性能度量缓存文件，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_89e2e9c1c953475d9d388d3d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\quarkclouddrive\\user data\\browsermetrics\\browsermetrics-6a1ccdbf-2d5c.pma",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 性能度量缓存文件，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_7c1da414e0fa62e72a990619",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%LOCALAPPDATA%\\quarkclouddrive\\user data\\browsermetrics-spare.pma",
+      "source": "AI_IMPORT",
+      "reason": "Chromium/WebView 性能度量缓存文件，可由对应应用自动重建；不属于用户文档。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_ce43f10d27f23a9cc0ac76ba",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\inspect.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_504981e4c230d36aebc88bb5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\tarfile.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_398054491ad7688e60c12697",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\tarfile.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_689bf09c7c403fc41ba48c1f",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\urllib\\__pycache__\\request.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_e9f32931d879b09e56e2649c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\zipfile.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_78a6cfc6a838960bb713d8ac",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\urllib\\__pycache__\\request.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_b0afd63de86955c9797d7b52",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\argparse.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_cf277759e8054987f4af6ee6",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\ast.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_0eb58f33d5210c23cf3ac052",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\pdb.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_26ed698d214d53f620633a63",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\doctest.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_43434ff4c48dbdcd50492d63",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\argparse.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_4a5dc2f325d3fd924d4fa8be",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\zipfile\\__pycache__\\__init__.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_2707daa7bac677eaf14b1170",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\ast.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_c8daf103adef8428899d8612",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\datetime.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_4e527b08789dae61052c6827",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\ipaddress.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_7fb3cab5474f8f88f3f80831",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\html\\__pycache__\\entities.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_8920712335888ea62be1caa9",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\logging\\__pycache__\\__init__.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_65db1e9eadea290cd11d0593",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\html\\__pycache__\\entities.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_3faca38bd2b4ef2a83245580",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\xml\\dom\\__pycache__\\minidom.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_055dda66b87cee806812bc05",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\logging\\__pycache__\\__init__.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_b6093ea7ad1d14fb1435fa53",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\xml\\dom\\__pycache__\\minidom.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_caf3bc6a08905a00b1c4c843",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\ipaddress.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_20ab1c4273a52745df3fd90a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\xml\\etree\\__pycache__\\elementtree.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_31ae2a372a3ed0d5a135db3a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\asyncio\\__pycache__\\base_events.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_5c56b4c752a25c6784f490cb",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\http\\__pycache__\\cookiejar.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_d1aff1d1ca7575c6e7a6b7d8",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\enum.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_5534a56c7ddbed0e073cada4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\pickle.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_79e46251ada04b31ad38ff8a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\pdb.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_2b2f7b670826dacd788a1ee1",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\enum.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_ad5aaf7fbb242af48e5ca023",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\subprocess.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_bbb00331a2f5427f370b3f16",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\xml\\etree\\__pycache__\\elementtree.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_69c5bd00416408026ffc2e39",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\subprocess.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_5d468e119c86d7a599efe458",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\http\\__pycache__\\cookiejar.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_58ab6c6a26184cc932ec72aa",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\difflib.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_e82fdd5439aae693b0622469",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\unittest\\__pycache__\\case.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_e51725524287a285e31f0c85",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\astrbotlauncher-0.1.5.6\\astrbotlauncher-0.1.5.6\\astrbot\\packages\\astrbot\\__pycache__\\main.cpython-312.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_8a936080659e908fe2546aa2",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\tkinter\\__pycache__\\ttk.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_d0735d385b135a0cb9c63fc4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\pickle.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_68e85d23e75a57741868f0fa",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\collections\\__pycache__\\__init__.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_d6ad3f381b10311380091b28",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\optparse.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_7528a25b02b28cb3cde28426",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\ssl.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_185e87cea1ac33bbe854b753",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\collections\\__pycache__\\__init__.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_4510c6186bdcab519894202a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\shutil.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_097693a2ba05d155f7b6bf8d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\difflib.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_37d213962f1106682bb84c97",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\traceback.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_318a4023d6d4bbf3aedc9242",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\configparser.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_c2d4a01a7d793ffb5f2589a4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\tkinter\\__pycache__\\ttk.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_cbaf7263b7517ad1bb9b0815",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\unittest\\__pycache__\\case.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_aefb0704ba5f958e98897dc0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\threading.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_4f3005a94f37abecddabc80b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\logging\\__pycache__\\handlers.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_2172e0faf5ed9332bb2df8fe",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\configparser.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_a78d2afecc0abd0701f650a5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\pathlib.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_83235950c4fabd79b0eb7278",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\optparse.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_20d89b3300228c4b048c5cf0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\shutil.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_ffb954c64bc67ae63b99d68d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\logging\\__pycache__\\handlers.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_5c06f04273e8d198d60cce21",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\ssl.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_b609962af85b95f03b52f26e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\asyncio\\__pycache__\\selector_events.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_2c1d7c7b869d0b59c53fbbb4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\locale.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_4964fec84ac215aa33ccb66b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\threading.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_0d0d76f759c34b10c37d1bdd",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\http\\__pycache__\\client.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_52ae74d180e68a69e3383b78",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\email\\__pycache__\\message.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_859364b33bab1810877fe3cc",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\locale.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_4428848e67c5892cf7dc807b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\importlib\\metadata\\__pycache__\\__init__.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_17b79fb457f82239eb813636",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\http\\__pycache__\\client.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_37eac92e1a20b1743a1af408",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\xmlrpc\\__pycache__\\client.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_352d537bbd03bbe550add1a3",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\urllib\\__pycache__\\parse.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_b28248641ae841958339b7e5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\astrbotlauncher-0.1.5.6\\astrbotlauncher-0.1.5.6\\astrbot\\astrbot\\core\\platform\\sources\\wechatpadpro\\__pycache__\\wechatpadpro_adapter.cpython-312.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_6e90c2de5fc3bffcac2afdf8",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\importlib\\metadata\\__pycache__\\__init__.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_7e7240832b4f4fb90b1821dd",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\xmlrpc\\__pycache__\\client.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_46d924820585ab7ccb41283c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\email\\__pycache__\\message.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_7165304e45932ed97c32e7e5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\astrbotlauncher-0.1.5.6\\astrbotlauncher-0.1.5.6\\astrbot\\astrbot\\core\\config\\__pycache__\\default.cpython-312.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_3bf3814274693bb16e8a5c7c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\urllib\\__pycache__\\parse.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_a58d9dd693452274bbe84643",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\multiprocessing\\__pycache__\\connection.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_f7b1e7649f2e9ffd64284765",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\re\\__pycache__\\_parser.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_25fd24c195e5f981656d9bac",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\traceback.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_8fa32c82ee198b6981979d5d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\dataclasses.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_08b8992c0fbf6ff4d502ff06",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\dis.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_f2c159a5fde5460c973c9ecc",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\dataclasses.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_ef5d642ac89a4a7c29cd115c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\functools.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_cba8193444c9f5e3e2f84d21",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\xml\\dom\\__pycache__\\expatbuilder.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_a7193621731be11ad1599f34",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\asyncio\\__pycache__\\proactor_events.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_1a42c94544d21f03e41f9d5a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\socket.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_a948ae3ba3abfd50e2bb80d6",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\logging\\__pycache__\\config.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_6bc442e3402dbfd27ae85eea",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\calendar.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_adc99933f61c1e8994ff3f9c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\platform.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_279ea9d48040df784295e3ec",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\logging\\__pycache__\\config.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_07039b29d26b4e069b955aab",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\astrbotlauncher-0.1.5.6\\astrbotlauncher-0.1.5.6\\astrbot\\astrbot\\core\\message\\__pycache__\\components.cpython-312.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_95db51a465d47b2a3f19c3ed",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\platform.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_6a0419b2c8c75f2ad0d89651",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\re\\__pycache__\\_parser.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_c6fbf2ed0cb36230ef72691f",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\asyncio\\__pycache__\\tasks.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_666b5acf46c07ed44e9a4a82",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\plistlib.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_04b1c5018df28efc8b0c0ec1",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\socket.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_b26f2f1f52384cb3d10fc978",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\asyncio\\__pycache__\\windows_events.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_150abc8d73a429caacd4302e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\functools.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_399d6b3cf3bb905a27d46462",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\tempfile.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_f32ca0ede93d7f0898ea516b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\astrbotlauncher-0.1.5.6\\astrbotlauncher-0.1.5.6\\astrbot\\astrbot\\core\\star\\__pycache__\\star_manager.cpython-312.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_47fdcd7cade1581b489c65ee",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\asyncio\\__pycache__\\sslproto.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_35574d91c337a6571d19a629",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\bdb.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_bfc81968f8daf2a75bc5e858",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\pathlib\\__pycache__\\_local.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_44fdccba086a74410d45295d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\tempfile.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_a6478175622c2cba605ddb2d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\pathlib\\__pycache__\\_abc.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_42a22a0fc3ab8455df776f8b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\calendar.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_4ca5c9f450a115d1e38c3ec5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\bdb.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_cee3e13bace4911ae0eccfcf",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\fractions.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_1714b23d1d91fe6bf8ce1109",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\pstats.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_1ca1dd7455513da92adfa18e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\socketserver.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_90e2d8fea22776a7cd339a31",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\asyncio\\__pycache__\\events.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_d36e2de74ec8f92249c8db61",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\dis.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_43520c9216f61f26cab10129",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\astrbotlauncher-0.1.5.6\\astrbotlauncher-0.1.5.6\\astrbot\\astrbot\\core\\utils\\t2i\\__pycache__\\local_strategy.cpython-312.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_de07b60eb4876c249f118a60",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\random.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_8421393fc2e7528d6c18bb1e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\venv\\__pycache__\\__init__.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_e806bece3a55de210a8e8853",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\astrbotlauncher-0.1.5.6\\astrbotlauncher-0.1.5.6\\astrbot\\astrbot\\dashboard\\routes\\__pycache__\\config.cpython-312.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_bc5094e4b2e0f33169dc1c09",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\weakref.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_61dff187fb29d1380701ee96",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\socketserver.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_8f9b5b757c3e642b547e7bd5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\astrbotlauncher-0.1.5.6\\astrbotlauncher-0.1.5.6\\astrbot\\astrbot\\core\\provider\\__pycache__\\func_tool_manager.cpython-312.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_4651e3cdbf9f3edc8180f3d6",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\random.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_7f57aacba324cb44871aea74",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\asyncio\\__pycache__\\streams.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_417af4d0c95e709b2b7618e3",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\email\\__pycache__\\headerregistry.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_a26a9af2e11950a2c25931ce",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\gzip.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_81b1f9fe800a842b47dbc784",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\pprint.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_125264e17e03e2ce7d804b96",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\uuid.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_c78d2c963967cec3a25195c6",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\contextlib.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_66d0721ec89f6c2d15a01a3b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\astrbotlauncher-0.1.5.6\\astrbotlauncher-0.1.5.6\\astrbot\\astrbot\\dashboard\\routes\\__pycache__\\plugin.cpython-312.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_dfc711076990e9b27caa40cc",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\uuid.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_743e0ef5524a3eb566269dfd",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\email\\__pycache__\\headerregistry.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_6503a9eaf7f128c6dce45744",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\gzip.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_51e2a1c5ba7ecdab6ef5515f",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\concurrent\\futures\\__pycache__\\_base.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_4771655f671109655784f712",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\re\\__pycache__\\_compiler.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_eb3eb76df00b38a810623641",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\weakref.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_e4e4efe44cec7e1bf5c020b3",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\sysconfig.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_d3b24474b17fd089f8a53be5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\pkgutil.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_698bc1bd8adacb657ef31e51",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\astrbotlauncher-0.1.5.6\\astrbotlauncher-0.1.5.6\\astrbot\\packages\\python_interpreter\\__pycache__\\main.cpython-312.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_fabf6f8164dc6846b587470e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\tomllib\\__pycache__\\_parser.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_e9824653e0adc05e333b518b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\contextlib.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_d4b7f290932cbec21de28028",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\tokenize.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_229e39d728c7a14b22cce89c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\pprint.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_08231ea3948790f47230f546",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\warnings.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_0a34d35ca35cd5a91313cffe",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\fractions.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_235490c59ccb0838fbedfeb4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\selectors.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_8455aa21b38fc24bf93ab17e",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\dify-on-wechat\\lib\\itchat\\components\\__pycache__\\contact.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_1e78326d1d832ae750f06ed4",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\base64.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_53cf7601a6191b5f32229a95",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\dify-on-wechat\\lib\\itchat\\components\\__pycache__\\messages.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_187c611438427fe4d92e19c5",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\asyncio\\__pycache__\\locks.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_81977db18472e4ddfe94e80a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\dify-on-wechat\\channel\\__pycache__\\chat_channel.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_14a66ee8a4c72ea55951c8f6",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\astrbotlauncher-0.1.5.6\\astrbotlauncher-0.1.5.6\\astrbot\\astrbot\\dashboard\\routes\\__pycache__\\session_management.cpython-312.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_b62028e5333b5510443702ea",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\tracemalloc.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_0a35c692ffb65aeb81681d0c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\unittest\\__pycache__\\loader.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_1957bb3e209d3bd422db2152",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\tomllib\\__pycache__\\_parser.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_4354b96b4cdf64eec77660fd",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\email\\__pycache__\\header.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_b8eea0bfdbc4880373715155",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\re\\__pycache__\\_compiler.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_69b244ef79a66d226f389e3b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\ctypes\\__pycache__\\__init__.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_6901bdf8354f9eef70d9024b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\stringprep.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_f89d73377a7d77fceb1d75fd",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\dify-on-wechat\\lib\\itchat\\storage\\__pycache__\\templates.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_2f2fb104eece5fcfd22fb540",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\selectors.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_fc19f0a9cb119fc3367906ac",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\mimetypes.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_6f87e672d3c6d345bca7c80a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\base64.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_6d418b0b099f70a1767be6e0",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\tokenize.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_0dcb0ab1eba9c5806e9ea92b",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\ctypes\\__pycache__\\__init__.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_c426a62e7742e111f141ab9d",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\stringprep.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_a73394f8e16f806333db5532",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\sysconfig\\__pycache__\\__init__.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_c8ba0c881fb22d4ef833e4fa",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\warnings.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_b85834a9a29a970af0ea3635",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\email\\__pycache__\\header.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_0e28bf2d89cd0a336ec27689",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\mimetypes.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_b2f35646a904ba8eafc5071c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\glob.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_a22f293215fb55aa95a52b20",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\tkinter\\__pycache__\\filedialog.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_c01b40db91ed0b698436ba8c",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\dify-on-wechat\\lib\\itchat\\__pycache__\\core.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_cd955b9a60998b73c269a116",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\email\\__pycache__\\_parseaddr.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_6523543ba5c06e7ce550e862",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\__pycache__\\gettext.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_17cdea31e954b8a4480e3dea",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\http\\__pycache__\\cookies.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_6974187f508bbb7c5bf68052",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.11.15-windows-x86_64-none\\lib\\html\\__pycache__\\parser.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_f700c97e7619822acb7b66b3",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\email\\__pycache__\\_parseaddr.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_7b423565e9c1282ac69edb4a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\dify-on-wechat\\lib\\itchat\\components\\__pycache__\\login.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_499a77f08af7fafdd1e7cc4a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\dify-on-wechat\\lib\\gewechat\\__pycache__\\client.cpython-311.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_96ec9bc74027dfb0f1a26e98",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\tkinter\\__pycache__\\filedialog.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_38cc38968d2be45f7bc3b787",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\http\\__pycache__\\cookies.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_e7ced968510b58d7fae42660",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%USERPROFILE%\\astrbotlauncher-0.1.5.6\\astrbotlauncher-0.1.5.6\\astrbot\\astrbot\\core\\db\\__pycache__\\sqlite.cpython-312.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_6ce017bd024d451bbe836e10",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\gettext.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_28997c91882bd3a45cc5647a",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\__pycache__\\profile.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_523b90d1666ec99dd8bb4bfc",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\unittest\\__pycache__\\loader.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    },
+    {
+      "id": "ai_57dab375e48f143877fb6858",
+      "group": "ai_import",
+      "enabled": true,
+      "match": "exact_path",
+      "value": "%APPDATA%\\uv\\python\\cpython-3.13.13-windows-x86_64-none\\lib\\html\\__pycache__\\parser.cpython-313.pyc",
+      "source": "AI_IMPORT",
+      "reason": "Python 编译字节码缓存，可由相邻源码在需要时自动重新生成；不包含独立用户数据。",
+      "updated_at": "2026-07-27T10:13:50.908521+00:00"
+    }
+  ]
 }

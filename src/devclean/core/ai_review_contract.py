@@ -269,11 +269,12 @@ def build_ai_review_package(
     """Build a bounded packet from explicitly supplied current-scan items.
 
     ``disclose_full_paths`` puts the real absolute path of every candidate in the
-    exported document.  It is the caller's decision because only the caller knows
-    where the file is going: a local model needs the path to say anything useful,
-    while a hosted one would receive the user's directory layout.  Either way the
-    choice is recorded in the document as ``path_disclosure`` and covered by the
-    package digest, so an importer cannot be misled about what was sent.
+    exported document.  It is an explicit caller policy because only the caller
+    knows where the file is going: a local model needs the path to say anything
+    useful, while a hosted one would receive the user's directory layout.  Either
+    policy is recorded as ``path_disclosure`` and covered by the package digest,
+    so an importer cannot be misled about what was sent.  DevClean's current UI
+    deliberately chooses full paths and warns the user in the AI panel.
     """
 
     selected = tuple(candidates)
@@ -671,14 +672,14 @@ def _normalized_path(value: str) -> str:
 
 
 def _disclosed_path(value: str) -> str:
-    """Return the real path for a package the user chose to disclose.
+    """Return the real path for a package whose caller requested disclosure.
 
     Redaction exists because the exported file may leave the machine.  When the
     reviewer is a local model that trade is pure loss: a nineteen-segment
     whitelist plus a suffix is not enough for anyone to judge whether a file is
     safe to remove, so the honest answer to "is this deletable" becomes UNSURE
-    every time.  Disclosure is therefore the user's call, recorded in the
-    document itself as ``path_disclosure``.
+    every time.  Disclosure is therefore an explicit caller policy, recorded in
+    the document itself as ``path_disclosure``.
 
     Bounded and control-character-free all the same: the value still crosses into
     an untrusted document.

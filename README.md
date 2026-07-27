@@ -23,11 +23,13 @@ DevClean 是面向 Windows 11 x64 的磁盘扫描与垃圾清理工具。最终�
 
 下载 [release/DevClean.exe](release/DevClean.exe) 后运行。程序首次启动会在 EXE
 旁创建 `DevClean-data`。规则、默认备份、AI 导入索引和有界删除日志都集中在
-这里，不写入 AppData；删除 EXE 和这个文件夹就是完整卸载。其中三份可编辑规则为：
+这里，不写入 AppData；删除 EXE 和这个文件夹就会移除程序及其全部运行状态。
+如果下载的是含许可证文本的完整发布目录，直接删除整个目录即可。其中三份可编辑
+规则位于 `DevClean-data\rules\`：
 
-- `rules/scan-rules.json`
-- `rules/delete-rules.json`
-- `rules/keep-rules.json`
+- `DevClean-data\rules\scan-rules.json`
+- `DevClean-data\rules\delete-rules.json`
+- `DevClean-data\rules\keep-rules.json`
 
 规则支持精确路径、路径前缀、通配符和正则表达式。程序内置规则编辑界面，并
 提供默认规则备份与恢复功能。AI/用户结论中的用户目录会保存成 Windows 环境
@@ -44,13 +46,20 @@ uv sync --frozen --python 3.13
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_windows_exe.ps1
 ```
 
-产物位于 `artifacts\windows-exe\dist\`。构建脚本会检查 EXE 体积、GUI 构造、
-许可证文件和发布目录白名单。
+产物位于 `artifacts\windows-exe\dist\`：`DevClean.exe` 和 `licenses\` 下四份
+许可证文本。仓库中的 `release\` 是供用户直接下载的同一套发布副本。构建脚本会
+检查 EXE 体积、GUI 构造、打包规则资源、许可证文件和发布目录白名单。
 
-当前 DevClean 功能测试：
+当前 DevClean 本地功能门禁与主 CI 一致：
 
 ```powershell
-uv run --frozen pytest
+uv lock --check
+uv sync --frozen --python 3.13
+uv pip check
+uv run --frozen --python 3.13 ruff check src scripts tests
+uv run --frozen --python 3.13 python -m mypy
+uv run --frozen --python 3.13 pytest
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_windows_exe.ps1
 ```
 
 这些测试只覆盖现在的扫描、规则、AI 导入、删除编排和有界日志，不包含已删除的
