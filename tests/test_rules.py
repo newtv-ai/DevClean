@@ -195,6 +195,70 @@ def test_ai_rules_port_user_profile_and_reuse_dated_path_shapes(
     )
 
 
+def test_conventional_local_temp_rule_survives_redirected_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "DevClean-data"))
+    monkeypatch.setenv("USERPROFILE", r"C:\Users\alice")
+    monkeypatch.setenv("USERNAME", "alice")
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\alice\AppData\Local")
+    monkeypatch.setenv("APPDATA", r"C:\Users\alice\AppData\Roaming")
+    monkeypatch.setenv("TEMP", r"D:\redirected-temp")
+    target = r"C:\Users\alice\AppData\Local\Temp\cache\answer.bin"
+
+    updated = add_ai_verdicts(
+        load_rules(),
+        [(target, RuleDecision.DELETE, "regenerable temporary cache")],
+    )
+
+    assert updated.decision_for(target) is RuleDecision.DELETE
+    assert any(
+        rule.match is RuleMatch.EXACT_PATH
+        and rule.value.casefold()
+        == r"%LOCALAPPDATA%\Temp\cache\answer.bin".casefold()
+        for rule in updated.delete.rules
+    )
+    updated = add_ai_verdicts(
+        updated,
+        [
+            (
+                r"D:\redirected-temp\cache\redirected.bin",
+                RuleDecision.DELETE,
+                "regenerable redirected temporary cache",
+            )
+        ],
+    )
+    assert any(
+        rule.match is RuleMatch.EXACT_PATH
+        and rule.value.casefold()
+        == r"%TEMP%\cache\redirected.bin".casefold()
+        for rule in updated.delete.rules
+    )
+
+    monkeypatch.setenv("USERPROFILE", r"C:\Users\bob")
+    monkeypatch.setenv("USERNAME", "bob")
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\bob\AppData\Local")
+    monkeypatch.setenv("APPDATA", r"C:\Users\bob\AppData\Roaming")
+    monkeypatch.setenv("TEMP", r"E:\other-redirected-temp")
+    other_user_rules = UserRules(
+        scan=updated.scan,
+        delete=updated.delete,
+        keep=updated.keep,
+    )
+    assert (
+        other_user_rules.decision_for(
+            r"C:\Users\bob\AppData\Local\Temp\cache\answer.bin"
+        )
+        is RuleDecision.DELETE
+    )
+    assert (
+        other_user_rules.decision_for(
+            r"E:\other-redirected-temp\cache\redirected.bin"
+        )
+        is RuleDecision.DELETE
+    )
+
+
 def test_ai_rules_replace_encoded_foreign_username_and_dynamic_hash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -849,7 +849,7 @@ def _portable_path_value(path: str) -> str | None:
         inferred_roots = (
             (
                 profile_root + r"\AppData\Local\Temp",
-                "%TEMP%",
+                r"%LOCALAPPDATA%\Temp",
             ),
             (
                 profile_root + r"\AppData\Local",
