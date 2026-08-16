@@ -71,7 +71,7 @@ def test_npm_explicit_cache_prefix_userconfig_and_logs_dir_are_first_class() -> 
     assert userconfig.owner is DecisionOwner.KEEP
 
 
-def test_npm_content_npx_and_default_logs_are_tool_owned() -> None:
+def test_npm_owned_cache_subtrees_are_tool_owned() -> None:
     paths = {
         (
             r"C:\Users\alice\AppData\Local\npm-cache"
@@ -81,6 +81,10 @@ def test_npm_content_npx_and_default_logs_are_tool_owned() -> None:
             r"C:\Users\alice\AppData\Local\npm-cache"
             r"\_npx\deadbeef\node_modules\pkg\index.js"
         ): "npm-npx-cache",
+        (
+            r"C:\Users\alice\AppData\Local\npm-cache"
+            r"\_tuf\root.json"
+        ): "npm-tuf-cache",
         (
             r"C:\Users\alice\AppData\Local\npm-cache"
             r"\_logs\2026-08-01T00_00_00_000Z-debug-0.log"
@@ -189,24 +193,20 @@ def test_npm_project_and_config_metadata_are_always_protected() -> None:
 
 
 def test_npm_unclassified_cache_root_state_is_not_assumed_disposable() -> None:
-    for path in (
-        r"C:\Users\alice\AppData\Local\npm-cache\_tuf\root.json",
-        r"C:\Users\alice\AppData\Local\npm-cache\future-state.db",
-    ):
-        rule = match_application_rule(path, _env())
-        assert rule is not None
-        assert rule.rule_id == "npm-cache-unclassified"
-        assert rule.owner is DecisionOwner.KEEP
+    path = r"C:\Users\alice\AppData\Local\npm-cache\future-state.db"
+    rule = match_application_rule(path, _env())
+    assert rule is not None
+    assert rule.rule_id == "npm-cache-unclassified"
+    assert rule.owner is DecisionOwner.KEEP
 
 
 def test_npm_whole_tree_authority_stops_at_owned_cache_subdirectories() -> None:
     env = {**_env(), "NPM_CONFIG_CACHE": r"D:\SharedNpmCache"}
-    for child in ("_cacache", "_npx", "_logs"):
+    for child in ("_cacache", "_npx", "_tuf", "_logs"):
         rule = whole_tree_application_rule(rf"D:\SharedNpmCache\{child}", env)
         assert rule is not None
         assert rule.owner is DecisionOwner.TOOL
     assert whole_tree_application_rule(r"D:\SharedNpmCache", env) is None
-    assert whole_tree_application_rule(r"D:\SharedNpmCache\_tuf", env) is None
 
 
 def test_catalog_protects_custom_prefix_and_upgrades_only_npm_cache_children(
@@ -219,9 +219,11 @@ def test_catalog_protects_custom_prefix_and_upgrades_only_npm_cache_children(
     prefix = tmp_path / "npm-global"
     content_cache = cache / "_cacache"
     npx_cache = cache / "_npx"
+    tuf_cache = cache / "_tuf"
     global_modules = prefix / "node_modules"
     content_cache.mkdir(parents=True)
     npx_cache.mkdir(parents=True)
+    tuf_cache.mkdir(parents=True)
     global_modules.mkdir(parents=True)
     env = {
         "USERPROFILE": str(home),
@@ -239,14 +241,14 @@ def test_catalog_protects_custom_prefix_and_upgrades_only_npm_cache_children(
     prefix_root = by_path[os.path.normcase(str(prefix))]
     cacache_root = by_path[os.path.normcase(str(content_cache))]
     npx_root = by_path[os.path.normcase(str(npx_cache))]
+    tuf_root = by_path[os.path.normcase(str(tuf_cache))]
 
     assert not cache_root.delete_root_itself
     assert prefix_root.policy is CleanupPolicy.REPORT_ONLY
     assert not prefix_root.delete_root_itself
-    assert cacache_root.policy is CleanupPolicy.VENDOR_MANAGED
-    assert cacache_root.delete_root_itself
-    assert npx_root.policy is CleanupPolicy.VENDOR_MANAGED
-    assert npx_root.delete_root_itself
+    for tool_root in (cacache_root, npx_root, tuf_root):
+        assert tool_root.policy is CleanupPolicy.VENDOR_MANAGED
+        assert tool_root.delete_root_itself
 
     scope = directory_cleanup_scope(
         global_modules,
