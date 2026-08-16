@@ -12,6 +12,7 @@ from devclean.core.application_cleanup import (
     CLAUDE_RULES,
     CODEX_RULES,
     CURSOR_RULES,
+    ApplicationCleanupRule,
     DecisionOwner,
     application_roots,
     application_scan_roots,
@@ -35,6 +36,7 @@ class KnownCleanupRoot:
     label: str
     allow_inside_system_anchor: bool = False
     delete_root_itself: bool = False
+    application_rule: ApplicationCleanupRule | None = None
 
 
 def discover_known_cleanup_roots(
@@ -133,6 +135,7 @@ def _append_application_roots(
                 policy=CleanupPolicy.VENDOR_MANAGED,
                 label=rule.label,
                 delete_root_itself=True,
+                application_rule=rule,
             )
 
     for dynamic_path, rule in audited_dynamic_tool_roots(environment):
@@ -144,6 +147,7 @@ def _append_application_roots(
             policy=CleanupPolicy.VENDOR_MANAGED,
             label=rule.label,
             delete_root_itself=True,
+            application_rule=rule,
         )
 
 
@@ -180,6 +184,7 @@ def _append_root(
     label: str,
     allow_inside_system_anchor: bool = False,
     delete_root_itself: bool = False,
+    application_rule: ApplicationCleanupRule | None = None,
 ) -> None:
     try:
         if not path.is_absolute() or not path.is_dir():
@@ -196,6 +201,7 @@ def _append_root(
         label=label,
         allow_inside_system_anchor=allow_inside_system_anchor,
         delete_root_itself=delete_root_itself,
+        application_rule=application_rule,
     )
     if key in seen:
         if delete_root_itself:
