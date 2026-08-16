@@ -168,7 +168,10 @@ class _ClaudeMaintenanceDialog:
 
     def _handle_event(self, kind: str, payload: object) -> None:
         if kind == "storage":
-            self._plugin_total.set(_format_bytes(int(payload)))
+            if not isinstance(payload, int):
+                self._status.set("插件目录统计返回了无效结果。")
+                return
+            self._plugin_total.set(_format_bytes(payload))
             self._status.set("可先预览 Claude Code 判定的孤立插件依赖。")
             return
         if kind == "storage_error":
@@ -177,7 +180,11 @@ class _ClaudeMaintenanceDialog:
         if kind == "prune_error":
             self._busy = False
             self._sync_buttons()
-            error = payload if isinstance(payload, Exception) else ClaudeMaintenanceError(str(payload))
+            error = (
+                payload
+                if isinstance(payload, Exception)
+                else ClaudeMaintenanceError(str(payload))
+            )
             messagebox.showerror("Claude plugin prune", str(error), parent=self._window)
             self._status.set("Claude plugin prune 未执行。")
             return
