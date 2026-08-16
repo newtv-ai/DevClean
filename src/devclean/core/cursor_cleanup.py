@@ -1,9 +1,10 @@
 """Audited Cursor desktop/CLI storage semantics for Windows cleanup.
 
-Cursor spreads regenerable Electron/extension caches across roaming and local
-application-data roots while keeping unique local chat transcripts, workspace
-state, checkpoints, and configuration in neighboring paths.  This profile makes
-that distinction explicit so generic cache-name heuristics cannot erase history.
+Cursor mixes regenerable Electron caches with local-only chat history, agent
+transcripts, recovery databases, editor history, installed extensions, and
+persistent user state. The generic purger may only receive TOOL-owned paths;
+chat/history databases remain USER-owned and are maintained with Cursor's own
+storage commands instead of raw file deletion.
 """
 
 from __future__ import annotations
@@ -75,120 +76,140 @@ def _rule(
     )
 
 
+def _tool_dir(
+    rule_id: str,
+    root_key: str,
+    relative: str,
+    label: str,
+    *,
+    idle_days: float = 7,
+    min_reclaim_bytes: int = 4 * _MIB,
+    rebuild_cost: RebuildCost = RebuildCost.LOW,
+) -> ApplicationCleanupRule:
+    return _rule(
+        rule_id,
+        root_key,
+        relative,
+        MatchKind.PREFIX,
+        DecisionOwner.TOOL,
+        rebuild_cost,
+        label,
+        idle_days=idle_days,
+        min_reclaim_bytes=min_reclaim_bytes,
+        requires_process_closed=True,
+        allow_whole_tree=True,
+    )
+
+
 def _cache_rules(root_key: str, prefix: str) -> tuple[ApplicationCleanupRule, ...]:
     return (
-        _rule(
+        _tool_dir(
             f"cursor-{prefix}-cache",
             root_key,
             "Cache",
-            MatchKind.PREFIX,
-            DecisionOwner.TOOL,
-            RebuildCost.LOW,
             "Cursor Chromium resource cache",
-            idle_days=7,
-            min_reclaim_bytes=4 * _MIB,
-            requires_process_closed=True,
-            allow_whole_tree=True,
         ),
-        _rule(
+        _tool_dir(
             f"cursor-{prefix}-cached-data",
             root_key,
             "CachedData",
-            MatchKind.PREFIX,
-            DecisionOwner.TOOL,
-            RebuildCost.LOW,
             "Cursor cached application data",
-            idle_days=7,
-            min_reclaim_bytes=4 * _MIB,
-            requires_process_closed=True,
-            allow_whole_tree=True,
         ),
-        _rule(
+        _tool_dir(
             f"cursor-{prefix}-code-cache",
             root_key,
             "Code Cache",
-            MatchKind.PREFIX,
-            DecisionOwner.TOOL,
-            RebuildCost.LOW,
             "Cursor Chromium code cache",
-            idle_days=7,
-            min_reclaim_bytes=4 * _MIB,
-            requires_process_closed=True,
-            allow_whole_tree=True,
         ),
-        _rule(
+        _tool_dir(
             f"cursor-{prefix}-gpu-cache",
             root_key,
             "GPUCache",
-            MatchKind.PREFIX,
-            DecisionOwner.TOOL,
-            RebuildCost.LOW,
             "Cursor GPU cache",
             idle_days=3,
-            min_reclaim_bytes=4 * _MIB,
-            requires_process_closed=True,
-            allow_whole_tree=True,
         ),
-        _rule(
+        _tool_dir(
+            f"cursor-{prefix}-dawn-cache",
+            root_key,
+            "DawnCache",
+            "Cursor WebGPU Dawn cache",
+            idle_days=3,
+        ),
+        _tool_dir(
+            f"cursor-{prefix}-grshader-cache",
+            root_key,
+            "GrShaderCache",
+            "Cursor graphics shader cache",
+            idle_days=3,
+        ),
+        _tool_dir(
+            f"cursor-{prefix}-shader-cache",
+            root_key,
+            "ShaderCache",
+            "Cursor graphics shader cache",
+            idle_days=3,
+        ),
+        _tool_dir(
             f"cursor-{prefix}-cached-extensions",
             root_key,
             "CachedExtensions",
-            MatchKind.PREFIX,
-            DecisionOwner.TOOL,
-            RebuildCost.LOW,
             "Cursor extension metadata cache",
-            idle_days=7,
-            min_reclaim_bytes=4 * _MIB,
-            requires_process_closed=True,
-            allow_whole_tree=True,
         ),
-        _rule(
+        _tool_dir(
             f"cursor-{prefix}-cached-extension-vsix",
             root_key,
             "CachedExtensionVSIXs",
-            MatchKind.PREFIX,
-            DecisionOwner.TOOL,
-            RebuildCost.MEDIUM,
             "Cursor downloaded extension package cache",
             idle_days=14,
             min_reclaim_bytes=8 * _MIB,
-            requires_process_closed=True,
-            allow_whole_tree=True,
+            rebuild_cost=RebuildCost.MEDIUM,
+        ),
+        _tool_dir(
+            f"cursor-{prefix}-crashpad-reports",
+            root_key,
+            r"Crashpad\reports",
+            "Cursor Crashpad reports",
+            idle_days=1,
+            min_reclaim_bytes=_MIB,
+            rebuild_cost=RebuildCost.NONE,
+        ),
+        _tool_dir(
+            f"cursor-{prefix}-crashpad-pending",
+            root_key,
+            r"Crashpad\pending",
+            "Cursor pending crash reports",
+            idle_days=1,
+            min_reclaim_bytes=_MIB,
+            rebuild_cost=RebuildCost.NONE,
         ),
     )
 
 
-# More-specific TOOL/USER rules intentionally outrank the broad KEEP roots.
-# Unknown Cursor state is protected by default; only paths with current evidence
-# are delegated to generic cleanup.
+# More-specific TOOL/USER rules intentionally outrank broad KEEP roots. Cursor
+# staff explicitly recommends Cache/CachedData/Code Cache/GPUCache and extension
+# package caches as disposable troubleshooting state. Chat DBs are different:
+# raw deletion can break history loading, so they remain USER-owned even when
+# they grow to tens of gigabytes.
 CURSOR_RULES: tuple[ApplicationCleanupRule, ...] = (
     *_cache_rules("CURSOR_ROAMING", "roaming"),
     *_cache_rules("CURSOR_LOCAL", "local"),
-    _rule(
+    _tool_dir(
         "cursor-roaming-logs",
         "CURSOR_ROAMING",
         "logs",
-        MatchKind.PREFIX,
-        DecisionOwner.TOOL,
-        RebuildCost.NONE,
         "Cursor diagnostic logs",
         idle_days=7,
         min_reclaim_bytes=_MIB,
-        requires_process_closed=True,
-        allow_whole_tree=True,
+        rebuild_cost=RebuildCost.NONE,
     ),
-    _rule(
+    _tool_dir(
         "cursor-local-logs",
         "CURSOR_LOCAL",
         "logs",
-        MatchKind.PREFIX,
-        DecisionOwner.TOOL,
-        RebuildCost.NONE,
         "Cursor local diagnostic logs",
         idle_days=7,
         min_reclaim_bytes=_MIB,
-        requires_process_closed=True,
-        allow_whole_tree=True,
+        rebuild_cost=RebuildCost.NONE,
     ),
     _rule(
         "cursor-workspace-state",
@@ -213,17 +234,37 @@ CURSOR_RULES: tuple[ApplicationCleanupRule, ...] = (
     _rule(
         "cursor-global-chat-database",
         "CURSOR_ROAMING",
-        r"User\globalStorage\{state.vscdb,state.vscdb.backup,state.vscdb-wal,state.vscdb-shm}",
+        r"User\globalStorage\{state.vscdb,state.vscdb-wal,state.vscdb-shm}",
         MatchKind.GLOB,
         DecisionOwner.USER,
         RebuildCost.HIGH,
-        "Cursor local chat/agent database; clean only with Cursor's own commands",
+        "Cursor live chat/agent database; maintain through Cursor commands",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "cursor-global-chat-backup",
+        "CURSOR_ROAMING",
+        r"User\globalStorage\state.vscdb.backup",
+        MatchKind.EXACT,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Cursor chat database recovery backup",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "cursor-global-chat-recovery-files",
+        "CURSOR_ROAMING",
+        r"User\globalStorage\state.vscdb.{corrupted.*,broken*,bak*,manual-backup*}",
+        MatchKind.GLOB,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Cursor chat database recovery copies; may contain recoverable history",
         user_age_buckets=(30, 90, 180),
     ),
     _rule(
         "cursor-system-global-chat-database",
         "CURSOR_PROGRAMDATA",
-        r"User\globalStorage\{state.vscdb,state.vscdb.backup,state.vscdb-wal,state.vscdb-shm}",
+        r"User\globalStorage\{state.vscdb,state.vscdb-wal,state.vscdb-shm,state.vscdb.backup}",
         MatchKind.GLOB,
         DecisionOwner.USER,
         RebuildCost.HIGH,
@@ -281,6 +322,15 @@ CURSOR_RULES: tuple[ApplicationCleanupRule, ...] = (
         user_age_buckets=(30, 90, 180),
     ),
     _rule(
+        "cursor-hot-exit-backups",
+        "CURSOR_ROAMING",
+        "Backups",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Cursor unsaved editor/recovery data",
+    ),
+    _rule(
         "cursor-installed-extensions",
         "CURSOR_HOME",
         "extensions",
@@ -296,7 +346,7 @@ CURSOR_RULES: tuple[ApplicationCleanupRule, ...] = (
         MatchKind.PREFIX,
         DecisionOwner.KEEP,
         RebuildCost.HIGH,
-        "Cursor settings, extension state, snippets, and other persistent user state",
+        "Cursor settings, extension state, snippets, and persistent user state",
     ),
     _rule(
         "cursor-system-user-state",
@@ -401,8 +451,6 @@ def match_cursor_rule(
         for expanded in _impl._expand_braces(rule.relative_pattern):
             candidate = root + ("\\" + expanded if expanded else "")
             if _impl._matches(normalized, candidate, rule.match_kind):
-                # Specificity dominates. On equal specificity, KEEP wins to keep
-                # ambiguous state out of generic deletion authority.
                 if rule.owner is DecisionOwner.KEEP:
                     owner_weight = 3
                 elif rule.owner is DecisionOwner.USER:
@@ -430,10 +478,21 @@ def evaluate_cursor_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
+    idle = (
+        None
+        if observed is None
+        else max(0.0, (current - observed).total_seconds() / 86_400)
+    )
 
     if rule.owner is DecisionOwner.KEEP:
-        return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
+        return ApplicationPolicyDecision(
+            rule,
+            PolicyAction.KEEP_PROTECTED,
+            observed,
+            idle,
+            None,
+            0,
+        )
     if rule.owner is DecisionOwner.USER:
         return ApplicationPolicyDecision(
             rule,
