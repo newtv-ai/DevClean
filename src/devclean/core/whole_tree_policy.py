@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from devclean.core.application_cleanup import (
+    ApplicationCleanupRule,
     DecisionOwner,
     LastUseStrategy,
     PolicyAction,
@@ -97,19 +98,15 @@ def require_application_whole_tree_policy(
 
 
 def _require_fresh_tree_floor(
-    rule: object,
+    rule: ApplicationCleanupRule,
     evidence: WholeTreePolicyEvidence,
     observed: datetime,
 ) -> None:
-    # ``rule`` is intentionally narrowed by attribute access below rather than
-    # duplicating the public ApplicationCleanupRule import solely for annotation.
-    min_reclaim_bytes = getattr(rule, "min_reclaim_bytes")
-    label = getattr(rule, "label")
-    if evidence.logical_bytes < min_reclaim_bytes:
+    if evidence.logical_bytes < rule.min_reclaim_bytes:
         raise WholeTreePolicyRefusal(
-            f"{label} is below its minimum reclaim threshold"
+            f"{rule.label} is below its minimum reclaim threshold"
         )
-    threshold = effective_idle_days(rule, evidence.logical_bytes)  # type: ignore[arg-type]
+    threshold = effective_idle_days(rule, evidence.logical_bytes)
     if threshold is None:
         raise WholeTreePolicyRefusal(
             "application whole-tree idle threshold is unavailable"
@@ -120,7 +117,7 @@ def _require_fresh_tree_floor(
     )
     if idle_days < threshold:
         raise WholeTreePolicyRefusal(
-            f"{label} was used too recently for whole-tree cleanup"
+            f"{rule.label} was used too recently for whole-tree cleanup"
         )
 
 
