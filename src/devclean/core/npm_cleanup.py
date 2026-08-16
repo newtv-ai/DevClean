@@ -118,6 +118,14 @@ NPM_RULES: tuple[ApplicationCleanupRule, ...] = (
         rebuild_cost=RebuildCost.MEDIUM,
     ),
     _tool_cache_dir(
+        "npm-tuf-cache",
+        "_tuf",
+        "npm Sigstore TUF metadata and target cache",
+        idle_days=30,
+        min_reclaim_bytes=_MIB,
+        rebuild_cost=RebuildCost.LOW,
+    ),
+    _tool_cache_dir(
         "npm-default-logs",
         "_logs",
         "npm diagnostic logs",
