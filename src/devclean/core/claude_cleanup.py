@@ -474,6 +474,7 @@ def evaluate_claude_path(
     if rule is None:
         return None
     current = _impl._as_utc(now or datetime.now(UTC))
+    assert current is not None
     observed = _impl._as_utc(_resolve_last_used(path, rule, last_used))
     idle = (
         None
