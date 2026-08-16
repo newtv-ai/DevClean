@@ -153,13 +153,17 @@ def _append_application_roots(
 
 def _application_category(rule_id: str) -> CleanupCategory:
     lower = rule_id.casefold()
-    if lower in {"jetbrains-product-logs", "toolbox-product-logs"}:
+    if lower in {
+        "android-studio-product-logs",
+        "jetbrains-product-logs",
+        "toolbox-product-logs",
+    }:
         return CleanupCategory.SYSTEM_LOGS
     if lower == "toolbox-download-cache":
         return CleanupCategory.INSTALLERS_DOWNLOADS
     if lower == "toolbox-install-temp":
         return CleanupCategory.USER_TEMP
-    if lower.startswith(("jetbrains-", "toolbox-")):
+    if lower.startswith(("android-studio-", "jetbrains-", "toolbox-")):
         return CleanupCategory.IDE_CACHE
     if "crash" in lower:
         return CleanupCategory.CRASH_DUMPS
