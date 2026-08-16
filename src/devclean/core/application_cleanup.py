@@ -124,6 +124,16 @@ from devclean.core.pnpm_cleanup import (
     pnpm_scan_roots,
     whole_tree_pnpm_rule,
 )
+from devclean.core.toolbox_cleanup import (
+    TOOLBOX_RULES,
+    clear_toolbox_process_cache,
+    evaluate_toolbox_path,
+    match_toolbox_rule,
+    toolbox_audited_tool_roots,
+    toolbox_process_running,
+    toolbox_scan_roots,
+    whole_tree_toolbox_rule,
+)
 from devclean.core.trae_cleanup import (
     TRAE_RULES,
     clear_trae_process_cache,
@@ -207,6 +217,7 @@ def application_scan_roots(
                 *opera_scan_roots(environment),
                 *firefox_scan_roots(environment),
                 *jetbrains_scan_roots(environment),
+                *toolbox_scan_roots(environment),
             )
         )
     )
@@ -230,6 +241,7 @@ def audited_dynamic_tool_roots(
         *opera_audited_tool_roots(environment),
         *firefox_audited_tool_roots(environment),
         *jetbrains_audited_tool_roots(environment),
+        *toolbox_audited_tool_roots(environment),
     )
 
 
@@ -239,6 +251,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    toolbox = match_toolbox_rule(path, environment)
+    if toolbox is not None:
+        return toolbox
     jetbrains = match_jetbrains_rule(path, environment)
     if jetbrains is not None:
         return jetbrains
@@ -301,7 +316,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_jetbrains_path(
+    decision = evaluate_toolbox_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -309,6 +324,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_jetbrains_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = evaluate_firefox_path(
             path,
@@ -441,6 +465,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "toolbox":
+        return toolbox_process_running()
     if app_id == "jetbrains":
         return jetbrains_process_running()
     if app_id == "firefox":
@@ -488,6 +514,7 @@ def clear_process_cache() -> None:
     clear_opera_process_cache()
     clear_firefox_process_cache()
     clear_jetbrains_process_cache()
+    clear_toolbox_process_cache()
 
 
 def process_guard_allows(
@@ -511,6 +538,9 @@ def whole_tree_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return a TOOL rule only when *path* is exactly an audited whole-tree root."""
 
+    dynamic = whole_tree_toolbox_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_jetbrains_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -574,6 +604,7 @@ def application_display_name(app_id: str) -> str:
         "edge": "Microsoft Edge",
         "firefox": "Mozilla Firefox",
         "jetbrains": "JetBrains IDE",
+        "toolbox": "JetBrains Toolbox",
         "opera": "Opera / Opera GX",
         "vivaldi": "Vivaldi",
         "codex": "Codex",
@@ -599,6 +630,7 @@ __all__ = [
     "NPM_RULES",
     "OPERA_RULES",
     "PNPM_RULES",
+    "TOOLBOX_RULES",
     "TRAE_RULES",
     "VIVALDI_RULES",
     "VSCODE_RULES",
