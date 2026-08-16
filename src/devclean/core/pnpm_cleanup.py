@@ -78,47 +78,93 @@ def _rule(
 
 PNPM_RULES: tuple[ApplicationCleanupRule, ...] = (
     _rule(
-        "pnpm-dlx-cache", "dlx", MatchKind.PREFIX, DecisionOwner.TOOL,
-        RebuildCost.MEDIUM, "pnpm dlx temporary executable environments",
-        root_kind="cache", idle_days=_DLX_IDLE_DAYS, min_reclaim_bytes=8 * _MIB,
-        requires_process_closed=True, allow_whole_tree=True,
+        "pnpm-dlx-cache",
+        "dlx",
+        MatchKind.PREFIX,
+        DecisionOwner.TOOL,
+        RebuildCost.MEDIUM,
+        "pnpm dlx temporary executable environments",
+        root_kind="cache",
+        idle_days=_DLX_IDLE_DAYS,
+        min_reclaim_bytes=8 * _MIB,
+        requires_process_closed=True,
+        allow_whole_tree=True,
     ),
     _rule(
-        "pnpm-metadata-cache", "metadata-v*", MatchKind.GLOB,
-        DecisionOwner.TOOL, RebuildCost.LOW, "pnpm registry metadata cache",
-        root_kind="cache", idle_days=14, min_reclaim_bytes=_MIB,
+        "pnpm-metadata-cache",
+        "metadata-v*",
+        MatchKind.GLOB,
+        DecisionOwner.TOOL,
+        RebuildCost.LOW,
+        "pnpm registry metadata cache",
+        root_kind="cache",
+        idle_days=14,
+        min_reclaim_bytes=_MIB,
         requires_process_closed=True,
     ),
     _rule(
-        "pnpm-cache-unclassified", "", MatchKind.PREFIX, DecisionOwner.KEEP,
-        RebuildCost.HIGH, "Unclassified pnpm cache-root state", root_kind="cache",
+        "pnpm-cache-unclassified",
+        "",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Unclassified pnpm cache-root state",
+        root_kind="cache",
     ),
     _rule(
-        "pnpm-update-state", "pnpm-state.json", MatchKind.EXACT,
-        DecisionOwner.TOOL, RebuildCost.NONE, "pnpm update-check state",
-        root_kind="state", idle_days=7, min_reclaim_bytes=_MIB,
-        requires_process_closed=True, size_sensitive_idle=False,
+        "pnpm-update-state",
+        "pnpm-state.json",
+        MatchKind.EXACT,
+        DecisionOwner.TOOL,
+        RebuildCost.NONE,
+        "pnpm update-check state",
+        root_kind="state",
+        idle_days=7,
+        min_reclaim_bytes=_MIB,
+        requires_process_closed=True,
+        size_sensitive_idle=False,
     ),
     _rule(
-        "pnpm-state-unclassified", "", MatchKind.PREFIX, DecisionOwner.KEEP,
-        RebuildCost.HIGH, "Unclassified pnpm state directory", root_kind="state",
+        "pnpm-state-unclassified",
+        "",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Unclassified pnpm state directory",
+        root_kind="state",
     ),
     _rule(
-        "pnpm-store", "", MatchKind.PREFIX, DecisionOwner.KEEP,
+        "pnpm-store",
+        "",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
         RebuildCost.HIGH,
         "pnpm store; maintain with pnpm store prune instead of raw deletion",
         root_kind="store",
     ),
     _rule(
-        "pnpm-global-install", "", MatchKind.PREFIX, DecisionOwner.KEEP,
-        RebuildCost.HIGH, "pnpm globally installed packages", root_kind="global",
+        "pnpm-global-install",
+        "",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "pnpm globally installed packages",
+        root_kind="global",
     ),
     _rule(
-        "pnpm-global-bin", "", MatchKind.PREFIX, DecisionOwner.KEEP,
-        RebuildCost.HIGH, "pnpm global executable shims", root_kind="global_bin",
+        "pnpm-global-bin",
+        "",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "pnpm global executable shims",
+        root_kind="global_bin",
     ),
     _rule(
-        "pnpm-home", "", MatchKind.PREFIX, DecisionOwner.KEEP,
+        "pnpm-home",
+        "",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
         RebuildCost.HIGH,
         "PNPM_HOME executables, configuration and persistent package-manager data",
         root_kind="home",
@@ -126,9 +172,14 @@ PNPM_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 _PNPM_LOCK_RULE = ApplicationCleanupRule(
-    rule_id="pnpm-project-metadata", app_id="pnpm", root_key="ANYWHERE",
-    relative_pattern="", match_kind=MatchKind.EXACT, owner=DecisionOwner.KEEP,
-    last_use=LastUseStrategy.FILE_MTIME, rebuild_cost=RebuildCost.HIGH,
+    rule_id="pnpm-project-metadata",
+    app_id="pnpm",
+    root_key="ANYWHERE",
+    relative_pattern="",
+    match_kind=MatchKind.EXACT,
+    owner=DecisionOwner.KEEP,
+    last_use=LastUseStrategy.FILE_MTIME,
+    rebuild_cost=RebuildCost.HIGH,
     label="pnpm lock/workspace metadata",
 )
 _PNPM_METADATA_FILENAMES = frozenset({"pnpm-lock.yaml", "pnpm-workspace.yaml"})
@@ -144,15 +195,24 @@ def pnpm_roots(environment: Mapping[str, str] | None = None) -> PnpmRootSet:
         if localappdata
         else None
     )
-    default_cache = PureWindowsPath(localappdata) / "pnpm-cache" if localappdata else None
-    default_state = PureWindowsPath(localappdata) / "pnpm-state" if localappdata else None
+    default_cache = (
+        PureWindowsPath(localappdata) / "pnpm-cache" if localappdata else None
+    )
+    default_state = (
+        PureWindowsPath(localappdata) / "pnpm-state" if localappdata else None
+    )
     effective = _effective_pnpm_config() if environment is None else {}
 
     cache_value = _first_config_path(env, effective, "cache_dir", "cacheDir")
     state_value = _first_config_path(env, effective, "state_dir", "stateDir")
     store_value = _first_config_path(env, effective, "store_dir", "storeDir")
     global_value = _first_config_path(env, effective, "global_dir", "globalDir")
-    global_bin_value = _first_config_path(env, effective, "global_bin_dir", "globalBinDir")
+    global_bin_value = _first_config_path(
+        env,
+        effective,
+        "global_bin_dir",
+        "globalBinDir",
+    )
 
     caches: list[PureWindowsPath] = []
     states: list[PureWindowsPath] = []
@@ -195,18 +255,31 @@ def pnpm_roots(environment: Mapping[str, str] | None = None) -> PnpmRootSet:
                 stores.append(candidate)
 
     return PnpmRootSet(
-        cache_roots=_unique_paths(caches), state_roots=_unique_paths(states),
-        home_roots=_unique_paths(homes), store_roots=_unique_paths(stores),
-        global_roots=_unique_paths(globals_), global_bin_roots=_unique_paths(global_bins),
+        cache_roots=_unique_paths(caches),
+        state_roots=_unique_paths(states),
+        home_roots=_unique_paths(homes),
+        store_roots=_unique_paths(stores),
+        global_roots=_unique_paths(globals_),
+        global_bin_roots=_unique_paths(global_bins),
     )
 
 
-def pnpm_scan_roots(environment: Mapping[str, str] | None = None) -> tuple[PureWindowsPath, ...]:
+def pnpm_scan_roots(
+    environment: Mapping[str, str] | None = None,
+) -> tuple[PureWindowsPath, ...]:
     roots = pnpm_roots(environment)
-    return tuple(dict.fromkeys((
-        *roots.cache_roots, *roots.state_roots, *roots.store_roots,
-        *roots.global_roots, *roots.global_bin_roots, *roots.home_roots,
-    )))
+    return tuple(
+        dict.fromkeys(
+            (
+                *roots.cache_roots,
+                *roots.state_roots,
+                *roots.store_roots,
+                *roots.global_roots,
+                *roots.global_bin_roots,
+                *roots.home_roots,
+            )
+        )
+    )
 
 
 def match_pnpm_rule(
@@ -216,9 +289,12 @@ def match_pnpm_rule(
     normalized = _impl._normalize(path)
     roots = pnpm_roots(environment)
     groups = {
-        "PNPM_CACHE": roots.cache_roots, "PNPM_STATE": roots.state_roots,
-        "PNPM_STORE": roots.store_roots, "PNPM_GLOBAL": roots.global_roots,
-        "PNPM_GLOBAL_BIN": roots.global_bin_roots, "PNPM_HOME": roots.home_roots,
+        "PNPM_CACHE": roots.cache_roots,
+        "PNPM_STATE": roots.state_roots,
+        "PNPM_STORE": roots.store_roots,
+        "PNPM_GLOBAL": roots.global_roots,
+        "PNPM_GLOBAL_BIN": roots.global_bin_roots,
+        "PNPM_HOME": roots.home_roots,
     }
     matches: list[tuple[int, int, ApplicationCleanupRule]] = []
     for index, rule in enumerate(PNPM_RULES):
@@ -228,7 +304,12 @@ def match_pnpm_rule(
                 candidate = normalized_root + ("\\" + expanded if expanded else "")
                 if not _impl._matches(normalized, candidate, rule.match_kind):
                     continue
-                owner_weight = 3 if rule.owner is DecisionOwner.KEEP else 2 if rule.owner is DecisionOwner.USER else 1
+                if rule.owner is DecisionOwner.KEEP:
+                    owner_weight = 3
+                elif rule.owner is DecisionOwner.USER:
+                    owner_weight = 2
+                else:
+                    owner_weight = 1
                 matches.append((len(candidate), owner_weight * 1000 - index, rule))
     if matches:
         return max(matches, key=lambda item: (item[0], item[1]))[2]
@@ -241,8 +322,12 @@ def pnpm_audited_tool_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
     roots = pnpm_roots(environment)
-    dlx_rule = next(rule for rule in PNPM_RULES if rule.rule_id == "pnpm-dlx-cache")
-    metadata_rule = next(rule for rule in PNPM_RULES if rule.rule_id == "pnpm-metadata-cache")
+    dlx_rule = next(
+        rule for rule in PNPM_RULES if rule.rule_id == "pnpm-dlx-cache"
+    )
+    metadata_rule = next(
+        rule for rule in PNPM_RULES if rule.rule_id == "pnpm-metadata-cache"
+    )
     found: list[tuple[PureWindowsPath, ApplicationCleanupRule]] = []
     seen: set[str] = set()
     for cache in roots.cache_roots:
@@ -264,8 +349,11 @@ def whole_tree_pnpm_rule(
 
 
 def evaluate_pnpm_path(
-    path: str | os.PathLike[str], *, logical_size: int,
-    last_used: datetime | None, now: datetime | None = None,
+    path: str | os.PathLike[str],
+    *,
+    logical_size: int,
+    last_used: datetime | None,
+    now: datetime | None = None,
     process_running: bool | None = None,
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationPolicyDecision | None:
@@ -275,9 +363,20 @@ def evaluate_pnpm_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
+    idle = (
+        None
+        if observed is None
+        else max(0.0, (current - observed).total_seconds() / 86_400)
+    )
     if rule.owner is DecisionOwner.KEEP:
-        return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
+        return ApplicationPolicyDecision(
+            rule,
+            PolicyAction.KEEP_PROTECTED,
+            observed,
+            idle,
+            None,
+            0,
+        )
     threshold = effective_idle_days(rule, logical_size)
     running = process_running
     if running is None and rule.requires_process_closed:
@@ -300,11 +399,18 @@ def evaluate_pnpm_path(
 def pnpm_process_running() -> bool:
     if os.name != "nt":
         return False
+    script = (
+        "$p=Get-CimInstance Win32_Process | Where-Object { "
+        "$_.Name -ieq 'node.exe' -and $_.CommandLine -match '(?i)pnpm' }; "
+        "if ($p) { 'RUNNING' }"
+    )
     try:
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-             "$p=Get-Process -Name node -ErrorAction SilentlyContinue; if ($p) { 'RUNNING' }"],
-            check=False, capture_output=True, text=True, timeout=6,
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=6,
         )
     except (OSError, subprocess.SubprocessError):
         return True
@@ -316,8 +422,11 @@ def _effective_pnpm_config() -> dict[str, str]:
     executable = "pnpm.cmd" if os.name == "nt" else "pnpm"
     try:
         result = subprocess.run(
-            [executable, "config", "list"], check=False,
-            capture_output=True, text=True, timeout=8,
+            [executable, "config", "list"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=8,
         )
     except (OSError, subprocess.SubprocessError):
         return {}
@@ -330,7 +439,11 @@ def _effective_pnpm_config() -> dict[str, str]:
     if not isinstance(raw, dict):
         return {}
     allowed = {"cacheDir", "stateDir", "storeDir", "globalDir", "globalBinDir"}
-    return {str(key): str(value) for key, value in raw.items() if key in allowed and isinstance(value, str) and value}
+    return {
+        str(key): str(value)
+        for key, value in raw.items()
+        if key in allowed and isinstance(value, str) and value
+    }
 
 
 @lru_cache(maxsize=1)
@@ -338,8 +451,11 @@ def _active_pnpm_store_path() -> str | None:
     executable = "pnpm.cmd" if os.name == "nt" else "pnpm"
     try:
         result = subprocess.run(
-            [executable, "store", "path", "--silent"], check=False,
-            capture_output=True, text=True, timeout=8,
+            [executable, "store", "path", "--silent"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=8,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -356,10 +472,16 @@ def clear_pnpm_process_cache() -> None:
 
 
 def _first_config_path(
-    environment: Mapping[str, str], effective: Mapping[str, str],
-    env_suffix: str, config_key: str,
+    environment: Mapping[str, str],
+    effective: Mapping[str, str],
+    env_suffix: str,
+    config_key: str,
 ) -> str | None:
-    return environment.get(f"pnpm_config_{env_suffix}") or environment.get(f"npm_config_{env_suffix}") or effective.get(config_key)
+    return (
+        environment.get(f"pnpm_config_{env_suffix}")
+        or environment.get(f"npm_config_{env_suffix}")
+        or effective.get(config_key)
+    )
 
 
 def _unique_paths(paths: list[PureWindowsPath]) -> tuple[PureWindowsPath, ...]:
@@ -378,12 +500,16 @@ def _metadata_cache_dirs(cache_root: PureWindowsPath) -> tuple[PureWindowsPath, 
         children = tuple(Path(str(cache_root)).glob("metadata-v*"))
     except OSError:
         return ()
-    return tuple(PureWindowsPath(str(child)) for child in children if child.is_dir())
+    return tuple(
+        PureWindowsPath(str(child)) for child in children if child.is_dir()
+    )
 
 
 def _append_tool_root(
-    found: list[tuple[PureWindowsPath, ApplicationCleanupRule]], seen: set[str],
-    path: PureWindowsPath, rule: ApplicationCleanupRule,
+    found: list[tuple[PureWindowsPath, ApplicationCleanupRule]],
+    seen: set[str],
+    path: PureWindowsPath,
+    rule: ApplicationCleanupRule,
 ) -> None:
     key = _impl._normalize(path)
     if key not in seen:
@@ -404,8 +530,14 @@ def _casefold_env(environment: Mapping[str, str] | None) -> dict[str, str]:
 
 
 __all__ = [
-    "PNPM_RULES", "PnpmRootSet", "clear_pnpm_process_cache",
-    "evaluate_pnpm_path", "match_pnpm_rule", "pnpm_audited_tool_roots",
-    "pnpm_process_running", "pnpm_roots", "pnpm_scan_roots",
+    "PNPM_RULES",
+    "PnpmRootSet",
+    "clear_pnpm_process_cache",
+    "evaluate_pnpm_path",
+    "match_pnpm_rule",
+    "pnpm_audited_tool_roots",
+    "pnpm_process_running",
+    "pnpm_roots",
+    "pnpm_scan_roots",
     "whole_tree_pnpm_rule",
 ]
