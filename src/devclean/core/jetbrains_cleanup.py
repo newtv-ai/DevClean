@@ -1,15 +1,15 @@
 """Audited JetBrains IntelliJ-platform storage semantics for Windows cleanup.
 
 JetBrains separates user configuration/plugins from a per-version system
-directory.  The system directory is *mixed state*: it contains regenerable
-indexes and caches but also Local History and embedded-browser cookies.  This
-profile therefore keeps the system root protected and delegates only exact,
-source-backed regenerable subtrees.  Configuration and plugins are always
-persistent state.
+directory. The system directory is mixed state: it contains regenerable indexes
+and caches but also Local History and embedded-browser cookies. This profile
+therefore keeps the system root protected and delegates only exact, source-backed
+regenerable subtrees. Configuration and plugins are always persistent state.
 """
 
 from __future__ import annotations
 
+import ntpath
 import os
 import re
 import subprocess
@@ -34,7 +34,7 @@ from devclean.core._application_cleanup_impl import (
 _MIB = 1024**2
 
 # Current/default Windows selectors documented by JetBrains products and their
-# support knowledge base.  Android Studio is intentionally excluded: it is a
+# support knowledge base. Android Studio is intentionally excluded: it is a
 # Google-distributed IntelliJ-platform product with its own storage lifecycle.
 _SELECTOR_PREFIXES = (
     "IntelliJIdea",
@@ -77,6 +77,10 @@ _PATH_PROPERTIES = {
     "idea.plugins.path": "plugins",
     "idea.log.path": "log",
 }
+_PROCESS_NAME_REGEX = (
+    r"(?i)^(?:idea|pycharm|webstorm|phpstorm|clion|datagrip|goland|rider|"
+    r"rubymine|rustrover|dataspell|aqua)64?\.exe$"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,40 +274,51 @@ def jetbrains_roots(
     }
     _append_explicit_paths(explicit, configs, systems, plugins, logs)
 
-    property_files: list[Path] = []
+    # Collect every source-backed property location rather than choosing one
+    # global winner: separate installed products may legitimately use different
+    # redirects. Stale/default locations remain protected by the broad fallbacks.
+    if userprofile:
+        _append_property_file(
+            Path(str(PureWindowsPath(userprofile) / "idea.properties")),
+            userprofile,
+            configs,
+            systems,
+            plugins,
+            logs,
+        )
     for config in tuple(configs):
-        property_files.append(Path(str(config / "idea.properties")))
+        _append_property_file(
+            Path(str(config / "idea.properties")),
+            userprofile,
+            configs,
+            systems,
+            plugins,
+            logs,
+        )
     for key in _PROPERTIES_ENV_KEYS:
         value = env.get(key.casefold())
-        if value:
-            candidate = PureWindowsPath(value)
-            if candidate.is_absolute():
-                property_files.append(Path(str(candidate)))
-    if userprofile:
-        property_files.append(Path(str(PureWindowsPath(userprofile) / "idea.properties")))
-
-    property_values: dict[str, str] = {}
-    # Lower-priority locations first; later files override them.  Environment
-    # property files are added before HOME/default config below through explicit
-    # reapplication so their vendor-documented highest priority is preserved.
-    for path in property_files:
-        property_values.update(_read_path_properties(path, userprofile))
-    _append_explicit_paths(
-        {
-            "config": property_values.get("idea.config.path"),
-            "system": property_values.get("idea.system.path"),
-            "plugins": property_values.get("idea.plugins.path"),
-            "log": property_values.get("idea.log.path"),
-        },
-        configs,
-        systems,
-        plugins,
-        logs,
-    )
+        if not value:
+            continue
+        candidate = PureWindowsPath(value)
+        if not candidate.is_absolute():
+            continue
+        _append_property_file(
+            Path(str(candidate)),
+            userprofile,
+            configs,
+            systems,
+            plugins,
+            logs,
+        )
 
     if environment is None:
-        running = _running_override_paths()
-        _append_explicit_paths(running, configs, systems, plugins, logs)
+        _append_explicit_paths(
+            _running_override_paths(),
+            configs,
+            systems,
+            plugins,
+            logs,
+        )
 
     # Every discovered config/system root has a documented default plugin/log
     # child unless an explicit override supplies an additional location.
@@ -458,7 +473,7 @@ def jetbrains_process_running() -> bool:
     script = (
         "$p=Get-CimInstance Win32_Process | Where-Object { "
         "$n=$_.Name; $x=$_.ExecutablePath; "
-        "$n -match '(?i)^(idea|pycharm|webstorm|phpstorm|clion|datagrip|goland|rider|rubymine|rustrover|dataspell|aqua)64?\\.exe$' "
+        f"$n -match '{_PROCESS_NAME_REGEX}' "
         "-or ($x -and $x -match '(?i)\\\\JetBrains\\\\') }; "
         "if ($p) { 'RUNNING' }"
     )
@@ -483,7 +498,7 @@ def _running_override_paths() -> dict[str, str]:
         return {}
     script = (
         "$p=Get-CimInstance Win32_Process | Where-Object { "
-        "$_.Name -match '(?i)^(idea|pycharm|webstorm|phpstorm|clion|datagrip|goland|rider|rubymine|rustrover|dataspell|aqua)64?\\.exe$' }; "
+        f"$_.Name -match '{_PROCESS_NAME_REGEX}' }}; "
         "$p | ForEach-Object { $_.CommandLine }"
     )
     try:
@@ -532,6 +547,27 @@ def _existing_selectors(
     return tuple(found.values())
 
 
+def _append_property_file(
+    path: Path,
+    userprofile: str | None,
+    configs: list[PureWindowsPath],
+    systems: list[PureWindowsPath],
+    plugins: list[PureWindowsPath],
+    logs: list[PureWindowsPath],
+) -> None:
+    properties = _read_path_properties(path, userprofile)
+    _append_explicit_paths(
+        {
+            kind: properties.get(property_name)
+            for property_name, kind in _PATH_PROPERTIES.items()
+        },
+        configs,
+        systems,
+        plugins,
+        logs,
+    )
+
+
 def _read_path_properties(path: Path, userprofile: str | None) -> dict[str, str]:
     try:
         text = path.read_text(encoding="utf-8")
@@ -558,7 +594,8 @@ def _expand_property_path(value: str, userprofile: str | None) -> str | None:
         rendered = rendered.replace("${user.home}", userprofile)
     if "${" in rendered or "%" in rendered:
         return None
-    candidate = PureWindowsPath(rendered.replace("/", "\\"))
+    normalized = ntpath.normpath(rendered.replace("/", "\\"))
+    candidate = PureWindowsPath(normalized)
     return str(candidate) if candidate.is_absolute() else None
 
 
