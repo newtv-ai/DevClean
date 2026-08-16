@@ -1,5 +1,7 @@
 """Explicit user-decision UI for Codex conversation and input history."""
 
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import queue
