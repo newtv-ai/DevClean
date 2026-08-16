@@ -1,10 +1,10 @@
 """Audited npm storage semantics for Windows cleanup.
 
 npm's configured cache, global installation prefix, log directory and config
-files may all be redirected independently.  The cache contains several npm-owned
+files may all be redirected independently. The cache contains several npm-owned
 subtrees, but the global prefix contains installed CLI packages and executable
-shims.  This profile therefore grants deletion authority only to proven cache
-subtrees/log files while protecting global installs and package metadata.
+shims. This profile grants deletion authority only to proven cache subtrees/log
+files while protecting global installs and package metadata.
 """
 
 from __future__ import annotations
@@ -184,6 +184,18 @@ _NPM_METADATA_RULE = ApplicationCleanupRule(
     label="npm project/config metadata",
 )
 
+_NPM_USERCONFIG_RULE = ApplicationCleanupRule(
+    rule_id="npm-user-config",
+    app_id="npm",
+    root_key="NPM_USERCONFIG",
+    relative_pattern="",
+    match_kind=MatchKind.EXACT,
+    owner=DecisionOwner.KEEP,
+    last_use=LastUseStrategy.FILE_MTIME,
+    rebuild_cost=RebuildCost.HIGH,
+    label="configured npm user configuration",
+)
+
 _NPM_LEGACY_DEBUG_RULE = ApplicationCleanupRule(
     rule_id="npm-legacy-debug-log",
     app_id="npm",
@@ -271,15 +283,12 @@ def match_npm_rule(
     path: str | os.PathLike[str],
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationCleanupRule | None:
-    candidate_path = PureWindowsPath(str(path))
-    filename = candidate_path.name.casefold()
-    if filename in _NPM_KEEP_FILENAMES:
-        return _NPM_METADATA_RULE
-    if filename == "npm-debug.log":
-        return _NPM_LEGACY_DEBUG_RULE
-
     normalized = _impl._normalize(path)
     roots = npm_roots(environment)
+
+    if any(normalized == _impl._normalize(config) for config in roots.user_config_files):
+        return _NPM_USERCONFIG_RULE
+
     groups = {
         "NPM_CACHE": roots.cache_roots,
         "NPM_PREFIX": roots.prefix_roots,
@@ -300,9 +309,15 @@ def match_npm_rule(
                 else:
                     owner_weight = 1
                 matches.append((len(candidate), owner_weight * 1000 - index, rule))
-    if not matches:
-        return None
-    return max(matches, key=lambda item: (item[0], item[1]))[2]
+    if matches:
+        return max(matches, key=lambda item: (item[0], item[1]))[2]
+
+    filename = PureWindowsPath(str(path)).name.casefold()
+    if filename in _NPM_KEEP_FILENAMES:
+        return _NPM_METADATA_RULE
+    if filename == "npm-debug.log":
+        return _NPM_LEGACY_DEBUG_RULE
+    return None
 
 
 def npm_audited_tool_roots(
