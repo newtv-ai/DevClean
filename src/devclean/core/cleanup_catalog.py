@@ -135,11 +135,11 @@ def _append_application_roots(
                 delete_root_itself=True,
             )
 
-    for path, rule in audited_dynamic_tool_roots(environment):
+    for dynamic_path, rule in audited_dynamic_tool_roots(environment):
         _append_root(
             accepted,
             seen,
-            Path(str(path)),
+            Path(str(dynamic_path)),
             category=_application_category(rule.rule_id),
             policy=CleanupPolicy.VENDOR_MANAGED,
             label=rule.label,
