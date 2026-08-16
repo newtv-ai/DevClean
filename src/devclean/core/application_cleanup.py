@@ -69,10 +69,10 @@ from devclean.core.windsurf_cleanup import (
     clear_windsurf_process_cache,
     evaluate_windsurf_path,
     match_windsurf_rule,
+    whole_tree_windsurf_rule,
     windsurf_audited_tool_roots,
     windsurf_process_running,
     windsurf_scan_roots,
-    whole_tree_windsurf_rule,
 )
 
 _ORIGINAL_APPLICATION_ROOTS = _impl.application_roots
