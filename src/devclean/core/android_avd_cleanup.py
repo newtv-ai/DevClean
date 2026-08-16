@@ -31,6 +31,9 @@ from devclean.core._application_cleanup_impl import (
 )
 
 _MIB = 1024**2
+_AVD_PROCESS_NAME_REGEX = (
+    r"(?i)^(?:emulator(?:64)?(?:-[^.]*)?|qemu-system-[^.]+)\.exe$"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,14 +174,24 @@ _AVD_SNAPSHOT_FILE_RULE = _rule(
     "Android Emulator snapshot storage image",
     user_age_buckets=(30, 90, 180),
 )
-_AVD_MUTABLE_SYSTEM_RULE = _rule(
+_AVD_SYSTEM_OVERLAY_RULE = _rule(
     "android-avd-mutable-system-state",
     "ANDROID_AVD_CONTENT",
-    "{system,vendor}*.img*",
+    "system*.img*",
     MatchKind.GLOB,
     DecisionOwner.USER,
     RebuildCost.HIGH,
-    "Android Virtual Device writable system or vendor overlay state",
+    "Android Virtual Device writable system overlay state",
+    user_age_buckets=(30, 90, 180),
+)
+_AVD_VENDOR_OVERLAY_RULE = _rule(
+    "android-avd-mutable-vendor-state",
+    "ANDROID_AVD_CONTENT",
+    "vendor*.img*",
+    MatchKind.GLOB,
+    DecisionOwner.USER,
+    RebuildCost.HIGH,
+    "Android Virtual Device writable vendor overlay state",
     user_age_buckets=(30, 90, 180),
 )
 _AVD_DATA_DIR_RULE = _rule(
@@ -221,7 +234,8 @@ ANDROID_AVD_RULES: tuple[ApplicationCleanupRule, ...] = (
     _AVD_SDCARD_RULE,
     _AVD_SNAPSHOT_DIR_RULE,
     _AVD_SNAPSHOT_FILE_RULE,
-    _AVD_MUTABLE_SYSTEM_RULE,
+    _AVD_SYSTEM_OVERLAY_RULE,
+    _AVD_VENDOR_OVERLAY_RULE,
     _AVD_DATA_DIR_RULE,
     _AVD_CONTENT_STATE_RULE,
     _AVD_REGISTRY_RULE,
@@ -321,7 +335,8 @@ def match_android_avd_rule(
                 _AVD_SDCARD_RULE,
                 _AVD_SNAPSHOT_DIR_RULE,
                 _AVD_SNAPSHOT_FILE_RULE,
-                _AVD_MUTABLE_SYSTEM_RULE,
+                _AVD_SYSTEM_OVERLAY_RULE,
+                _AVD_VENDOR_OVERLAY_RULE,
                 _AVD_DATA_DIR_RULE,
                 _AVD_CONTENT_STATE_RULE,
             )
@@ -417,8 +432,8 @@ def android_avd_process_running() -> bool:
         return False
     script = (
         "$p=Get-CimInstance Win32_Process | Where-Object { "
-        "$_.Name -match '^(?i:emulator(?:64)?(?:-[^.]*)?\\.exe|qemu-system-[^.]+'"
-        "+'\\.exe)$' }; if ($p) { 'RUNNING' }"
+        f"$_.Name -match '{_AVD_PROCESS_NAME_REGEX}' }}; "
+        "if ($p) { 'RUNNING' }"
     )
     try:
         result = subprocess.run(
@@ -454,9 +469,10 @@ def _append_registry_content_roots(
             if child.is_dir() and child.name.casefold().endswith(".avd"):
                 contents.append(PureWindowsPath(str(child)))
                 continue
+            is_ini = child.is_file() and child.suffix.casefold() == ".ini"
         except OSError:
             continue
-        if not child.is_file() or child.suffix.casefold() != ".ini":
+        if not is_ini:
             continue
         configured = _content_path_from_root_ini(child, registry)
         if configured is not None:
