@@ -37,14 +37,22 @@ def test_vscode_default_stable_insiders_and_wsl_roots_are_discovered() -> None:
     roots = vscode_roots(_env())
     stable = PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Code")
     insiders = PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Code - Insiders")
-    wsl_cache = PureWindowsPath(r"C:\Users\alice\vscode-remote-wsl\stable")
+    wsl_stable = PureWindowsPath(r"C:\Users\alice\vscode-remote-wsl\stable")
+    wsl_insider = PureWindowsPath(r"C:\Users\alice\vscode-remote-wsl\insider")
+    wsl_legacy = PureWindowsPath(
+        r"C:\Users\alice\AppData\Local\Temp\vscode-remote-wsl"
+    )
     assert stable in roots.data_roots
     assert insiders in roots.data_roots
     assert PureWindowsPath(r"C:\Users\alice\.vscode\extensions") in roots.extension_roots
     assert PureWindowsPath(r"C:\Users\alice\.vscode-insiders\extensions") in roots.extension_roots
-    assert roots.wsl_download_roots == (wsl_cache,)
-    assert stable in application_scan_roots(_env())
-    assert wsl_cache in application_scan_roots(_env())
+    assert wsl_stable in roots.wsl_download_roots
+    assert wsl_insider in roots.wsl_download_roots
+    assert wsl_legacy in roots.wsl_download_roots
+    scan_roots = application_scan_roots(_env())
+    assert stable in scan_roots
+    assert wsl_stable in scan_roots
+    assert wsl_legacy in scan_roots
 
 
 def test_vscode_portable_and_explicit_roots_are_first_class() -> None:
@@ -138,23 +146,31 @@ def test_vscode_other_service_worker_state_is_not_blanket_deleted() -> None:
     assert rule.owner is DecisionOwner.KEEP
 
 
-def test_vscode_wsl_server_download_cache_is_tool_owned_and_guarded() -> None:
-    path = r"C:\Users\alice\vscode-remote-wsl\stable\abc123\server.tar.gz"
-    decision = evaluate_application_path(
-        path,
-        logical_size=500 * _MIB,
-        last_used=_NOW - timedelta(days=30),
-        now=_NOW,
-        process_running=False,
-        environment=_env(),
+def test_vscode_wsl_server_download_caches_are_tool_owned_and_guarded() -> None:
+    paths = (
+        r"C:\Users\alice\vscode-remote-wsl\stable\abc123\server.tar.gz",
+        r"C:\Users\alice\vscode-remote-wsl\insider\def456\server.tar.gz",
+        (
+            r"C:\Users\alice\AppData\Local\Temp\vscode-remote-wsl"
+            r"\old123\server.tar.gz"
+        ),
     )
-    assert decision is not None
-    assert decision.rule.rule_id == "vscode-wsl-server-download-cache"
-    assert decision.rule.owner is DecisionOwner.TOOL
-    assert decision.action is PolicyAction.TOOL_DELETE
+    for path in paths:
+        decision = evaluate_application_path(
+            path,
+            logical_size=500 * _MIB,
+            last_used=_NOW - timedelta(days=30),
+            now=_NOW,
+            process_running=False,
+            environment=_env(),
+        )
+        assert decision is not None
+        assert decision.rule.rule_id == "vscode-wsl-server-download-cache"
+        assert decision.rule.owner is DecisionOwner.TOOL
+        assert decision.action is PolicyAction.TOOL_DELETE
 
     running = evaluate_application_path(
-        path,
+        paths[0],
         logical_size=500 * _MIB,
         last_used=_NOW - timedelta(days=30),
         now=_NOW,
@@ -234,10 +250,14 @@ def test_vscode_dynamic_whole_tree_cache_roots_are_exact() -> None:
     assert cache_rule.rule_id == "vscode-cache"
     assert cache_rule.owner is DecisionOwner.TOOL
 
-    wsl_root = r"C:\Users\alice\vscode-remote-wsl\stable"
-    wsl_rule = whole_tree_application_rule(wsl_root, env)
-    assert wsl_rule is not None
-    assert wsl_rule.rule_id == "vscode-wsl-server-download-cache"
+    for wsl_root in (
+        r"C:\Users\alice\vscode-remote-wsl\stable",
+        r"C:\Users\alice\vscode-remote-wsl\insider",
+        r"C:\Users\alice\AppData\Local\Temp\vscode-remote-wsl",
+    ):
+        wsl_rule = whole_tree_application_rule(wsl_root, env)
+        assert wsl_rule is not None
+        assert wsl_rule.rule_id == "vscode-wsl-server-download-cache"
     assert whole_tree_application_rule(
         r"C:\Users\alice\AppData\Roaming\Code",
         env,
@@ -273,36 +293,42 @@ def test_vscode_process_guard_never_allows_workspace_or_backup_state(
     )
 
 
-def test_catalog_upgrades_vscode_cache_and_wsl_download_root(tmp_path: Path) -> None:
+def test_catalog_upgrades_vscode_cache_and_wsl_download_roots(tmp_path: Path) -> None:
     appdata = tmp_path / "roaming"
     home = tmp_path / "home"
+    temp = tmp_path / "temp"
     code = appdata / "Code"
     cache = code / "Cache"
     workspace = code / "User" / "workspaceStorage"
-    wsl_cache = home / "vscode-remote-wsl" / "stable"
+    wsl_profile_cache = home / "vscode-remote-wsl" / "stable"
+    wsl_temp_cache = temp / "vscode-remote-wsl"
     cache.mkdir(parents=True)
     workspace.mkdir(parents=True)
-    wsl_cache.mkdir(parents=True)
+    wsl_profile_cache.mkdir(parents=True)
+    wsl_temp_cache.mkdir(parents=True)
     env = {
         "USERPROFILE": str(home),
         "APPDATA": str(appdata),
         "LOCALAPPDATA": str(tmp_path / "local"),
-        "TEMP": str(tmp_path / "temp"),
+        "TEMP": str(temp),
     }
 
     discovered = discover_known_cleanup_roots(default_rules().scan, env)
     by_path = {os.path.normcase(str(root.path)): root for root in discovered}
     code_root = by_path[os.path.normcase(str(code))]
     cache_root = by_path[os.path.normcase(str(cache))]
-    wsl_root = by_path[os.path.normcase(str(wsl_cache))]
+    wsl_profile_root = by_path[os.path.normcase(str(wsl_profile_cache))]
+    wsl_temp_root = by_path[os.path.normcase(str(wsl_temp_cache))]
     workspace_root = by_path.get(os.path.normcase(str(workspace)))
 
     assert code_root.policy is CleanupPolicy.REPORT_ONLY
     assert not code_root.delete_root_itself
     assert cache_root.policy is CleanupPolicy.VENDOR_MANAGED
     assert cache_root.delete_root_itself
-    assert wsl_root.policy is CleanupPolicy.VENDOR_MANAGED
-    assert wsl_root.delete_root_itself
+    assert wsl_profile_root.policy is CleanupPolicy.VENDOR_MANAGED
+    assert wsl_profile_root.delete_root_itself
+    assert wsl_temp_root.policy is CleanupPolicy.VENDOR_MANAGED
+    assert wsl_temp_root.delete_root_itself
     assert workspace_root is None or not workspace_root.delete_root_itself
 
 
