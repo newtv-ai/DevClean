@@ -33,11 +33,13 @@ from devclean.core._application_cleanup_impl import (
 _MIB = 1024**2
 _HISTORY_TAIL_BYTES = 128 * 1024
 _TEMP_IDLE_DAYS = 10 / (24 * 60)
+_SESSION_LOCK_IDLE_DAYS = 10 / (24 * 60)
 
 
 @dataclass(frozen=True, slots=True)
 class ClaudeRootSet:
     config: PureWindowsPath | None
+    fallback_config: PureWindowsPath | None
     temp: PureWindowsPath | None
     plugins: PureWindowsPath | None
     profile: PureWindowsPath | None
@@ -79,10 +81,11 @@ def _rule(
     )
 
 
-# These TOOL paths are documented by Anthropic as containing no user-facing
-# content when removed, or as server/cache/temp data that is recreated. User
-# transcripts/checkpoints/statistics and persistent memory are intentionally
-# separate rules below even where Claude Code itself applies an age retention.
+# TOOL paths below are either explicitly documented by Anthropic as losing
+# nothing user-facing when removed, or are transient/cache/lock state that is
+# recreated. USER paths preserve unique history or reports. KEEP paths contain
+# authored configuration, authentication, installed plugins, or persistent
+# application/agent state.
 CLAUDE_RULES: tuple[ApplicationCleanupRule, ...] = (
     _rule(
         "claude-debug",
@@ -108,20 +111,6 @@ CLAUDE_RULES: tuple[ApplicationCleanupRule, ...] = (
         RebuildCost.NONE,
         "Claude Code plan-mode files",
         idle_days=30,
-        requires_process_closed=True,
-        allow_whole_tree=True,
-    ),
-    _rule(
-        "claude-paste-cache",
-        "CLAUDE_HOME",
-        "paste-cache",
-        MatchKind.PREFIX,
-        DecisionOwner.TOOL,
-        LastUseStrategy.FILE_MTIME,
-        RebuildCost.LOW,
-        "Claude Code pasted-content cache",
-        idle_days=14,
-        min_reclaim_bytes=4 * _MIB,
         requires_process_closed=True,
         allow_whole_tree=True,
     ),
@@ -179,6 +168,20 @@ CLAUDE_RULES: tuple[ApplicationCleanupRule, ...] = (
         allow_whole_tree=True,
     ),
     _rule(
+        "claude-session-locks",
+        "CLAUDE_HOME",
+        "sessions",
+        MatchKind.PREFIX,
+        DecisionOwner.TOOL,
+        LastUseStrategy.FILE_MTIME,
+        RebuildCost.NONE,
+        "Claude Code running-session lock metadata",
+        idle_days=_SESSION_LOCK_IDLE_DAYS,
+        requires_process_closed=True,
+        size_sensitive_idle=False,
+        allow_whole_tree=True,
+    ),
+    _rule(
         "claude-config-backups",
         "CLAUDE_HOME",
         "backups",
@@ -187,20 +190,6 @@ CLAUDE_RULES: tuple[ApplicationCleanupRule, ...] = (
         LastUseStrategy.FILE_MTIME,
         RebuildCost.NONE,
         "Claude Code migration backups",
-        idle_days=30,
-        min_reclaim_bytes=_MIB,
-        requires_process_closed=True,
-        allow_whole_tree=True,
-    ),
-    _rule(
-        "claude-feedback-bundles",
-        "CLAUDE_HOME",
-        "feedback-bundles",
-        MatchKind.PREFIX,
-        DecisionOwner.TOOL,
-        LastUseStrategy.FILE_MTIME,
-        RebuildCost.NONE,
-        "Claude Code feedback bundles",
         idle_days=30,
         min_reclaim_bytes=_MIB,
         requires_process_closed=True,
@@ -221,6 +210,48 @@ CLAUDE_RULES: tuple[ApplicationCleanupRule, ...] = (
         allow_whole_tree=True,
     ),
     _rule(
+        "claude-legacy-statsig",
+        "CLAUDE_HOME",
+        "statsig",
+        MatchKind.PREFIX,
+        DecisionOwner.TOOL,
+        LastUseStrategy.FILE_MTIME,
+        RebuildCost.NONE,
+        "Claude Code legacy Statsig cache",
+        idle_days=1,
+        requires_process_closed=True,
+        size_sensitive_idle=False,
+        allow_whole_tree=True,
+    ),
+    _rule(
+        "claude-legacy-logs",
+        "CLAUDE_HOME",
+        "logs",
+        MatchKind.PREFIX,
+        DecisionOwner.TOOL,
+        LastUseStrategy.FILE_MTIME,
+        RebuildCost.NONE,
+        "Claude Code legacy logs",
+        idle_days=1,
+        min_reclaim_bytes=_MIB,
+        requires_process_closed=True,
+        allow_whole_tree=True,
+    ),
+    _rule(
+        "claude-cache",
+        "CLAUDE_HOME",
+        "cache",
+        MatchKind.PREFIX,
+        DecisionOwner.TOOL,
+        LastUseStrategy.FILE_MTIME,
+        RebuildCost.LOW,
+        "Claude Code regenerable cache",
+        idle_days=7,
+        min_reclaim_bytes=_MIB,
+        requires_process_closed=True,
+        allow_whole_tree=True,
+    ),
+    _rule(
         "claude-remote-settings-cache",
         "CLAUDE_HOME",
         "remote-settings.json",
@@ -230,6 +261,33 @@ CLAUDE_RULES: tuple[ApplicationCleanupRule, ...] = (
         RebuildCost.LOW,
         "Claude Code server-managed settings cache",
         idle_days=1,
+        requires_process_closed=True,
+        size_sensitive_idle=False,
+    ),
+    _rule(
+        "claude-policy-limits-cache",
+        "CLAUDE_HOME",
+        "policy-limits.json",
+        MatchKind.EXACT,
+        DecisionOwner.TOOL,
+        LastUseStrategy.FILE_MTIME,
+        RebuildCost.LOW,
+        "Claude Code feature policy cache",
+        idle_days=1,
+        requires_process_closed=True,
+        size_sensitive_idle=False,
+    ),
+    _rule(
+        "claude-daemon-log",
+        "CLAUDE_HOME",
+        "daemon.log",
+        MatchKind.EXACT,
+        DecisionOwner.TOOL,
+        LastUseStrategy.FILE_MTIME,
+        RebuildCost.NONE,
+        "Claude Code agent-view supervisor log",
+        idle_days=1,
+        min_reclaim_bytes=_MIB,
         requires_process_closed=True,
         size_sensitive_idle=False,
     ),
@@ -279,6 +337,17 @@ CLAUDE_RULES: tuple[ApplicationCleanupRule, ...] = (
         user_age_buckets=(30, 90, 180),
     ),
     _rule(
+        "claude-paste-cache",
+        "CLAUDE_HOME",
+        "paste-cache",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        LastUseStrategy.FILE_MTIME,
+        RebuildCost.HIGH,
+        "Claude Code pasted content referenced by prompt history",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
         "claude-prompt-history",
         "CLAUDE_HOME",
         "history.jsonl",
@@ -298,6 +367,28 @@ CLAUDE_RULES: tuple[ApplicationCleanupRule, ...] = (
         LastUseStrategy.FILE_MTIME,
         RebuildCost.HIGH,
         "Claude Code historical usage totals",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "claude-usage-data",
+        "CLAUDE_HOME",
+        "usage-data",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        LastUseStrategy.FILE_MTIME,
+        RebuildCost.HIGH,
+        "Claude Code insights reports and analysis data",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "claude-feedback-bundles",
+        "CLAUDE_HOME",
+        "feedback-bundles",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        LastUseStrategy.FILE_MTIME,
+        RebuildCost.HIGH,
+        "Claude Code unsent feedback and bug-report archives",
         user_age_buckets=(30, 90, 180),
     ),
     _rule(
@@ -333,12 +424,32 @@ CLAUDE_RULES: tuple[ApplicationCleanupRule, ...] = (
     _rule(
         "claude-authored-config",
         "CLAUDE_HOME",
-        r"{rules,skills,commands,agents,output-styles,agent-memory,keybindings.json,themes}",
+        r"{rules,skills,commands,agents,workflows,output-styles,agent-memory,keybindings.json,themes,scheduled-tasks}",
         MatchKind.GLOB,
         DecisionOwner.KEEP,
         LastUseStrategy.FILE_MTIME,
         RebuildCost.HIGH,
-        "Claude Code authored configuration and persistent agent memory",
+        "Claude Code authored configuration, scheduled tasks, and persistent agent memory",
+    ),
+    _rule(
+        "claude-home-plugins",
+        "CLAUDE_HOME",
+        "plugins",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        LastUseStrategy.FILE_MTIME,
+        RebuildCost.HIGH,
+        "Claude Code installed plugins and plugin data",
+    ),
+    _rule(
+        "claude-agent-view-state",
+        "CLAUDE_HOME",
+        r"{daemon,daemon\*,jobs,jobs\*}",
+        MatchKind.GLOB,
+        DecisionOwner.KEEP,
+        LastUseStrategy.FILE_MTIME,
+        RebuildCost.HIGH,
+        "Claude Code background-agent supervisor and job state",
     ),
     _rule(
         "claude-plugins",
@@ -381,10 +492,14 @@ def claude_roots(environment: Mapping[str, str] | None = None) -> ClaudeRootSet:
     env = _casefold_env(environment)
     profile_value = env.get("userprofile")
     profile = PureWindowsPath(profile_value) if profile_value else None
+    default_config = profile / ".claude" if profile is not None else None
     configured = env.get("claude_config_dir")
-    config = PureWindowsPath(configured) if configured else None
-    if config is None and profile is not None:
-        config = profile / ".claude"
+    config = PureWindowsPath(configured) if configured else default_config
+    fallback_config = (
+        default_config
+        if default_config is not None and config is not None and default_config != config
+        else None
+    )
 
     temp_base = env.get("claude_code_tmpdir") or env.get("temp") or env.get("tmp")
     temp = PureWindowsPath(temp_base) / "claude" if temp_base else None
@@ -393,7 +508,13 @@ def claude_roots(environment: Mapping[str, str] | None = None) -> ClaudeRootSet:
     plugins = PureWindowsPath(plugin_override) if plugin_override else None
     if plugins is None and config is not None:
         plugins = config / "plugins"
-    return ClaudeRootSet(config=config, temp=temp, plugins=plugins, profile=profile)
+    return ClaudeRootSet(
+        config=config,
+        fallback_config=fallback_config,
+        temp=temp,
+        plugins=plugins,
+        profile=profile,
+    )
 
 
 def claude_application_roots(
@@ -415,7 +536,8 @@ def claude_scan_roots(
     """Return storage roots worth actively scanning for reclaimable Claude data."""
 
     roots = claude_roots(environment)
-    return tuple(path for path in (roots.config, roots.temp) if path is not None)
+    paths = (roots.config, roots.fallback_config, roots.temp)
+    return tuple(dict.fromkeys(path for path in paths if path is not None))
 
 
 def match_claude_rule(
@@ -442,20 +564,28 @@ def match_claude_rule(
     if fnmatch.fnmatchcase(filename, _CLAUDE_CWD_TEMP_RULE.relative_pattern.casefold()):
         return _CLAUDE_CWD_TEMP_RULE
 
-    roots = {
-        root.key: _impl._normalize(root.path)
+    resolved = claude_roots(environment)
+    application_roots: dict[str, tuple[str, ...]] = {
+        root.key: (_impl._normalize(root.path),)
         for root in claude_application_roots(environment)
     }
+    claude_homes = tuple(
+        _impl._normalize(root)
+        for root in (resolved.config, resolved.fallback_config)
+        if root is not None
+    )
+    if claude_homes:
+        application_roots["CLAUDE_HOME"] = tuple(dict.fromkeys(claude_homes))
+
     matches: list[tuple[int, int, ApplicationCleanupRule]] = []
     for index, rule in enumerate(CLAUDE_RULES):
-        root = roots.get(rule.root_key)
-        if root is None:
-            continue
-        for expanded in _impl._expand_braces(rule.relative_pattern):
-            candidate = root + ("\\" + expanded if expanded else "")
-            if _impl._matches(normalized, candidate, rule.match_kind):
-                owner_weight = 2 if rule.owner is DecisionOwner.KEEP else 1
-                matches.append((len(candidate), owner_weight * 1000 - index, rule))
+        roots = application_roots.get(rule.root_key, ())
+        for root in roots:
+            for expanded in _impl._expand_braces(rule.relative_pattern):
+                candidate = root + ("\\" + expanded if expanded else "")
+                if _impl._matches(normalized, candidate, rule.match_kind):
+                    owner_weight = 2 if rule.owner is DecisionOwner.KEEP else 1
+                    matches.append((len(candidate), owner_weight * 1000 - index, rule))
     if not matches:
         return None
     return max(matches, key=lambda item: (item[0], item[1]))[2]

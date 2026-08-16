@@ -44,6 +44,16 @@ from devclean.core.cursor_cleanup import (
     evaluate_cursor_path,
     match_cursor_rule,
 )
+from devclean.core.trae_cleanup import (
+    TRAE_RULES,
+    clear_trae_process_cache,
+    evaluate_trae_path,
+    match_trae_rule,
+    trae_audited_tool_roots,
+    trae_process_running,
+    trae_scan_roots,
+    whole_tree_trae_rule,
+)
 from devclean.core.vscode_cleanup import (
     VSCODE_RULES,
     clear_vscode_process_cache,
@@ -86,6 +96,7 @@ def application_scan_roots(
                 *claude_scan_roots(environment),
                 *cursor_scan_roots(environment),
                 *vscode_scan_roots(environment),
+                *trae_scan_roots(environment),
             )
         )
     )
@@ -96,7 +107,10 @@ def audited_dynamic_tool_roots(
 ) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
     """Return whole-tree TOOL roots for profiles with multiple/dynamic roots."""
 
-    return vscode_audited_tool_roots(environment)
+    return (
+        *vscode_audited_tool_roots(environment),
+        *trae_audited_tool_roots(environment),
+    )
 
 
 def match_application_rule(
@@ -105,6 +119,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    trae = match_trae_rule(path, environment)
+    if trae is not None:
+        return trae
     vscode = match_vscode_rule(path, environment)
     if vscode is not None:
         return vscode
@@ -134,7 +151,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_vscode_path(
+    decision = evaluate_trae_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -142,6 +159,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_vscode_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = evaluate_cursor_path(
             path,
@@ -175,6 +201,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "trae":
+        return trae_process_running()
     if app_id == "vscode":
         return vscode_process_running()
     if app_id == "cursor":
@@ -189,6 +217,7 @@ def clear_process_cache() -> None:
     clear_claude_process_cache()
     clear_cursor_process_cache()
     clear_vscode_process_cache()
+    clear_trae_process_cache()
 
 
 def process_guard_allows(
@@ -212,6 +241,9 @@ def whole_tree_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return a TOOL rule only when *path* is exactly an audited whole-tree root."""
 
+    dynamic = whole_tree_trae_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_vscode_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -241,6 +273,7 @@ def application_display_name(app_id: str) -> str:
         "claude": "Claude Code",
         "cursor": "Cursor",
         "vscode": "VS Code",
+        "trae": "Trae",
     }.get(app_id, app_id)
 
 
@@ -248,6 +281,7 @@ __all__ = [
     "CLAUDE_RULES",
     "CODEX_RULES",
     "CURSOR_RULES",
+    "TRAE_RULES",
     "VSCODE_RULES",
     "ApplicationCleanupRule",
     "ApplicationPolicyDecision",
