@@ -54,6 +54,7 @@ from devclean.core.application_cleanup import DecisionOwner, match_application_r
 _ORIGINAL_ADD_AI_VERDICTS = _impl.add_ai_verdicts
 _ORIGINAL_ADD_USER_VERDICTS = _impl.add_user_verdicts
 _ORIGINAL_LOAD_RULES = _impl.load_rules
+_packaged_documents = _impl._packaged_documents  # noqa: SLF001
 
 
 def _owner_for_path(path: str | Path) -> DecisionOwner | None:
