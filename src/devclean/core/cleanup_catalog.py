@@ -153,6 +153,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.CRASH_DUMPS
     if "log" in lower or "debug" in lower:
         return CleanupCategory.SYSTEM_LOGS
+    if lower.startswith("npm-"):
+        return CleanupCategory.NPM_CACHE
     if "temp" in lower or "shell" in lower:
         return CleanupCategory.USER_TEMP
     if "cache" in lower or "plugin" in lower or "extension" in lower:
