@@ -12,6 +12,7 @@ policy model instead of adding one-off filename rules.
 from __future__ import annotations
 
 import fnmatch
+import json
 import os
 import subprocess
 from collections.abc import Mapping
@@ -19,10 +20,21 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from functools import lru_cache
-from pathlib import PureWindowsPath
+from pathlib import Path, PureWindowsPath
 
 _MIB = 1024**2
 _GIB = 1024**3
+_HISTORY_TAIL_BYTES = 128 * 1024
+_CODEX_ACTIVITY_FILES = (
+    "state_5.sqlite",
+    "state_5.sqlite-wal",
+    "logs_2.sqlite",
+    "logs_2.sqlite-wal",
+    "history.jsonl",
+    "session_index.jsonl",
+    "goals_1.sqlite",
+    "memories_1.sqlite",
+)
 
 
 class DecisionOwner(StrEnum):
@@ -507,7 +519,9 @@ def evaluate_application_path(
     if rule is None:
         return None
     current = now or datetime.now(UTC)
-    observed = _as_utc(last_used)
+    observed = _as_utc(
+        _resolve_last_used(path, rule, last_used, environment=environment)
+    )
     idle = (
         None
         if observed is None
@@ -570,6 +584,78 @@ def effective_idle_days(
     return base
 
 
+def _resolve_last_used(
+    path: str | os.PathLike[str],
+    rule: ApplicationCleanupRule,
+    fallback: datetime | None,
+    *,
+    environment: Mapping[str, str] | None,
+) -> datetime | None:
+    if rule.app_id != "codex":
+        return fallback
+    if rule.last_use is LastUseStrategy.JSONL_RECORD_TS:
+        return _latest_codex_history_timestamp(Path(path)) or fallback
+    if rule.last_use is LastUseStrategy.APP_ACTIVITY:
+        root = next(
+            (
+                application_root.path
+                for application_root in application_roots(environment)
+                if application_root.key == "CODEX_HOME"
+            ),
+            None,
+        )
+        if root is not None:
+            return _codex_activity_cached(str(root)) or fallback
+    # Codex itself uses rollout file modification time as thread recency, so
+    # SESSION_LAST_EVENT intentionally resolves to the scanner's file mtime.
+    return fallback
+
+
+@lru_cache(maxsize=16)
+def _codex_activity_cached(codex_home: str) -> datetime | None:
+    root = Path(codex_home)
+    latest_ns: int | None = None
+    for name in _CODEX_ACTIVITY_FILES:
+        try:
+            observed = (root / name).stat().st_mtime_ns
+        except OSError:
+            continue
+        latest_ns = observed if latest_ns is None else max(latest_ns, observed)
+    if latest_ns is None:
+        return None
+    return datetime.fromtimestamp(latest_ns / 1_000_000_000, tz=UTC)
+
+
+def _latest_codex_history_timestamp(path: Path) -> datetime | None:
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - _HISTORY_TAIL_BYTES), os.SEEK_SET)
+            data = handle.read()
+    except OSError:
+        return None
+
+    lines = data.splitlines()
+    if size > _HISTORY_TAIL_BYTES and lines:
+        lines = lines[1:]
+    for raw in reversed(lines):
+        try:
+            payload = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        timestamp = payload.get("ts")
+        if not isinstance(timestamp, (int, float)):
+            continue
+        try:
+            return datetime.fromtimestamp(float(timestamp), tz=UTC)
+        except (OSError, OverflowError, ValueError):
+            continue
+    return None
+
+
 @lru_cache(maxsize=8)
 def application_process_running(app_id: str) -> bool:
     """Best-effort process guard used during one scan/session."""
@@ -593,6 +679,7 @@ def application_process_running(app_id: str) -> bool:
 
 def clear_process_cache() -> None:
     application_process_running.cache_clear()
+    _codex_activity_cached.cache_clear()
 
 
 def process_guard_allows(
