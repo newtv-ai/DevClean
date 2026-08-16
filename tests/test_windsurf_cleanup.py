@@ -57,12 +57,30 @@ def test_windsurf_roots_cover_editor_cascade_plans_extensions_and_system() -> No
 def test_windsurf_electron_caches_are_tool_owned_and_process_guarded() -> None:
     paths = {
         r"C:\Users\alice\AppData\Roaming\Windsurf\Cache\data_0": "windsurf-cache",
-        r"C:\Users\alice\AppData\Roaming\Windsurf\Code Cache\js\entry": "windsurf-code-cache",
-        r"C:\Users\alice\AppData\Roaming\Windsurf\GPUCache\data": "windsurf-gpu-cache",
-        r"C:\Users\alice\AppData\Roaming\Windsurf\CachedExtensions\index.json": "windsurf-cached-extensions",
-        r"C:\Users\alice\AppData\Roaming\Windsurf\CachedExtensionVSIXs\ext.vsix": "windsurf-extension-vsix-cache",
-        r"C:\Users\alice\AppData\Roaming\Windsurf\Service Worker\CacheStorage\entry": "windsurf-service-worker-cache-storage",
-        r"C:\Users\alice\AppData\Roaming\Windsurf\Crashpad\reports\crash.dmp": "windsurf-crashpad-reports",
+        (
+            r"C:\Users\alice\AppData\Roaming\Windsurf"
+            r"\Code Cache\js\entry"
+        ): "windsurf-code-cache",
+        (
+            r"C:\Users\alice\AppData\Roaming\Windsurf"
+            r"\GPUCache\data"
+        ): "windsurf-gpu-cache",
+        (
+            r"C:\Users\alice\AppData\Roaming\Windsurf"
+            r"\CachedExtensions\index.json"
+        ): "windsurf-cached-extensions",
+        (
+            r"C:\Users\alice\AppData\Roaming\Windsurf"
+            r"\CachedExtensionVSIXs\ext.vsix"
+        ): "windsurf-extension-vsix-cache",
+        (
+            r"C:\Users\alice\AppData\Roaming\Windsurf"
+            r"\Service Worker\CacheStorage\entry"
+        ): "windsurf-service-worker-cache-storage",
+        (
+            r"C:\Users\alice\AppData\Roaming\Windsurf"
+            r"\Crashpad\reports\crash.dmp"
+        ): "windsurf-crashpad-reports",
     }
     for path, rule_id in paths.items():
         rule = match_application_rule(path, _env())
@@ -120,14 +138,29 @@ def test_windsurf_cascade_memories_and_plans_are_user_owned() -> None:
 
 def test_windsurf_authored_config_extensions_and_system_policy_are_kept() -> None:
     paths = {
-        r"C:\Users\alice\.codeium\windsurf\memories\global_rules.md": "windsurf-global-rules",
+        (
+            r"C:\Users\alice\.codeium\windsurf\memories"
+            r"\global_rules.md"
+        ): "windsurf-global-rules",
         r"C:\Users\alice\.codeium\windsurf\mcp_config.json": "windsurf-mcp-config",
         r"C:\Users\alice\.codeium\windsurf\hooks.json": "windsurf-hooks",
-        r"C:\Users\alice\.codeium\windsurf\global_workflows\release.md": "windsurf-global-workflows",
-        r"C:\Users\alice\.codeium\windsurf\skills\deploy\SKILL.md": "windsurf-global-skills",
-        r"C:\Users\alice\.windsurf\extensions\publisher.ext\extension.js": "windsurf-installed-extensions",
+        (
+            r"C:\Users\alice\.codeium\windsurf\global_workflows"
+            r"\release.md"
+        ): "windsurf-global-workflows",
+        (
+            r"C:\Users\alice\.codeium\windsurf\skills"
+            r"\deploy\SKILL.md"
+        ): "windsurf-global-skills",
+        (
+            r"C:\Users\alice\.windsurf\extensions"
+            r"\publisher.ext\extension.js"
+        ): "windsurf-installed-extensions",
         r"C:\ProgramData\Windsurf\rules\company.md": "windsurf-system-policy",
-        r"C:\Users\alice\AppData\Roaming\Windsurf\Backups\window\untitled.txt": "windsurf-hot-exit-backups",
+        (
+            r"C:\Users\alice\AppData\Roaming\Windsurf\Backups"
+            r"\window\untitled.txt"
+        ): "windsurf-hot-exit-backups",
     }
     for path, rule_id in paths.items():
         rule = match_application_rule(path, _env())
