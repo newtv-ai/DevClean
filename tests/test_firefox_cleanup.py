@@ -1,0 +1,146 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from pathlib import Path, PureWindowsPath
+
+from devclean.core._application_cleanup_impl import DecisionOwner, PolicyAction
+from devclean.core.firefox_cleanup import (
+    _profile_switch_path,
+    evaluate_firefox_path,
+    firefox_roots,
+    match_firefox_rule,
+    whole_tree_firefox_rule,
+)
+
+_NOW = datetime(2026, 8, 16, tzinfo=UTC)
+_MIB = 1024**2
+
+
+def _env() -> dict[str, str]:
+    return {
+        "USERPROFILE": r"C:\Users\alice",
+        "APPDATA": r"C:\Users\alice\AppData\Roaming",
+        "LOCALAPPDATA": r"C:\Users\alice\AppData\Local",
+        "PROGRAMDATA": r"C:\ProgramData",
+        "TEMP": r"C:\Users\alice\AppData\Local\Temp",
+    }
+
+
+def test_firefox_roaming_root_protects_profile_registry_and_cross_profile_state() -> None:
+    protected = (
+        r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\profiles.ini",
+        r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\installs.ini",
+        (
+            r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\Profile Groups"
+            r"\profile-group.sqlite"
+        ),
+    )
+    for path in protected:
+        rule = match_firefox_rule(path, _env())
+        assert rule is not None
+        assert rule.rule_id == "firefox-roaming-state"
+        assert rule.owner is DecisionOwner.KEEP
+
+
+def test_firefox_default_persistent_profile_is_keep_but_exact_cache_children_are_tool() -> None:
+    profile = r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\Profiles\abc.default-release"
+    history = match_firefox_rule(profile + r"\places.sqlite", _env())
+    cache = match_firefox_rule(profile + r"\cache2\entries\abcdef", _env())
+    startup = match_firefox_rule(profile + r"\startupCache\startupCache.8.little", _env())
+
+    assert history is not None
+    assert history.rule_id == "firefox-persistent-profile-state"
+    assert history.owner is DecisionOwner.KEEP
+    assert cache is not None
+    assert cache.rule_id == "firefox-cache2"
+    assert cache.owner is DecisionOwner.TOOL
+    assert startup is not None
+    assert startup.rule_id == "firefox-startup-cache"
+    assert startup.owner is DecisionOwner.TOOL
+
+
+def test_firefox_local_profile_is_cache_only_tool_root() -> None:
+    profile = r"C:\Users\alice\AppData\Local\Mozilla\Firefox\Profiles\abc.default-release"
+    rule = match_firefox_rule(profile + r"\cache2\entries\abcdef", _env())
+    assert rule is not None
+    assert rule.owner is DecisionOwner.TOOL
+    assert rule.rule_id == "firefox-cache2"
+
+    decision = evaluate_firefox_path(
+        profile,
+        logical_size=128 * _MIB,
+        last_used=_NOW - timedelta(days=45),
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+    assert decision is not None
+    assert decision.rule.rule_id == "firefox-local-profile-cache-root"
+    assert decision.action is PolicyAction.TOOL_DELETE
+
+
+def test_custom_profile_never_gains_whole_tree_authority_but_cache_child_can(tmp_path: Path) -> None:
+    profile = tmp_path / "portable-profile"
+    cache = profile / "cache2"
+    cache.mkdir(parents=True)
+    (profile / "places.sqlite").write_text("history", encoding="utf-8")
+    env = {
+        **_env(),
+        "DEVCLEAN_FIREFOX_PROFILE_DIR": str(profile),
+    }
+
+    profile_rule = match_firefox_rule(profile / "places.sqlite", env)
+    cache_rule = match_firefox_rule(cache / "entry", env)
+    assert profile_rule is not None
+    assert profile_rule.rule_id == "firefox-persistent-profile-state"
+    assert profile_rule.owner is DecisionOwner.KEEP
+    assert cache_rule is not None
+    assert cache_rule.rule_id == "firefox-cache2"
+    assert cache_rule.owner is DecisionOwner.TOOL
+    assert whole_tree_firefox_rule(profile, env) is None
+    whole_cache = whole_tree_firefox_rule(cache, env)
+    assert whole_cache is not None
+    assert whole_cache.rule_id == "firefox-cache2"
+
+
+def test_firefox_profile_switch_parser_supports_single_and_double_dash() -> None:
+    cases = {
+        r'"C:\Program Files\Mozilla Firefox\firefox.exe" --profile "D:\Firefox Profiles\One"': (
+            r"D:\Firefox Profiles\One"
+        ),
+        r'firefox.exe -profile D:\PortableFirefox\Profile': r"D:\PortableFirefox\Profile",
+        r'firefox.exe --profile=D:\Profiles\Test': r"D:\Profiles\Test",
+    }
+    for command_line, expected in cases.items():
+        assert _profile_switch_path(command_line) == expected
+    assert _profile_switch_path(r"firefox.exe -P work") is None
+
+
+def test_firefox_update_logs_are_exactly_scoped_under_updates_directory() -> None:
+    update = r"C:\ProgramData\Mozilla\updates\install-hash"
+    current_log = match_firefox_rule(update + r"\updates\0\update.log", _env())
+    last_log = match_firefox_rule(update + r"\updates\last-update.log", _env())
+    misplaced_log = match_firefox_rule(update + r"\last-update.log", _env())
+    payload = match_firefox_rule(update + r"\updates\0\update.mar", _env())
+
+    assert current_log is not None and current_log.owner is DecisionOwner.TOOL
+    assert last_log is not None and last_log.owner is DecisionOwner.TOOL
+    assert misplaced_log is not None
+    assert misplaced_log.rule_id == "firefox-update-state"
+    assert misplaced_log.owner is DecisionOwner.KEEP
+    assert payload is not None
+    assert payload.rule_id == "firefox-update-state"
+    assert payload.owner is DecisionOwner.KEEP
+
+
+def test_default_firefox_roots_include_roaming_state_and_local_profiles() -> None:
+    roots = firefox_roots(_env())
+    assert PureWindowsPath(
+        r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox"
+    ) in roots.state_roots
+    assert PureWindowsPath(
+        r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\Profiles"
+    ) in roots.persistent_parents
+    assert PureWindowsPath(
+        r"C:\Users\alice\AppData\Local\Mozilla\Firefox\Profiles"
+    ) in roots.local_parents
