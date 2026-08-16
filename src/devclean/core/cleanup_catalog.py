@@ -153,9 +153,13 @@ def _append_application_roots(
 
 def _application_category(rule_id: str) -> CleanupCategory:
     lower = rule_id.casefold()
-    if lower == "jetbrains-product-logs":
+    if lower in {"jetbrains-product-logs", "toolbox-product-logs"}:
         return CleanupCategory.SYSTEM_LOGS
-    if lower.startswith("jetbrains-"):
+    if lower == "toolbox-download-cache":
+        return CleanupCategory.INSTALLERS_DOWNLOADS
+    if lower == "toolbox-install-temp":
+        return CleanupCategory.USER_TEMP
+    if lower.startswith(("jetbrains-", "toolbox-")):
         return CleanupCategory.IDE_CACHE
     if "crash" in lower:
         return CleanupCategory.CRASH_DUMPS
