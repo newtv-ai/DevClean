@@ -14,6 +14,7 @@ older than a user-selected cutoff with an atomic same-directory rewrite.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import queue
@@ -22,7 +23,7 @@ import shutil
 import subprocess
 import threading
 import uuid
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -111,9 +112,7 @@ def codex_home(environment: Mapping[str, str] | None = None) -> Path | None:
     return None
 
 
-def scan_codex_sessions(
-    home: Path,
-) -> tuple[CodexSessionEntry, ...]:
+def scan_codex_sessions(home: Path) -> tuple[CodexSessionEntry, ...]:
     """Inventory active and archived rollout files without reading their bodies."""
 
     entries: list[CodexSessionEntry] = []
@@ -126,19 +125,17 @@ def scan_codex_sessions(
                 continue
             thread_id = thread_id_from_rollout_path(path)
             if thread_id is None:
-                # A rollout that cannot be tied to a Codex thread must never be
-                # offered to the vendor deletion path.
                 continue
             try:
-                stat = path.stat()
+                observed = path.stat()
             except OSError:
                 continue
             entries.append(
                 CodexSessionEntry(
                     path=path,
                     thread_id=thread_id,
-                    updated_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
-                    logical_size=stat.st_size,
+                    updated_at=datetime.fromtimestamp(observed.st_mtime, tz=UTC),
+                    logical_size=observed.st_size,
                     archived=archived,
                 )
             )
@@ -198,7 +195,7 @@ def summarize_codex_input_history(
     now: datetime | None = None,
     cutoffs: tuple[int, ...] = (30, 90, 180),
 ) -> tuple[CodexInputHistorySummary, ...]:
-    """Inspect JSONL timestamps and estimate record-level reclaim for each cutoff."""
+    """Inspect record timestamps and estimate reclaim for each user cutoff."""
 
     current = _utc(now or datetime.now(UTC))
     records = _read_history_records(history_path)
@@ -274,12 +271,12 @@ def prune_codex_input_history(
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(temporary, original_stat.st_mode)
+        # Close the race between the initial check and the atomic replacement.
+        _require_codex_closed()
         os.replace(temporary, history_path)
     except OSError as error:
-        try:
+        with contextlib.suppress(OSError):
             temporary.unlink(missing_ok=True)
-        except OSError:
-            pass
         raise CodexHistoryError(f"cannot rewrite Codex input history: {error}") from error
 
     return CodexInputHistoryPruneResult(
@@ -343,9 +340,6 @@ def delete_codex_threads(
                     request_id=request_id,
                 )
             except CodexHistoryError as error:
-                # A parent thread may legitimately delete a selected spawned
-                # descendant first. If the original rollout is now absent, the
-                # user's desired state has already been reached.
                 if not session.path.exists():
                     deleted += 1
                     continue
@@ -383,10 +377,7 @@ def _read_history_records(path: Path) -> list[tuple[bytes, datetime | None]]:
         return []
     except OSError as error:
         raise CodexHistoryError(f"cannot read Codex input history: {error}") from error
-    records: list[tuple[bytes, datetime | None]] = []
-    for raw in raw_records:
-        records.append((raw, _history_record_timestamp(raw)))
-    return records
+    return [(raw, _history_record_timestamp(raw)) for raw in raw_records]
 
 
 def _history_record_timestamp(raw: bytes) -> datetime | None:
@@ -406,8 +397,7 @@ def _history_record_timestamp(raw: bytes) -> datetime | None:
 
 
 def _is_rollout_path(path: Path) -> bool:
-    lower = path.name.casefold()
-    return lower.endswith(_ROLLOUT_SUFFIXES)
+    return path.name.casefold().endswith(_ROLLOUT_SUFFIXES)
 
 
 def _require_codex_closed() -> None:
@@ -465,19 +455,15 @@ def _start_app_server(
 def _stop_app_server(rpc: _RpcProcess) -> None:
     process = rpc.process
     if process.stdin is not None:
-        try:
+        with contextlib.suppress(OSError):
             process.stdin.close()
-        except OSError:
-            pass
     if process.poll() is None:
         try:
             process.terminate()
             process.wait(timeout=2)
         except (OSError, subprocess.TimeoutExpired):
-            try:
+            with contextlib.suppress(OSError):
                 process.kill()
-            except OSError:
-                pass
     rpc.reader.join(timeout=0.5)
     rpc.stderr_reader.join(timeout=0.5)
 
@@ -557,8 +543,6 @@ def _rpc_request(
                 _rpc_failure_text(rpc, f"Codex app-server reader failed: {incoming}")
             ) from incoming
         if incoming.get("id") != request_id:
-            # Notifications, including thread/deleted, are informational here.
-            # No server-initiated request is expected for initialize/delete.
             continue
         if "error" in incoming:
             error_payload = incoming.get("error")
