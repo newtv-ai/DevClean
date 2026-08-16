@@ -5,11 +5,12 @@ from __future__ import annotations
 import queue
 import threading
 import tkinter as tk
-from datetime import UTC, datetime
+from pathlib import Path
 from tkinter import messagebox, ttk
 
 from devclean.core.codex_history import (
     CodexHistoryError,
+    CodexSessionEntry,
     CodexThreadDeleteResult,
     codex_home,
     delete_codex_threads,
@@ -24,17 +25,21 @@ _CUTOFFS = (30, 90, 180)
 
 
 def open_codex_history_dialog(parent: tk.Misc) -> None:
-    """Open one modal-ish history manager without routing history through AI."""
+    """Open history management without routing user history through AI."""
 
     home = codex_home()
     if home is None or not home.exists():
-        messagebox.showinfo("Codex 历史", "没有找到 CODEX_HOME / .codex 目录。", parent=parent)
+        messagebox.showinfo(
+            "Codex 历史",
+            "没有找到 CODEX_HOME / .codex 目录。",
+            parent=parent,
+        )
         return
     _CodexHistoryDialog(parent, home).show()
 
 
 class _CodexHistoryDialog:
-    def __init__(self, parent: tk.Misc, home: object) -> None:
+    def __init__(self, parent: tk.Misc, home: Path) -> None:
         self._parent = parent
         self._home = home
         self._window = tk.Toplevel(parent)
@@ -43,9 +48,9 @@ class _CodexHistoryDialog:
         self._window.minsize(720, 420)
         self._cutoff = tk.StringVar(value="90")
         self._status = tk.StringVar(value="正在统计 Codex 历史…")
-        self._worker_results: queue.Queue[CodexThreadDeleteResult | BaseException] = queue.Queue()
+        self._worker_results: queue.Queue[CodexThreadDeleteResult | Exception] = queue.Queue()
         self._busy = False
-        self._sessions = ()
+        self._sessions: tuple[CodexSessionEntry, ...] = ()
 
         container = ttk.Frame(self._window, padding=12)
         container.pack(fill=tk.BOTH, expand=True)
@@ -77,7 +82,13 @@ class _CodexHistoryDialog:
             "inputs": "输入记录数",
             "input_size": "输入历史空间",
         }
-        widths = {"cutoff": 150, "sessions": 100, "session_size": 140, "inputs": 120, "input_size": 150}
+        widths = {
+            "cutoff": 150,
+            "sessions": 100,
+            "session_size": 140,
+            "inputs": 120,
+            "input_size": 150,
+        }
         for column, heading in headings.items():
             self._tree.heading(column, text=heading)
             self._tree.column(column, width=widths[column], anchor=tk.CENTER)
@@ -127,7 +138,10 @@ class _CodexHistoryDialog:
 
         footer = ttk.Frame(container)
         footer.pack(side=tk.BOTTOM, fill=tk.X, pady=(16, 0))
-        ttk.Button(footer, text="刷新", command=self._refresh).pack(side=tk.RIGHT, padx=(8, 0))
+        ttk.Button(footer, text="刷新", command=self._refresh).pack(
+            side=tk.RIGHT,
+            padx=(8, 0),
+        )
         ttk.Button(footer, text="关闭", command=self._window.destroy).pack(side=tk.RIGHT)
         self._refresh()
 
@@ -198,12 +212,16 @@ class _CodexHistoryDialog:
         def work() -> None:
             try:
                 result = delete_codex_threads(selected, home=self._home)
-            except BaseException as error:
+            except Exception as error:  # noqa: BLE001 - surface worker failure in the UI
                 self._worker_results.put(error)
             else:
                 self._worker_results.put(result)
 
-        threading.Thread(target=work, name="DevClean-Codex-history-delete", daemon=True).start()
+        threading.Thread(
+            target=work,
+            name="DevClean-Codex-history-delete",
+            daemon=True,
+        ).start()
         self._window.after(100, self._poll_delete_result)
 
     def _poll_delete_result(self) -> None:
@@ -214,7 +232,7 @@ class _CodexHistoryDialog:
                 self._window.after(100, self._poll_delete_result)
             return
         self._set_busy(False, "Codex 会话删除已完成。")
-        if isinstance(outcome, BaseException):
+        if isinstance(outcome, Exception):
             messagebox.showerror("Codex 会话删除失败", str(outcome), parent=self._window)
             self._refresh()
             return
