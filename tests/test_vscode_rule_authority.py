@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from devclean.core.user_rules import RuleDecision, add_ai_verdicts, add_user_verdicts, load_rules
+from devclean.core.user_rules import (
+    RuleDecision,
+    add_ai_verdicts,
+    add_user_verdicts,
+    load_rules,
+)
 
 
 def _environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -15,7 +20,7 @@ def _environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEMP", r"C:\Users\person\AppData\Local\Temp")
 
 
-def test_ai_cannot_decide_vscode_workspace_history_backups_or_extensions(
+def test_ai_cannot_decide_vscode_workspace_site_data_backups_or_extensions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -23,6 +28,10 @@ def test_ai_cannot_decide_vscode_workspace_history_backups_or_extensions(
     workspace = (
         r"C:\Users\person\AppData\Roaming\Code\User\workspaceStorage"
         r"\abc\chatSessions\thread.jsonl"
+    )
+    cache_storage = (
+        r"C:\Users\person\AppData\Roaming\Code"
+        r"\Service Worker\CacheStorage\origin\entry"
     )
     backup = r"C:\Users\person\AppData\Roaming\Code\Backups\window\untitled.txt"
     extension = r"C:\Users\person\.vscode\extensions\publisher.ext-1.2.3\extension.js"
@@ -33,18 +42,20 @@ def test_ai_cannot_decide_vscode_workspace_history_backups_or_extensions(
         baseline,
         [
             (workspace, RuleDecision.DELETE, "old chat"),
+            (cache_storage, RuleDecision.DELETE, "cache-looking web data"),
             (backup, RuleDecision.DELETE, "looks temporary"),
             (extension, RuleDecision.DELETE, "large extension"),
         ],
     )
 
     assert updated.decision_for(workspace) is None
+    assert updated.decision_for(cache_storage) is None
     assert updated.decision_for(backup) is None
     assert updated.decision_for(extension) is None
     assert updated.ai_rule_count == before
 
 
-def test_user_vscode_workspace_delete_does_not_become_generic_file_rule(
+def test_user_vscode_workspace_or_cache_storage_delete_is_not_generic_rule(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -53,11 +64,19 @@ def test_user_vscode_workspace_delete_does_not_become_generic_file_rule(
         r"C:\Users\person\AppData\Roaming\Code\User\workspaceStorage"
         r"\abc\state.vscdb"
     )
+    cache_storage = (
+        r"C:\Users\person\AppData\Roaming\Code"
+        r"\Service Worker\CacheStorage\origin\entry"
+    )
     updated = add_user_verdicts(
         load_rules(),
-        [(workspace_db, RuleDecision.DELETE, "用户明确想清旧工作区聊天")],
+        [
+            (workspace_db, RuleDecision.DELETE, "用户明确想清旧工作区聊天"),
+            (cache_storage, RuleDecision.DELETE, "用户明确想清站点离线数据"),
+        ],
     )
     assert updated.decision_for(workspace_db) is None
+    assert updated.decision_for(cache_storage) is None
 
 
 def test_ai_cannot_decide_portable_vscode_user_state(
