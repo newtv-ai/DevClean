@@ -54,7 +54,7 @@ from devclean.core.application_cleanup import DecisionOwner, match_application_r
 _ORIGINAL_ADD_AI_VERDICTS = _impl.add_ai_verdicts
 _ORIGINAL_ADD_USER_VERDICTS = _impl.add_user_verdicts
 _ORIGINAL_LOAD_RULES = _impl.load_rules
-_packaged_documents = _impl._packaged_documents  # noqa: SLF001
+_packaged_documents = _impl._packaged_documents
 
 
 def _owner_for_path(path: str | Path) -> DecisionOwner | None:
@@ -77,8 +77,6 @@ def _owner_for_stored_rule(rule: DecisionRule) -> DecisionOwner | None:
     if owner is not None:
         return owner
 
-    # Fallback for portable Codex rules when the original profile/CODEX_HOME is
-    # no longer the active environment. This is deliberately narrow.
     value = rule.value.replace("/", "\\").casefold()
     user_markers = (
         r"\.codex\sessions",
@@ -203,9 +201,6 @@ def load_rules(*, create_missing: bool = True) -> UserRules:
     )
 
 
-# Keep runtime introspection/monkeypatch behaviour identical to the original
-# module: callers receive the implementation module, with only the guarded
-# public entry points replaced. This also keeps its private test hooks working.
 _impl.add_ai_verdicts = add_ai_verdicts
 _impl.add_user_verdicts = add_user_verdicts
 _impl.load_rules = load_rules
