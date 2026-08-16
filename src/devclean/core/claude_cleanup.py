@@ -565,7 +565,7 @@ def match_claude_rule(
         return _CLAUDE_CWD_TEMP_RULE
 
     resolved = claude_roots(environment)
-    application_roots = {
+    application_roots: dict[str, tuple[str, ...]] = {
         root.key: (_impl._normalize(root.path),)
         for root in claude_application_roots(environment)
     }
