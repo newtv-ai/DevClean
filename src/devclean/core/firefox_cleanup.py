@@ -41,6 +41,7 @@ class FirefoxRootSet:
     state_roots: tuple[PureWindowsPath, ...]
     persistent_parents: tuple[PureWindowsPath, ...]
     local_parents: tuple[PureWindowsPath, ...]
+    local_profiles: tuple[PureWindowsPath, ...]
     custom_profiles: tuple[PureWindowsPath, ...]
     crash_roots: tuple[PureWindowsPath, ...]
     update_parents: tuple[PureWindowsPath, ...]
@@ -240,17 +241,17 @@ def firefox_roots(environment: Mapping[str, str] | None = None) -> FirefoxRootSe
     state_roots: list[PureWindowsPath] = []
     persistent_parents: list[PureWindowsPath] = []
     local_parents: list[PureWindowsPath] = []
+    local_profiles: list[PureWindowsPath] = []
     custom_profiles: list[PureWindowsPath] = []
     crash_roots: list[PureWindowsPath] = []
     update_parents: list[PureWindowsPath] = []
 
-    firefox_base: PureWindowsPath | None = None
     if appdata:
         firefox_base = PureWindowsPath(appdata) / "Mozilla" / "Firefox"
         state_roots.append(firefox_base)
         persistent_parents.append(firefox_base / "Profiles")
         crash_roots.append(firefox_base / "Crash Reports")
-        custom_profiles.extend(_profiles_ini_paths(firefox_base, localappdata))
+        custom_profiles.extend(_profiles_ini_paths(firefox_base))
     if localappdata:
         local_base = PureWindowsPath(localappdata)
         local_parents.append(local_base / "Mozilla" / "Firefox" / "Profiles")
@@ -268,11 +269,17 @@ def firefox_roots(environment: Mapping[str, str] | None = None) -> FirefoxRootSe
     explicit_local = env.get("devclean_firefox_local_profile_dir")
     explicit_update = env.get("devclean_firefox_update_parent")
     if explicit_profile:
-        custom_profiles.insert(0, PureWindowsPath(explicit_profile))
+        candidate = PureWindowsPath(explicit_profile)
+        if candidate.is_absolute():
+            custom_profiles.insert(0, candidate)
     if explicit_local:
-        local_parents.insert(0, PureWindowsPath(explicit_local).parent)
+        candidate = PureWindowsPath(explicit_local)
+        if candidate.is_absolute():
+            local_profiles.insert(0, candidate)
     if explicit_update:
-        update_parents.insert(0, PureWindowsPath(explicit_update))
+        candidate = PureWindowsPath(explicit_update)
+        if candidate.is_absolute():
+            update_parents.insert(0, candidate)
 
     if environment is None:
         custom_profiles[0:0] = _running_profile_roots()
@@ -281,6 +288,7 @@ def firefox_roots(environment: Mapping[str, str] | None = None) -> FirefoxRootSe
         state_roots=_unique_paths(state_roots),
         persistent_parents=_unique_paths(persistent_parents),
         local_parents=_unique_paths(local_parents),
+        local_profiles=_unique_paths(local_profiles),
         custom_profiles=_unique_paths(custom_profiles),
         crash_roots=_unique_paths(crash_roots),
         update_parents=_unique_paths(update_parents),
@@ -291,14 +299,15 @@ def firefox_scan_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[PureWindowsPath, ...]:
     roots = firefox_roots(environment)
+    # Roaming state roots already contain the default persistent profiles and
+    # crash-report directories, so do not schedule those nested trees twice.
     return tuple(
         dict.fromkeys(
             (
                 *roots.state_roots,
-                *roots.persistent_parents,
                 *roots.local_parents,
+                *roots.local_profiles,
                 *roots.custom_profiles,
-                *roots.crash_roots,
                 *roots.update_parents,
             )
         )
@@ -321,6 +330,11 @@ def match_firefox_rule(
             _append_match(matches, normalized, profile, _FIREFOX_LOCAL_PROFILE_RULE, 100)
             for index, rule in enumerate(_FIREFOX_CACHE_RULES):
                 _append_match(matches, normalized, profile, rule, index)
+    # An explicit local profile is one exact ProfLD, not authority over siblings.
+    for profile in roots.local_profiles:
+        _append_match(matches, normalized, profile, _FIREFOX_LOCAL_PROFILE_RULE, 100)
+        for index, rule in enumerate(_FIREFOX_CACHE_RULES):
+            _append_match(matches, normalized, profile, rule, index)
 
     # Persistent profile parents and custom profiles remain authoritative. Exact
     # cache children may be delegated because custom profiles can co-locate
@@ -379,6 +393,10 @@ def firefox_audited_tool_roots(
             _append_tool_root(found, seen, profile, _FIREFOX_LOCAL_PROFILE_RULE)
             for rule in _FIREFOX_CACHE_RULES:
                 _append_tool_root(found, seen, profile, rule)
+    for profile in roots.local_profiles:
+        _append_tool_root(found, seen, profile, _FIREFOX_LOCAL_PROFILE_RULE)
+        for rule in _FIREFOX_CACHE_RULES:
+            _append_tool_root(found, seen, profile, rule)
     for parent in roots.persistent_parents:
         for profile in _existing_children(parent):
             for rule in _FIREFOX_CACHE_RULES:
@@ -505,8 +523,11 @@ def _running_profile_roots() -> tuple[PureWindowsPath, ...]:
     found: list[PureWindowsPath] = []
     for line in result.stdout.splitlines():
         value = _profile_switch_path(line)
-        if value:
-            found.append(PureWindowsPath(value))
+        if not value:
+            continue
+        candidate = PureWindowsPath(value)
+        if candidate.is_absolute():
+            found.append(candidate)
     return _unique_paths(found)
 
 
@@ -528,7 +549,6 @@ def _profile_switch_path(command_line: str) -> str | None:
 
 def _profiles_ini_paths(
     firefox_base: PureWindowsPath,
-    localappdata: str | None,
 ) -> tuple[PureWindowsPath, ...]:
     ini = Path(str(firefox_base / "profiles.ini"))
     try:
@@ -540,11 +560,6 @@ def _profiles_ini_paths(
         return ()
 
     default_parent = firefox_base / "Profiles"
-    local_parent = (
-        PureWindowsPath(localappdata) / "Mozilla" / "Firefox" / "Profiles"
-        if localappdata
-        else None
-    )
     found: list[PureWindowsPath] = []
     for section in parser.sections():
         path_text = parser.get(section, "Path", fallback="").strip()
@@ -558,9 +573,6 @@ def _profiles_ini_paths(
             profile.relative_to(default_parent)
         except ValueError:
             found.append(profile)
-            continue
-        if local_parent is None:
-            continue
     return _unique_paths(found)
 
 
