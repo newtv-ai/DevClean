@@ -105,6 +105,30 @@ def test_firefox_local_profile_is_cache_only_tool_root() -> None:
     assert decision.action is PolicyAction.TOOL_DELETE
 
 
+def test_explicit_local_profile_does_not_authorize_sibling_directories(tmp_path: Path) -> None:
+    parent = tmp_path / "shared-cache-parent"
+    profile = parent / "FirefoxLocalProfile"
+    sibling = parent / "UnrelatedApp"
+    profile.mkdir(parents=True)
+    sibling.mkdir()
+    env = {
+        **_env(),
+        "DEVCLEAN_FIREFOX_LOCAL_PROFILE_DIR": str(profile),
+    }
+
+    roots = firefox_roots(env)
+    assert PureWindowsPath(str(profile)) in roots.local_profiles
+    assert PureWindowsPath(str(parent)) not in roots.local_parents
+
+    profile_rule = match_application_rule(profile / "cache2" / "entry", env)
+    sibling_rule = match_application_rule(sibling / "cache2" / "entry", env)
+    assert profile_rule is not None
+    assert profile_rule.owner is DecisionOwner.TOOL
+    assert whole_tree_application_rule(profile, env) is not None
+    assert sibling_rule is None
+    assert whole_tree_application_rule(sibling, env) is None
+
+
 def test_custom_profile_never_gains_whole_tree_authority_but_cache_child_can(tmp_path: Path) -> None:
     profile = tmp_path / "portable-profile"
     cache = profile / "cache2"
