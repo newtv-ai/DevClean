@@ -84,6 +84,16 @@ from devclean.core.firefox_cleanup import (
     match_firefox_rule,
     whole_tree_firefox_rule,
 )
+from devclean.core.jetbrains_cleanup import (
+    JETBRAINS_RULES,
+    clear_jetbrains_process_cache,
+    evaluate_jetbrains_path,
+    jetbrains_audited_tool_roots,
+    jetbrains_process_running,
+    jetbrains_scan_roots,
+    match_jetbrains_rule,
+    whole_tree_jetbrains_rule,
+)
 from devclean.core.npm_cleanup import (
     NPM_RULES,
     clear_npm_process_cache,
@@ -196,6 +206,7 @@ def application_scan_roots(
                 *vivaldi_scan_roots(environment),
                 *opera_scan_roots(environment),
                 *firefox_scan_roots(environment),
+                *jetbrains_scan_roots(environment),
             )
         )
     )
@@ -218,6 +229,7 @@ def audited_dynamic_tool_roots(
         *vivaldi_audited_tool_roots(environment),
         *opera_audited_tool_roots(environment),
         *firefox_audited_tool_roots(environment),
+        *jetbrains_audited_tool_roots(environment),
     )
 
 
@@ -227,6 +239,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    jetbrains = match_jetbrains_rule(path, environment)
+    if jetbrains is not None:
+        return jetbrains
     firefox = match_firefox_rule(path, environment)
     if firefox is not None:
         return firefox
@@ -286,7 +301,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_firefox_path(
+    decision = evaluate_jetbrains_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -294,6 +309,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_firefox_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = evaluate_opera_path(
             path,
@@ -417,6 +441,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "jetbrains":
+        return jetbrains_process_running()
     if app_id == "firefox":
         return firefox_process_running()
     if app_id == "opera":
@@ -461,6 +487,7 @@ def clear_process_cache() -> None:
     clear_vivaldi_process_cache()
     clear_opera_process_cache()
     clear_firefox_process_cache()
+    clear_jetbrains_process_cache()
 
 
 def process_guard_allows(
@@ -484,6 +511,9 @@ def whole_tree_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return a TOOL rule only when *path* is exactly an audited whole-tree root."""
 
+    dynamic = whole_tree_jetbrains_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_firefox_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -543,6 +573,7 @@ def application_display_name(app_id: str) -> str:
         "chrome": "Chrome / Chromium",
         "edge": "Microsoft Edge",
         "firefox": "Mozilla Firefox",
+        "jetbrains": "JetBrains IDE",
         "opera": "Opera / Opera GX",
         "vivaldi": "Vivaldi",
         "codex": "Codex",
@@ -564,6 +595,7 @@ __all__ = [
     "CURSOR_RULES",
     "EDGE_RULES",
     "FIREFOX_RULES",
+    "JETBRAINS_RULES",
     "NPM_RULES",
     "OPERA_RULES",
     "PNPM_RULES",
