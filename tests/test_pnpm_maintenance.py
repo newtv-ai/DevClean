@@ -57,7 +57,9 @@ def test_prune_uses_pnpm_store_prune_with_selected_store(
     monkeypatch.setattr("devclean.core.pnpm_maintenance.subprocess.run", fake_run)
     result = prune_pnpm_store(version)
 
-    assert captured["args"][-2:] == ["store", "prune"]
+    args = captured["args"]
+    assert isinstance(args, list)
+    assert args[-2:] == ["store", "prune"]
     env = captured["env"]
     assert isinstance(env, dict)
     assert env["PNPM_CONFIG_STORE_DIR"] == str(store)
