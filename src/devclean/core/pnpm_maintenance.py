@@ -72,10 +72,10 @@ def prune_pnpm_store(store_path: Path) -> PnpmPruneResult:
     root = _store_config_root(store_path)
     if pnpm_process_running():
         raise RuntimeError(
-            "pnpm is running; close active pnpm commands before pruning the store"
+            "pnpm 正在运行; 请关闭正在执行的 pnpm 命令后再清理 store"
         )
     if not root.is_dir():
-        raise FileNotFoundError(f"pnpm store does not exist: {root}")
+        raise FileNotFoundError(f"pnpm store 不存在: {root}")
 
     before = _directory_bytes(root)
     executable = "pnpm.cmd" if os.name == "nt" else "pnpm"
@@ -91,11 +91,11 @@ def prune_pnpm_store(store_path: Path) -> PnpmPruneResult:
             env=env,
         )
     except (OSError, subprocess.SubprocessError) as error:
-        raise RuntimeError(f"Unable to run pnpm store prune: {error}") from error
+        raise RuntimeError(f"无法执行 pnpm store prune: {error}") from error
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         raise RuntimeError(
-            f"pnpm store prune failed (exit code {result.returncode}): {detail}"
+            f"pnpm store prune 失败 (退出码 {result.returncode}): {detail}"
         )
     after = _directory_bytes(root)
     return PnpmPruneResult(
