@@ -74,6 +74,16 @@ from devclean.core.edge_cleanup import (
     match_edge_rule,
     whole_tree_edge_rule,
 )
+from devclean.core.firefox_cleanup import (
+    FIREFOX_RULES,
+    clear_firefox_process_cache,
+    evaluate_firefox_path,
+    firefox_audited_tool_roots,
+    firefox_process_running,
+    firefox_scan_roots,
+    match_firefox_rule,
+    whole_tree_firefox_rule,
+)
 from devclean.core.npm_cleanup import (
     NPM_RULES,
     clear_npm_process_cache,
@@ -185,6 +195,7 @@ def application_scan_roots(
                 *brave_scan_roots(environment),
                 *vivaldi_scan_roots(environment),
                 *opera_scan_roots(environment),
+                *firefox_scan_roots(environment),
             )
         )
     )
@@ -206,6 +217,7 @@ def audited_dynamic_tool_roots(
         *brave_audited_tool_roots(environment),
         *vivaldi_audited_tool_roots(environment),
         *opera_audited_tool_roots(environment),
+        *firefox_audited_tool_roots(environment),
     )
 
 
@@ -215,6 +227,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    firefox = match_firefox_rule(path, environment)
+    if firefox is not None:
+        return firefox
     opera = match_opera_rule(path, environment)
     if opera is not None:
         return opera
@@ -271,7 +286,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_opera_path(
+    decision = evaluate_firefox_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -279,6 +294,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_opera_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = evaluate_vivaldi_path(
             path,
@@ -393,6 +417,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "firefox":
+        return firefox_process_running()
     if app_id == "opera":
         return opera_process_running()
     if app_id == "vivaldi":
@@ -434,6 +460,7 @@ def clear_process_cache() -> None:
     clear_brave_process_cache()
     clear_vivaldi_process_cache()
     clear_opera_process_cache()
+    clear_firefox_process_cache()
 
 
 def process_guard_allows(
@@ -457,6 +484,9 @@ def whole_tree_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return a TOOL rule only when *path* is exactly an audited whole-tree root."""
 
+    dynamic = whole_tree_firefox_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_opera_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -512,6 +542,7 @@ def application_display_name(app_id: str) -> str:
         "brave": "Brave",
         "chrome": "Chrome / Chromium",
         "edge": "Microsoft Edge",
+        "firefox": "Mozilla Firefox",
         "opera": "Opera / Opera GX",
         "vivaldi": "Vivaldi",
         "codex": "Codex",
@@ -532,6 +563,7 @@ __all__ = [
     "CODEX_RULES",
     "CURSOR_RULES",
     "EDGE_RULES",
+    "FIREFOX_RULES",
     "NPM_RULES",
     "OPERA_RULES",
     "PNPM_RULES",
