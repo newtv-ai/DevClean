@@ -35,6 +35,8 @@ class CursorStorageInventory:
 def inventory_cursor_storage(
     environment: Mapping[str, str] | None = None,
 ) -> CursorStorageInventory:
+    """Inventory Cursor's high-value persistent stores without mutating them."""
+
     roots = cursor_roots(environment)
     entries: list[CursorStorageEntry] = []
 
@@ -44,13 +46,31 @@ def inventory_cursor_storage(
         entries.append(
             _files_entry(
                 "chat_db",
-                "Cursor chat/agent database",
+                "Live Cursor chat/agent database",
+                global_storage,
+                ("state.vscdb", "state.vscdb-wal", "state.vscdb-shm"),
+                user_data=True,
+            )
+        )
+        entries.append(
+            _files_entry(
+                "chat_db_backup",
+                "Cursor chat database recovery backup",
+                global_storage,
+                ("state.vscdb.backup",),
+                user_data=True,
+            )
+        )
+        entries.append(
+            _glob_files_entry(
+                "chat_db_recovery",
+                "Cursor corrupted/manual database recovery copies",
                 global_storage,
                 (
-                    "state.vscdb",
-                    "state.vscdb.backup",
-                    "state.vscdb-wal",
-                    "state.vscdb-shm",
+                    "state.vscdb.corrupted.*",
+                    "state.vscdb.broken*",
+                    "state.vscdb.bak*",
+                    "state.vscdb.manual-backup*",
                 ),
                 user_data=True,
             )
@@ -85,6 +105,14 @@ def inventory_cursor_storage(
                 "Retrieval/edit checkpoints",
                 global_storage / "anysphere.cursor-retrieval" / "checkpoints",
                 user_data=True,
+            )
+        )
+        entries.append(
+            _directory_entry(
+                "hot_exit_backups",
+                "Unsaved editor / recovery backups",
+                roaming / "Backups",
+                user_data=False,
             )
         )
 
@@ -148,6 +176,36 @@ def _files_entry(
         if path.is_file():
             exists = True
             total += stat.st_size
+    return CursorStorageEntry(key, label, root, total, exists, user_data)
+
+
+def _glob_files_entry(
+    key: str,
+    label: str,
+    root: Path,
+    patterns: Iterable[str],
+    *,
+    user_data: bool,
+) -> CursorStorageEntry:
+    total = 0
+    exists = False
+    seen: set[Path] = set()
+    for pattern in patterns:
+        try:
+            matches = root.glob(pattern)
+        except OSError:
+            continue
+        for path in matches:
+            if path in seen:
+                continue
+            seen.add(path)
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            if path.is_file():
+                exists = True
+                total += stat.st_size
     return CursorStorageEntry(key, label, root, total, exists, user_data)
 
 
