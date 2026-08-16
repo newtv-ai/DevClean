@@ -164,11 +164,13 @@ _AVD_SNAPSHOT_DIR_RULE = _rule(
     "Android Emulator snapshots preserving complete virtual-device state",
     user_age_buckets=(30, 90, 180),
 )
+# snapshots.img is a top-level AVD image. Keep this exact so a wildcard cannot
+# accidentally outrank the dedicated snapshots/ subtree rule on nested files.
 _AVD_SNAPSHOT_FILE_RULE = _rule(
     "android-avd-snapshot-storage",
     "ANDROID_AVD_CONTENT",
-    "snapshots*.img*",
-    MatchKind.GLOB,
+    "snapshots.img",
+    MatchKind.EXACT,
     DecisionOwner.USER,
     RebuildCost.HIGH,
     "Android Emulator snapshot storage image",
@@ -248,7 +250,7 @@ def android_avd_roots(
     """Discover AVD registry roots and source-backed content directories.
 
     Current emulator search order includes ``ANDROID_AVD_HOME``, the emulator/user
-    home ``avd`` directory, and the default ``%USERPROFILE%\.android\avd``. Older
+    home ``avd`` directory, and the default ``%USERPROFILE%/.android/avd``. Older
     tools used ``ANDROID_SDK_HOME`` for the user-specific Android configuration
     root, so it is retained as a compatibility discovery source.
     """
