@@ -13,6 +13,7 @@ from devclean.core.application_cleanup import (
     effective_idle_days,
     evaluate_application_path,
     match_application_rule,
+    process_guard_allows,
 )
 
 _ENV = {
@@ -117,7 +118,7 @@ def test_process_guard_overrides_age_and_reclaim_value() -> None:
     assert decision.requires_process_closed
 
 
-def test_codex_session_history_is_always_user_decided_and_bucketed() -> None:
+def test_codex_session_history_is_user_owned_but_generic_pipeline_protects_it() -> None:
     path = (
         r"C:\Users\alice\.codex\sessions\2026\01\01"
         r"\rollout-2026-01-01T10-00-00.jsonl"
@@ -134,11 +135,12 @@ def test_codex_session_history_is_always_user_decided_and_bucketed() -> None:
     assert decision is not None
     assert decision.rule.owner is DecisionOwner.USER
     assert decision.rule.last_use is LastUseStrategy.SESSION_LAST_EVENT
-    assert decision.action is PolicyAction.USER_DECISION
+    assert decision.action is PolicyAction.KEEP_PROTECTED
     assert decision.age_bucket == "90-180d"
+    assert not process_guard_allows(path, _ENV)
 
 
-def test_recent_session_is_still_user_decided_not_tool_deleted() -> None:
+def test_recent_session_is_still_user_owned_not_tool_deleted() -> None:
     path = (
         r"C:\Users\alice\.codex\sessions\2026\08\15"
         r"\rollout-2026-08-15T10-00-00.jsonl"
@@ -153,13 +155,15 @@ def test_recent_session_is_still_user_decided_not_tool_deleted() -> None:
     )
 
     assert decision is not None
-    assert decision.action is PolicyAction.USER_DECISION
+    assert decision.rule.owner is DecisionOwner.USER
+    assert decision.action is PolicyAction.KEEP_PROTECTED
     assert decision.age_bucket == "0-30d"
 
 
 def test_codex_input_history_is_user_owned() -> None:
+    path = r"C:\Users\alice\.codex\history.jsonl"
     decision = evaluate_application_path(
-        r"C:\Users\alice\.codex\history.jsonl",
+        path,
         logical_size=20 * 1024**2,
         last_used=_NOW - timedelta(days=200),
         now=_NOW,
@@ -169,7 +173,9 @@ def test_codex_input_history_is_user_owned() -> None:
     assert decision is not None
     assert decision.rule.owner is DecisionOwner.USER
     assert decision.rule.last_use is LastUseStrategy.JSONL_RECORD_TS
+    assert decision.action is PolicyAction.KEEP_PROTECTED
     assert decision.age_bucket == ">=180d"
+    assert not process_guard_allows(path, _ENV)
 
 
 def test_codex_input_history_prefers_embedded_record_timestamp(tmp_path: Path) -> None:
@@ -198,13 +204,16 @@ def test_codex_input_history_prefers_embedded_record_timestamp(tmp_path: Path) -
     )
 
     assert decision is not None
+    assert decision.rule.owner is DecisionOwner.USER
+    assert decision.action is PolicyAction.KEEP_PROTECTED
     assert decision.last_used == latest
     assert decision.age_bucket == "30-90d"
 
 
 def test_codex_persistent_state_beats_generic_cache_name() -> None:
+    path = r"C:\Users\alice\.codex\plugins\cache\vendor\plugin\1.2.3\plugin.json"
     decision = evaluate_application_path(
-        r"C:\Users\alice\.codex\plugins\cache\vendor\plugin\1.2.3\plugin.json",
+        path,
         logical_size=500 * 1024**2,
         last_used=_NOW - timedelta(days=200),
         now=_NOW,
@@ -214,6 +223,7 @@ def test_codex_persistent_state_beats_generic_cache_name() -> None:
     assert decision is not None
     assert decision.rule.owner is DecisionOwner.KEEP
     assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert not process_guard_allows(path, _ENV)
 
 
 def test_codex_state_databases_are_protected() -> None:
@@ -225,8 +235,9 @@ def test_codex_state_databases_are_protected() -> None:
         "queue_1.sqlite",
         "thread_history_1.sqlite-shm",
     ):
+        path = rf"C:\Users\alice\.codex\{name}"
         decision = evaluate_application_path(
-            rf"C:\Users\alice\.codex\{name}",
+            path,
             logical_size=2 * 1024**3,
             last_used=_NOW - timedelta(days=365),
             now=_NOW,
@@ -234,6 +245,7 @@ def test_codex_state_databases_are_protected() -> None:
         )
         assert decision is not None, name
         assert decision.action is PolicyAction.KEEP_PROTECTED, name
+        assert not process_guard_allows(path, _ENV), name
 
 
 def test_codex_desktop_cache_matches_descendants() -> None:
@@ -266,3 +278,4 @@ def test_codex_home_override_is_honoured() -> None:
 
     assert decision is not None
     assert decision.rule.owner is DecisionOwner.USER
+    assert decision.action is PolicyAction.KEEP_PROTECTED
