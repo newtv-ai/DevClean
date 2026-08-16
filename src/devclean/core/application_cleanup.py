@@ -26,6 +26,16 @@ from devclean.core._application_cleanup_impl import (
     RebuildCost,
     effective_idle_days,
 )
+from devclean.core.brave_cleanup import (
+    BRAVE_RULES,
+    brave_audited_tool_roots,
+    brave_process_running,
+    brave_scan_roots,
+    clear_brave_process_cache,
+    evaluate_brave_path,
+    match_brave_rule,
+    whole_tree_brave_rule,
+)
 from devclean.core.chrome_cleanup import (
     CHROME_RULES,
     chrome_audited_tool_roots,
@@ -152,6 +162,7 @@ def application_scan_roots(
                 *pnpm_scan_roots(environment),
                 *chrome_scan_roots(environment),
                 *edge_scan_roots(environment),
+                *brave_scan_roots(environment),
             )
         )
     )
@@ -170,6 +181,7 @@ def audited_dynamic_tool_roots(
         *pnpm_audited_tool_roots(environment),
         *chrome_audited_tool_roots(environment),
         *edge_audited_tool_roots(environment),
+        *brave_audited_tool_roots(environment),
     )
 
 
@@ -179,6 +191,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    brave = match_brave_rule(path, environment)
+    if brave is not None:
+        return brave
     edge = match_edge_rule(path, environment)
     if edge is not None:
         return edge
@@ -226,7 +241,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_edge_path(
+    decision = evaluate_brave_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -234,6 +249,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_edge_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = evaluate_chrome_path(
             path,
@@ -321,6 +345,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "brave":
+        return brave_process_running()
     if app_id == "edge":
         return edge_process_running()
     if app_id == "chrome":
@@ -353,6 +379,7 @@ def clear_process_cache() -> None:
     clear_pnpm_process_cache()
     clear_chrome_process_cache()
     clear_edge_process_cache()
+    clear_brave_process_cache()
 
 
 def process_guard_allows(
@@ -376,6 +403,9 @@ def whole_tree_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return a TOOL rule only when *path* is exactly an audited whole-tree root."""
 
+    dynamic = whole_tree_brave_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_edge_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -419,6 +449,7 @@ def whole_tree_application_rule(
 
 def application_display_name(app_id: str) -> str:
     return {
+        "brave": "Brave",
         "chrome": "Chrome / Chromium",
         "edge": "Microsoft Edge",
         "codex": "Codex",
@@ -433,6 +464,7 @@ def application_display_name(app_id: str) -> str:
 
 
 __all__ = [
+    "BRAVE_RULES",
     "CHROME_RULES",
     "CLAUDE_RULES",
     "CODEX_RULES",
