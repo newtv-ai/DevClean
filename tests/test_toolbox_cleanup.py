@@ -4,6 +4,8 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PureWindowsPath
 
+import pytest
+
 import devclean.core.application_cleanup as application_cleanup
 from devclean.core.application_cleanup import (
     DecisionOwner,
@@ -229,7 +231,7 @@ def test_toolbox_whole_tree_authority_is_exact_and_catalogued(tmp_path: Path) ->
 
 def test_toolbox_process_guard_is_independent_from_jetbrains_ide_guard(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     env, root = _layout(tmp_path)
     download = root / "cache" / "download"
