@@ -169,8 +169,12 @@ def test_npm_global_prefix_is_installed_payload_not_node_modules_cache() -> None
 
 
 def test_npm_project_and_config_metadata_are_always_protected() -> None:
+    default_config = match_application_rule(r"C:\Users\alice\.npmrc", _env())
+    assert default_config is not None
+    assert default_config.rule_id == "npm-user-config"
+    assert default_config.owner is DecisionOwner.KEEP
+
     paths = (
-        r"C:\Users\alice\.npmrc",
         r"D:\src\app\.npmrc",
         r"D:\src\app\package.json",
         r"D:\src\app\package-lock.json",
@@ -253,9 +257,8 @@ def test_catalog_protects_custom_prefix_and_upgrades_only_npm_cache_children(
     assert scope is DirectoryScope.NOT_ELIGIBLE
 
 
-def test_project_node_modules_remains_generic_regenerable_output(tmp_path: Path) -> None:
-    project_modules = tmp_path / "repo" / "node_modules"
-    project_modules.mkdir(parents=True)
+def test_project_node_modules_remains_generic_regenerable_output() -> None:
+    project_modules = Path(r"D:\src\repo\node_modules")
     rules = default_rules()
     scope = directory_cleanup_scope(
         project_modules,
