@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from devclean.core.user_rules import RuleDecision, add_ai_verdicts, add_user_verdicts, load_rules
+from devclean.core.user_rules import (
+    RuleDecision,
+    add_ai_verdicts,
+    add_user_verdicts,
+    load_rules,
+)
 
 
 def _environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -22,11 +27,23 @@ def test_ai_cannot_delete_chrome_profile_or_updater_state(
     _environment(tmp_path, monkeypatch)
     protected = (
         r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default\History",
-        r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default\Login Data",
-        r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default\Preferences",
-        r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default\Extensions\abc\manifest.json",
+        (
+            r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default"
+            r"\Login Data"
+        ),
+        (
+            r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default"
+            r"\Preferences"
+        ),
+        (
+            r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default"
+            r"\Extensions\abc\manifest.json"
+        ),
         r"C:\Users\person\AppData\Local\Google\GoogleUpdater\prefs.json",
-        r"C:\Users\person\AppData\Local\Google\GoogleUpdater\140.0.0.0\updater.exe",
+        (
+            r"C:\Users\person\AppData\Local\Google\GoogleUpdater"
+            r"\140.0.0.0\updater.exe"
+        ),
     )
     baseline = load_rules()
     before = baseline.ai_rule_count
