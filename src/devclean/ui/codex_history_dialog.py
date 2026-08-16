@@ -26,7 +26,7 @@ from devclean.core.codex_history import (
 _CUTOFFS = (30, 90, 180)
 
 
-def open_codex_history_dialog(parent: tk.Misc) -> None:
+def open_codex_history_dialog(parent: tk.Tk | tk.Toplevel) -> None:
     """Open history management without routing user history through AI."""
 
     home = codex_home()
@@ -41,7 +41,7 @@ def open_codex_history_dialog(parent: tk.Misc) -> None:
 
 
 class _CodexHistoryDialog:
-    def __init__(self, parent: tk.Misc, home: Path) -> None:
+    def __init__(self, parent: tk.Tk | tk.Toplevel, home: Path) -> None:
         self._parent = parent
         self._home = home
         self._window = tk.Toplevel(parent)
@@ -214,7 +214,7 @@ class _CodexHistoryDialog:
         def work() -> None:
             try:
                 result = delete_codex_threads(selected, home=self._home)
-            except Exception as error:  # noqa: BLE001 - surface worker failure in the UI
+            except Exception as error:
                 self._worker_results.put(error)
             else:
                 self._worker_results.put(result)
@@ -246,7 +246,8 @@ class _CodexHistoryDialog:
                 "部分会话未删除",
                 (
                     f"请求 {outcome.requested:,} 个，已删除或已随父线程删除 "
-                    f"{outcome.deleted_or_already_absent:,} 个，失败 {len(outcome.failed):,} 个。\n\n"
+                    f"{outcome.deleted_or_already_absent:,} 个，"
+                    f"失败 {len(outcome.failed):,} 个。\n\n"
                     f"{sample}"
                 ),
                 parent=self._window,
