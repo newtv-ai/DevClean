@@ -1,0 +1,503 @@
+"""Audited Cursor desktop/CLI storage semantics for Windows cleanup.
+
+Cursor spreads regenerable Electron/extension caches across roaming and local
+application-data roots while keeping unique local chat transcripts, workspace
+state, checkpoints, and configuration in neighboring paths.  This profile makes
+that distinction explicit so generic cache-name heuristics cannot erase history.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from functools import lru_cache
+from pathlib import PureWindowsPath
+
+from devclean.core import _application_cleanup_impl as _impl
+from devclean.core._application_cleanup_impl import (
+    ApplicationCleanupRule,
+    ApplicationPolicyDecision,
+    ApplicationRoot,
+    DecisionOwner,
+    LastUseStrategy,
+    MatchKind,
+    PolicyAction,
+    RebuildCost,
+    effective_idle_days,
+)
+
+_MIB = 1024**2
+
+
+@dataclass(frozen=True, slots=True)
+class CursorRootSet:
+    roaming: PureWindowsPath | None
+    local: PureWindowsPath | None
+    program_data: PureWindowsPath | None
+    home: PureWindowsPath | None
+
+
+def _rule(
+    rule_id: str,
+    root_key: str,
+    relative_pattern: str,
+    match_kind: MatchKind,
+    owner: DecisionOwner,
+    rebuild_cost: RebuildCost,
+    label: str,
+    *,
+    idle_days: float | None = None,
+    min_reclaim_bytes: int = 0,
+    requires_process_closed: bool = False,
+    size_sensitive_idle: bool = True,
+    user_age_buckets: tuple[int, ...] = (),
+    allow_whole_tree: bool = False,
+) -> ApplicationCleanupRule:
+    return ApplicationCleanupRule(
+        rule_id=rule_id,
+        app_id="cursor",
+        root_key=root_key,
+        relative_pattern=relative_pattern,
+        match_kind=match_kind,
+        owner=owner,
+        last_use=LastUseStrategy.FILE_MTIME,
+        rebuild_cost=rebuild_cost,
+        idle_days=idle_days,
+        min_reclaim_bytes=min_reclaim_bytes,
+        requires_process_closed=requires_process_closed,
+        size_sensitive_idle=size_sensitive_idle,
+        user_age_buckets=user_age_buckets,
+        allow_whole_tree=allow_whole_tree,
+        label=label,
+    )
+
+
+def _cache_rules(root_key: str, prefix: str) -> tuple[ApplicationCleanupRule, ...]:
+    return (
+        _rule(
+            f"cursor-{prefix}-cache",
+            root_key,
+            "Cache",
+            MatchKind.PREFIX,
+            DecisionOwner.TOOL,
+            RebuildCost.LOW,
+            "Cursor Chromium resource cache",
+            idle_days=7,
+            min_reclaim_bytes=4 * _MIB,
+            requires_process_closed=True,
+            allow_whole_tree=True,
+        ),
+        _rule(
+            f"cursor-{prefix}-cached-data",
+            root_key,
+            "CachedData",
+            MatchKind.PREFIX,
+            DecisionOwner.TOOL,
+            RebuildCost.LOW,
+            "Cursor cached application data",
+            idle_days=7,
+            min_reclaim_bytes=4 * _MIB,
+            requires_process_closed=True,
+            allow_whole_tree=True,
+        ),
+        _rule(
+            f"cursor-{prefix}-code-cache",
+            root_key,
+            "Code Cache",
+            MatchKind.PREFIX,
+            DecisionOwner.TOOL,
+            RebuildCost.LOW,
+            "Cursor Chromium code cache",
+            idle_days=7,
+            min_reclaim_bytes=4 * _MIB,
+            requires_process_closed=True,
+            allow_whole_tree=True,
+        ),
+        _rule(
+            f"cursor-{prefix}-gpu-cache",
+            root_key,
+            "GPUCache",
+            MatchKind.PREFIX,
+            DecisionOwner.TOOL,
+            RebuildCost.LOW,
+            "Cursor GPU cache",
+            idle_days=3,
+            min_reclaim_bytes=4 * _MIB,
+            requires_process_closed=True,
+            allow_whole_tree=True,
+        ),
+        _rule(
+            f"cursor-{prefix}-cached-extensions",
+            root_key,
+            "CachedExtensions",
+            MatchKind.PREFIX,
+            DecisionOwner.TOOL,
+            RebuildCost.LOW,
+            "Cursor extension metadata cache",
+            idle_days=7,
+            min_reclaim_bytes=4 * _MIB,
+            requires_process_closed=True,
+            allow_whole_tree=True,
+        ),
+        _rule(
+            f"cursor-{prefix}-cached-extension-vsix",
+            root_key,
+            "CachedExtensionVSIXs",
+            MatchKind.PREFIX,
+            DecisionOwner.TOOL,
+            RebuildCost.MEDIUM,
+            "Cursor downloaded extension package cache",
+            idle_days=14,
+            min_reclaim_bytes=8 * _MIB,
+            requires_process_closed=True,
+            allow_whole_tree=True,
+        ),
+    )
+
+
+# More-specific TOOL/USER rules intentionally outrank the broad KEEP roots.
+# Unknown Cursor state is protected by default; only paths with current evidence
+# are delegated to generic cleanup.
+CURSOR_RULES: tuple[ApplicationCleanupRule, ...] = (
+    *_cache_rules("CURSOR_ROAMING", "roaming"),
+    *_cache_rules("CURSOR_LOCAL", "local"),
+    _rule(
+        "cursor-roaming-logs",
+        "CURSOR_ROAMING",
+        "logs",
+        MatchKind.PREFIX,
+        DecisionOwner.TOOL,
+        RebuildCost.NONE,
+        "Cursor diagnostic logs",
+        idle_days=7,
+        min_reclaim_bytes=_MIB,
+        requires_process_closed=True,
+        allow_whole_tree=True,
+    ),
+    _rule(
+        "cursor-local-logs",
+        "CURSOR_LOCAL",
+        "logs",
+        MatchKind.PREFIX,
+        DecisionOwner.TOOL,
+        RebuildCost.NONE,
+        "Cursor local diagnostic logs",
+        idle_days=7,
+        min_reclaim_bytes=_MIB,
+        requires_process_closed=True,
+        allow_whole_tree=True,
+    ),
+    _rule(
+        "cursor-workspace-state",
+        "CURSOR_ROAMING",
+        r"User\workspaceStorage",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Cursor workspace state and local chat metadata/history",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "cursor-system-workspace-state",
+        "CURSOR_PROGRAMDATA",
+        r"User\workspaceStorage",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Cursor system-install workspace state and local chat metadata/history",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "cursor-global-chat-database",
+        "CURSOR_ROAMING",
+        r"User\globalStorage\{state.vscdb,state.vscdb.backup,state.vscdb-wal,state.vscdb-shm}",
+        MatchKind.GLOB,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Cursor local chat/agent database; clean only with Cursor's own commands",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "cursor-system-global-chat-database",
+        "CURSOR_PROGRAMDATA",
+        r"User\globalStorage\{state.vscdb,state.vscdb.backup,state.vscdb-wal,state.vscdb-shm}",
+        MatchKind.GLOB,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Cursor system-install local chat/agent database",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "cursor-local-history",
+        "CURSOR_ROAMING",
+        r"User\History",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Cursor local file undo/history",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "cursor-commit-checkpoints",
+        "CURSOR_ROAMING",
+        r"User\globalStorage\anysphere.cursor-commits\checkpoints",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Cursor AI edit checkpoints and local undo history",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "cursor-retrieval-checkpoints",
+        "CURSOR_ROAMING",
+        r"User\globalStorage\anysphere.cursor-retrieval\checkpoints",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Cursor retrieval/edit checkpoints and local undo history",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "cursor-agent-projects",
+        "CURSOR_HOME",
+        "projects",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Cursor local Agent transcripts and project assets",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "cursor-cli-chats",
+        "CURSOR_HOME",
+        "chats",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Cursor CLI chats stored only on this machine",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "cursor-installed-extensions",
+        "CURSOR_HOME",
+        "extensions",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Cursor installed extensions",
+    ),
+    _rule(
+        "cursor-roaming-user-state",
+        "CURSOR_ROAMING",
+        "User",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Cursor settings, extension state, snippets, and other persistent user state",
+    ),
+    _rule(
+        "cursor-system-user-state",
+        "CURSOR_PROGRAMDATA",
+        "User",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Cursor system-install persistent user state",
+    ),
+    _rule(
+        "cursor-home-state",
+        "CURSOR_HOME",
+        "",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Cursor home configuration and persistent local data",
+    ),
+    _rule(
+        "cursor-roaming-unknown-state",
+        "CURSOR_ROAMING",
+        "",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Unclassified Cursor roaming state",
+    ),
+    _rule(
+        "cursor-local-unknown-state",
+        "CURSOR_LOCAL",
+        "",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Unclassified Cursor local state",
+    ),
+    _rule(
+        "cursor-system-unknown-state",
+        "CURSOR_PROGRAMDATA",
+        "",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Unclassified Cursor system-install state",
+    ),
+)
+
+
+def cursor_roots(environment: Mapping[str, str] | None = None) -> CursorRootSet:
+    env = _casefold_env(environment)
+    appdata = env.get("appdata")
+    localappdata = env.get("localappdata")
+    programdata = env.get("programdata")
+    userprofile = env.get("userprofile")
+    return CursorRootSet(
+        roaming=PureWindowsPath(appdata) / "Cursor" if appdata else None,
+        local=PureWindowsPath(localappdata) / "Cursor" if localappdata else None,
+        program_data=PureWindowsPath(programdata) / "Cursor" if programdata else None,
+        home=PureWindowsPath(userprofile) / ".cursor" if userprofile else None,
+    )
+
+
+def cursor_application_roots(
+    environment: Mapping[str, str] | None = None,
+) -> tuple[ApplicationRoot, ...]:
+    roots = cursor_roots(environment)
+    pairs = (
+        ("CURSOR_ROAMING", roots.roaming),
+        ("CURSOR_LOCAL", roots.local),
+        ("CURSOR_PROGRAMDATA", roots.program_data),
+        ("CURSOR_HOME", roots.home),
+    )
+    return tuple(ApplicationRoot(key, path) for key, path in pairs if path is not None)
+
+
+def cursor_scan_roots(
+    environment: Mapping[str, str] | None = None,
+) -> tuple[PureWindowsPath, ...]:
+    roots = cursor_roots(environment)
+    return tuple(
+        path
+        for path in (roots.roaming, roots.local, roots.program_data, roots.home)
+        if path is not None
+    )
+
+
+def match_cursor_rule(
+    path: str | os.PathLike[str],
+    environment: Mapping[str, str] | None = None,
+) -> ApplicationCleanupRule | None:
+    normalized = _impl._normalize(path)
+    roots = {
+        root.key: _impl._normalize(root.path)
+        for root in cursor_application_roots(environment)
+    }
+    matches: list[tuple[int, int, ApplicationCleanupRule]] = []
+    for index, rule in enumerate(CURSOR_RULES):
+        root = roots.get(rule.root_key)
+        if root is None:
+            continue
+        for expanded in _impl._expand_braces(rule.relative_pattern):
+            candidate = root + ("\\" + expanded if expanded else "")
+            if _impl._matches(normalized, candidate, rule.match_kind):
+                # Specificity dominates. On equal specificity, KEEP wins to keep
+                # ambiguous state out of generic deletion authority.
+                owner_weight = 3 if rule.owner is DecisionOwner.KEEP else 2 if rule.owner is DecisionOwner.USER else 1
+                matches.append((len(candidate), owner_weight * 1000 - index, rule))
+    if not matches:
+        return None
+    return max(matches, key=lambda item: (item[0], item[1]))[2]
+
+
+def evaluate_cursor_path(
+    path: str | os.PathLike[str],
+    *,
+    logical_size: int,
+    last_used: datetime | None,
+    now: datetime | None = None,
+    process_running: bool | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> ApplicationPolicyDecision | None:
+    rule = match_cursor_rule(path, environment)
+    if rule is None:
+        return None
+    current = _impl._as_utc(now or datetime.now(UTC))
+    assert current is not None
+    observed = _impl._as_utc(last_used)
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
+
+    if rule.owner is DecisionOwner.KEEP:
+        return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
+    if rule.owner is DecisionOwner.USER:
+        return ApplicationPolicyDecision(
+            rule,
+            PolicyAction.USER_DECISION,
+            observed,
+            idle,
+            None,
+            _impl._benefit_score(logical_size, idle, None, rule.rebuild_cost),
+            _impl._age_bucket(idle, rule.user_age_buckets),
+        )
+
+    threshold = effective_idle_days(rule, logical_size)
+    running = process_running
+    if running is None and rule.requires_process_closed:
+        running = cursor_process_running()
+    score = _impl._benefit_score(logical_size, idle, threshold, rule.rebuild_cost)
+    if rule.requires_process_closed and running:
+        action = PolicyAction.TOOL_KEEP_IN_USE
+    elif logical_size < rule.min_reclaim_bytes:
+        action = PolicyAction.TOOL_KEEP_LOW_BENEFIT
+    elif idle is None or threshold is None:
+        action = PolicyAction.TOOL_KEEP_UNKNOWN_USAGE
+    elif idle < threshold:
+        action = PolicyAction.TOOL_KEEP_RECENT
+    else:
+        action = PolicyAction.TOOL_DELETE
+    return ApplicationPolicyDecision(rule, action, observed, idle, threshold, score)
+
+
+@lru_cache(maxsize=1)
+def cursor_process_running() -> bool:
+    if os.name != "nt":
+        return False
+    script = (
+        "$p=Get-Process -Name Cursor -ErrorAction SilentlyContinue; "
+        "if ($p) { 'RUNNING' }"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=6,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return True
+    if result.returncode != 0:
+        return True
+    return "RUNNING" in result.stdout
+
+
+def clear_cursor_process_cache() -> None:
+    cursor_process_running.cache_clear()
+
+
+def _casefold_env(environment: Mapping[str, str] | None) -> dict[str, str]:
+    source = os.environ if environment is None else environment
+    return {key.casefold(): value for key, value in source.items() if value}
+
+
+__all__ = [
+    "CURSOR_RULES",
+    "CursorRootSet",
+    "clear_cursor_process_cache",
+    "cursor_application_roots",
+    "cursor_process_running",
+    "cursor_roots",
+    "cursor_scan_roots",
+    "evaluate_cursor_path",
+    "match_cursor_rule",
+]
