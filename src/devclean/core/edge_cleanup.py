@@ -1,8 +1,8 @@
 """Audited Microsoft Edge storage semantics for Windows cleanup.
 
 Edge inherits Chromium profile/cache layout but has Microsoft-specific channel,
-policy and updater locations.  Browser profile state is never treated as a
-cache merely because it lives beside regenerable Chromium data.  The modern
+policy and updater locations. Browser profile state is never treated as a
+cache merely because it lives beside regenerable Chromium data. The modern
 Edge updater is also kept separate from browser cache semantics: diagnostic
 logs are disposable, while updater binaries/state remain protected.
 """
@@ -63,7 +63,9 @@ _EDGE_CHROMIUM_RULES: tuple[ApplicationCleanupRule, ...] = tuple(
     if rule.root_key in {"CHROME_DATA", "CHROME_PROFILE", "CHROME_DISK_CACHE"}
 )
 
-_EDGE_DATA_RULES = tuple(rule for rule in _EDGE_CHROMIUM_RULES if rule.root_key == "EDGE_DATA")
+_EDGE_DATA_RULES = tuple(
+    rule for rule in _EDGE_CHROMIUM_RULES if rule.root_key == "EDGE_DATA"
+)
 _EDGE_PROFILE_RULES = tuple(
     rule for rule in _EDGE_CHROMIUM_RULES if rule.root_key == "EDGE_PROFILE"
 )
@@ -131,22 +133,9 @@ _EDGE_UPDATE_LOG_RULES: tuple[ApplicationCleanupRule, ...] = (
     ),
 )
 
-_EDGE_UPDATE_LOG_OTHER_RULE = ApplicationCleanupRule(
-    rule_id="edge-update-log-root-state",
-    app_id="edge",
-    root_key="EDGE_UPDATE_LOG",
-    relative_pattern="",
-    match_kind=MatchKind.PREFIX,
-    owner=DecisionOwner.KEEP,
-    last_use=LastUseStrategy.FILE_MTIME,
-    rebuild_cost=RebuildCost.HIGH,
-    label="Unclassified state beside Microsoft Edge update logs",
-)
-
 EDGE_RULES: tuple[ApplicationCleanupRule, ...] = (
     *_EDGE_CHROMIUM_RULES,
     *_EDGE_UPDATE_LOG_RULES,
-    _EDGE_UPDATE_LOG_OTHER_RULE,
     _EDGE_UPDATER_STATE_RULE,
 )
 
@@ -219,13 +208,16 @@ def edge_scan_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[PureWindowsPath, ...]:
     roots = edge_roots(environment)
+    # Shared Temp roots are intentionally excluded. Exact Edge log files can be
+    # classified when generic temp scanning encounters them, but adding a shared
+    # Temp directory as an application root would change semantics for unrelated
+    # temporary files.
     return tuple(
         dict.fromkeys(
             (
                 *roots.data_roots,
                 *roots.disk_cache_roots,
                 *roots.updater_roots,
-                *roots.update_log_roots,
             )
         )
     )
@@ -245,7 +237,6 @@ def match_edge_rule(
     for root in roots.update_log_roots:
         for index, rule in enumerate(_EDGE_UPDATE_LOG_RULES):
             _append_match(matches, normalized, root, rule, index)
-        _append_match(matches, normalized, root, _EDGE_UPDATE_LOG_OTHER_RULE, 999)
 
     for root in roots.updater_roots:
         _append_match(matches, normalized, root, _EDGE_UPDATER_STATE_RULE, 0)
@@ -430,7 +421,8 @@ def _edge_policy_paths(
                         value, kind = winreg.QueryValueEx(key, name)
                     except OSError:
                         continue
-                    if kind in (winreg.REG_SZ, winreg.REG_EXPAND_SZ) and isinstance(value, str):
+                    supported_kind = kind in (winreg.REG_SZ, winreg.REG_EXPAND_SZ)
+                    if supported_kind and isinstance(value, str):
                         values.setdefault(name, value)
         except OSError:
             continue
@@ -463,8 +455,7 @@ def _policy_path(value: str | None, env: Mapping[str, str]) -> PureWindowsPath |
                 expanded,
                 flags=re.IGNORECASE,
             )
-    unresolved = re.search(r"\$\{[^}]+\}|%[^%]+%", expanded)
-    if unresolved:
+    if re.search(r"\$\{[^}]+\}|%[^%]+%", expanded):
         return None
     path = PureWindowsPath(expanded)
     return path if path.is_absolute() else None
