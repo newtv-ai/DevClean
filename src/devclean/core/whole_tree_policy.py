@@ -33,7 +33,7 @@ class WholeTreePolicyRefusal(ValueError):
 class WholeTreePolicyEvidence:
     files: int
     logical_bytes: int
-    latest_last_write_time_ns: int
+    latest_activity_time_ns: int
 
 
 def require_application_whole_tree_policy(
@@ -61,7 +61,7 @@ def require_application_whole_tree_policy(
 
     evidence = _fresh_tree_evidence(path)
     observed = datetime.fromtimestamp(
-        evidence.latest_last_write_time_ns / 1_000_000_000,
+        evidence.latest_activity_time_ns / 1_000_000_000,
         tz=UTC,
     )
     # Fresh child activity is always a lower bound on recency, even when an app
@@ -137,12 +137,12 @@ def _fresh_tree_evidence(path: Path) -> WholeTreePolicyEvidence:
             raise WholeTreePolicyRefusal(
                 f"fresh whole-tree policy scan was incomplete at {record.path}"
             )
-        if record.last_write_time_ns is not None:
-            latest_ns = (
-                record.last_write_time_ns
-                if latest_ns is None
-                else max(latest_ns, record.last_write_time_ns)
-            )
+        # Creation time catches newly copied/generated cache entries whose mtime
+        # was deliberately preserved.  Either timestamp may only make the gate
+        # stricter than the application's own last-use policy.
+        for timestamp in (record.creation_time_ns, record.last_write_time_ns):
+            if timestamp is not None:
+                latest_ns = timestamp if latest_ns is None else max(latest_ns, timestamp)
         if record.kind is ScanRecordKind.FILE:
             files += 1
             logical_bytes += record.logical_size
