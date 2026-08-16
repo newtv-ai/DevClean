@@ -153,7 +153,7 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.CRASH_DUMPS
     if "log" in lower or "debug" in lower:
         return CleanupCategory.SYSTEM_LOGS
-    if lower.startswith("npm-"):
+    if lower.startswith(("npm-", "pnpm-")):
         return CleanupCategory.NPM_CACHE
     if "temp" in lower or "shell" in lower:
         return CleanupCategory.USER_TEMP
@@ -190,11 +190,6 @@ def _append_root(
         delete_root_itself=delete_root_itself,
     )
     if key in seen:
-        # App-audited TOOL roots are appended after legacy/configured heuristics.
-        # When both identify the same physical directory, the audited root must
-        # upgrade MANUAL_REVIEW/REPORT_ONLY instead of being discarded merely
-        # because it arrived later. Non-deletable roots never downgrade an
-        # already-known direct cleanup root.
         if delete_root_itself:
             for index, existing in enumerate(accepted):
                 existing_key = os.path.normcase(os.path.normpath(str(existing.path)))

@@ -54,6 +54,16 @@ from devclean.core.npm_cleanup import (
     npm_scan_roots,
     whole_tree_npm_rule,
 )
+from devclean.core.pnpm_cleanup import (
+    PNPM_RULES,
+    clear_pnpm_process_cache,
+    evaluate_pnpm_path,
+    match_pnpm_rule,
+    pnpm_audited_tool_roots,
+    pnpm_process_running,
+    pnpm_scan_roots,
+    whole_tree_pnpm_rule,
+)
 from devclean.core.trae_cleanup import (
     TRAE_RULES,
     clear_trae_process_cache,
@@ -119,6 +129,7 @@ def application_scan_roots(
                 *trae_scan_roots(environment),
                 *windsurf_scan_roots(environment),
                 *npm_scan_roots(environment),
+                *pnpm_scan_roots(environment),
             )
         )
     )
@@ -134,6 +145,7 @@ def audited_dynamic_tool_roots(
         *trae_audited_tool_roots(environment),
         *windsurf_audited_tool_roots(environment),
         *npm_audited_tool_roots(environment),
+        *pnpm_audited_tool_roots(environment),
     )
 
 
@@ -158,6 +170,9 @@ def match_application_rule(
     claude = match_claude_rule(path, environment)
     if claude is not None:
         return claude
+    pnpm = match_pnpm_rule(path, environment)
+    if pnpm is not None:
+        return pnpm
     npm = match_npm_rule(path, environment)
     if npm is not None:
         return npm
@@ -226,6 +241,15 @@ def evaluate_application_path(
             environment=environment,
         )
     if decision is None:
+        decision = evaluate_pnpm_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
+    if decision is None:
         decision = evaluate_npm_path(
             path,
             logical_size=logical_size,
@@ -249,6 +273,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "pnpm":
+        return pnpm_process_running()
     if app_id == "npm":
         return npm_process_running()
     if app_id == "windsurf":
@@ -272,6 +298,7 @@ def clear_process_cache() -> None:
     clear_trae_process_cache()
     clear_windsurf_process_cache()
     clear_npm_process_cache()
+    clear_pnpm_process_cache()
 
 
 def process_guard_allows(
@@ -295,6 +322,9 @@ def whole_tree_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return a TOOL rule only when *path* is exactly an audited whole-tree root."""
 
+    dynamic = whole_tree_pnpm_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_npm_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -333,6 +363,7 @@ def application_display_name(app_id: str) -> str:
         "claude": "Claude Code",
         "cursor": "Cursor",
         "npm": "npm",
+        "pnpm": "pnpm",
         "vscode": "VS Code",
         "trae": "Trae",
         "windsurf": "Windsurf",
@@ -344,6 +375,7 @@ __all__ = [
     "CODEX_RULES",
     "CURSOR_RULES",
     "NPM_RULES",
+    "PNPM_RULES",
     "TRAE_RULES",
     "VSCODE_RULES",
     "WINDSURF_RULES",
