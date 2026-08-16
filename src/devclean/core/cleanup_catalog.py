@@ -182,7 +182,7 @@ def _application_category(rule_id: str) -> CleanupCategory:
         ("brave-", "chrome-", "edge-", "firefox-", "opera-", "vivaldi-")
     ):
         return CleanupCategory.BROWSER_CACHE
-    if lower.startswith(("npm-", "pnpm-", "yarn-")):
+    if lower.startswith(("bun-", "npm-", "pnpm-", "yarn-")):
         return CleanupCategory.NPM_CACHE
     if "temp" in lower or "shell" in lower:
         return CleanupCategory.USER_TEMP
