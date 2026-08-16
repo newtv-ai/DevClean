@@ -1,7 +1,7 @@
 """Audited Claude Code storage semantics for Windows cleanup.
 
 Claude Code mixes regenerable application data, user history, installed plugins,
-and persistent memory below the same configuration root.  This module keeps
+and persistent memory below the same configuration root. This module keeps
 those meanings explicit and reuses DevClean's application-policy scoring model.
 """
 
@@ -567,7 +567,20 @@ def _custom_auto_memory_root(
     roots = claude_roots(environment)
     if roots.config is None:
         return None
-    settings = Path(str(roots.config / "settings.json"))
+    return _custom_auto_memory_root_cached(
+        str(roots.config),
+        None if roots.profile is None else str(roots.profile),
+    )
+
+
+@lru_cache(maxsize=16)
+def _custom_auto_memory_root_cached(
+    config_text: str,
+    profile_text: str | None,
+) -> PureWindowsPath | None:
+    config = PureWindowsPath(config_text)
+    profile = PureWindowsPath(profile_text) if profile_text else None
+    settings = Path(str(config / "settings.json"))
     try:
         payload = json.loads(settings.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
@@ -579,9 +592,9 @@ def _custom_auto_memory_root(
         return None
     value = value.strip()
     if value.startswith("~/") or value.startswith("~\\"):
-        if roots.profile is None:
+        if profile is None:
             return None
-        return roots.profile / value[2:]
+        return profile / value[2:]
     candidate = PureWindowsPath(value)
     return candidate if candidate.is_absolute() else None
 
@@ -616,6 +629,7 @@ def claude_process_running() -> bool:
 
 def clear_claude_process_cache() -> None:
     claude_process_running.cache_clear()
+    _custom_auto_memory_root_cached.cache_clear()
 
 
 def _casefold_env(environment: Mapping[str, str] | None) -> dict[str, str]:
