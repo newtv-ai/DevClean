@@ -84,6 +84,16 @@ from devclean.core.npm_cleanup import (
     npm_scan_roots,
     whole_tree_npm_rule,
 )
+from devclean.core.opera_cleanup import (
+    OPERA_RULES,
+    clear_opera_process_cache,
+    evaluate_opera_path,
+    match_opera_rule,
+    opera_audited_tool_roots,
+    opera_process_running,
+    opera_scan_roots,
+    whole_tree_opera_rule,
+)
 from devclean.core.pnpm_cleanup import (
     PNPM_RULES,
     clear_pnpm_process_cache,
@@ -174,6 +184,7 @@ def application_scan_roots(
                 *edge_scan_roots(environment),
                 *brave_scan_roots(environment),
                 *vivaldi_scan_roots(environment),
+                *opera_scan_roots(environment),
             )
         )
     )
@@ -194,6 +205,7 @@ def audited_dynamic_tool_roots(
         *edge_audited_tool_roots(environment),
         *brave_audited_tool_roots(environment),
         *vivaldi_audited_tool_roots(environment),
+        *opera_audited_tool_roots(environment),
     )
 
 
@@ -203,6 +215,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    opera = match_opera_rule(path, environment)
+    if opera is not None:
+        return opera
     vivaldi = match_vivaldi_rule(path, environment)
     if vivaldi is not None:
         return vivaldi
@@ -256,7 +271,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_vivaldi_path(
+    decision = evaluate_opera_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -264,6 +279,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_vivaldi_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = evaluate_brave_path(
             path,
@@ -369,6 +393,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "opera":
+        return opera_process_running()
     if app_id == "vivaldi":
         return vivaldi_process_running()
     if app_id == "brave":
@@ -407,6 +433,7 @@ def clear_process_cache() -> None:
     clear_edge_process_cache()
     clear_brave_process_cache()
     clear_vivaldi_process_cache()
+    clear_opera_process_cache()
 
 
 def process_guard_allows(
@@ -430,6 +457,9 @@ def whole_tree_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return a TOOL rule only when *path* is exactly an audited whole-tree root."""
 
+    dynamic = whole_tree_opera_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_vivaldi_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -482,6 +512,7 @@ def application_display_name(app_id: str) -> str:
         "brave": "Brave",
         "chrome": "Chrome / Chromium",
         "edge": "Microsoft Edge",
+        "opera": "Opera / Opera GX",
         "vivaldi": "Vivaldi",
         "codex": "Codex",
         "claude": "Claude Code",
@@ -502,6 +533,7 @@ __all__ = [
     "CURSOR_RULES",
     "EDGE_RULES",
     "NPM_RULES",
+    "OPERA_RULES",
     "PNPM_RULES",
     "TRAE_RULES",
     "VIVALDI_RULES",
