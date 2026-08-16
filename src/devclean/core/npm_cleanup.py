@@ -30,6 +30,10 @@ from devclean.core._application_cleanup_impl import (
 )
 
 _MIB = 1024**2
+_NPM_EXTERNAL_LOG_PATTERN = (
+    "{????-??-??T??_??_??_???Z-debug-?.log,"
+    "????-??-??T??_??_??_???Z-debug.log}"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,7 +144,7 @@ NPM_RULES: tuple[ApplicationCleanupRule, ...] = (
     ),
     _rule(
         "npm-external-debug-logs",
-        "*debug-*.log",
+        _NPM_EXTERNAL_LOG_PATTERN,
         MatchKind.GLOB,
         DecisionOwner.TOOL,
         RebuildCost.NONE,
