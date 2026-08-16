@@ -20,7 +20,7 @@ def _environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEMP", r"C:\Users\person\AppData\Local\Temp")
 
 
-def test_ai_cannot_delete_chrome_profile_or_updater_state(
+def test_ai_cannot_delete_chrome_profile_site_data_or_updater_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -39,6 +39,10 @@ def test_ai_cannot_delete_chrome_profile_or_updater_state(
             r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default"
             r"\Extensions\abc\manifest.json"
         ),
+        (
+            r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default"
+            r"\Service Worker\CacheStorage\origin\entry"
+        ),
         r"C:\Users\person\AppData\Local\Google\GoogleUpdater\prefs.json",
         (
             r"C:\Users\person\AppData\Local\Google\GoogleUpdater"
@@ -56,7 +60,7 @@ def test_ai_cannot_delete_chrome_profile_or_updater_state(
     assert updated.ai_rule_count == before
 
 
-def test_user_delete_of_chrome_history_does_not_become_generic_rule(
+def test_user_delete_of_chrome_history_or_site_data_is_not_generic_rule(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -64,11 +68,19 @@ def test_user_delete_of_chrome_history_does_not_become_generic_rule(
     history = (
         r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default\History"
     )
+    cache_storage = (
+        r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default"
+        r"\Service Worker\CacheStorage\origin\entry"
+    )
     updated = add_user_verdicts(
         load_rules(),
-        [(history, RuleDecision.DELETE, "用户想清空浏览历史")],
+        [
+            (history, RuleDecision.DELETE, "用户想清空浏览历史"),
+            (cache_storage, RuleDecision.DELETE, "用户想清理站点离线数据"),
+        ],
     )
     assert updated.decision_for(history) is None
+    assert updated.decision_for(cache_storage) is None
 
 
 def test_ai_can_still_learn_chrome_owned_cache_decision(
