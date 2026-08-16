@@ -63,6 +63,10 @@ def require_application_whole_tree_policy(
         evidence.latest_last_write_time_ns / 1_000_000_000,
         tz=UTC,
     )
+    # Fresh child activity is always a lower bound on recency, even when an app
+    # has a stronger source such as APP_ACTIVITY.  That stronger source may make
+    # cleanup stricter, but it must never make a recently rewritten tree older.
+    _require_fresh_tree_floor(rule, evidence, observed)
 
     # Prefer the application's own evaluator.  Fixed/default roots and special
     # last-use strategies (for example Codex APP_ACTIVITY) retain their native
@@ -89,11 +93,23 @@ def require_application_whole_tree_policy(
         raise WholeTreePolicyRefusal(
             "application-specific last-use evidence cannot be re-established"
         )
-    if evidence.logical_bytes < rule.min_reclaim_bytes:
+    return evidence
+
+
+def _require_fresh_tree_floor(
+    rule: object,
+    evidence: WholeTreePolicyEvidence,
+    observed: datetime,
+) -> None:
+    # ``rule`` is intentionally narrowed by attribute access below rather than
+    # duplicating the public ApplicationCleanupRule import solely for annotation.
+    min_reclaim_bytes = getattr(rule, "min_reclaim_bytes")
+    label = getattr(rule, "label")
+    if evidence.logical_bytes < min_reclaim_bytes:
         raise WholeTreePolicyRefusal(
-            f"{rule.label} is below its minimum reclaim threshold"
+            f"{label} is below its minimum reclaim threshold"
         )
-    threshold = effective_idle_days(rule, evidence.logical_bytes)
+    threshold = effective_idle_days(rule, evidence.logical_bytes)  # type: ignore[arg-type]
     if threshold is None:
         raise WholeTreePolicyRefusal(
             "application whole-tree idle threshold is unavailable"
@@ -104,9 +120,8 @@ def require_application_whole_tree_policy(
     )
     if idle_days < threshold:
         raise WholeTreePolicyRefusal(
-            f"{rule.label} was used too recently for whole-tree cleanup"
+            f"{label} was used too recently for whole-tree cleanup"
         )
-    return evidence
 
 
 def _fresh_tree_evidence(path: Path) -> WholeTreePolicyEvidence:
