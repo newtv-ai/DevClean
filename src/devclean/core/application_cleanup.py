@@ -1,15 +1,12 @@
 """Application-aware cleanup policy with usage and reclaim-benefit semantics.
 
-Generic filename heuristics are intentionally weaker than this catalog. An
-application profile can say that data is regenerable, user-owned history, or
-persistent state, and can attach an idle threshold, rebuild cost, process guard,
-and minimum reclaim value. The scanner/classifier may then make a useful
-cleanup recommendation without pretending that file age itself determines
-safety.
+Application semantics outrank generic filename heuristics. A profile states
+whether data is regenerable, user-owned, or persistent, then adds idle time,
+rebuild cost, process guards, and minimum reclaim value. Age therefore affects
+whether cleanup is useful, not whether deletion is intrinsically safe.
 
-Codex is the first fully-audited profile. Future application profiles (Claude
-Code, Cursor, Trae, and others) should use the same types and evaluator rather
-than adding one-off path heuristics.
+Codex is the first audited profile. Other developer tools should reuse this
+policy model instead of adding one-off filename rules.
 """
 
 from __future__ import annotations
@@ -17,12 +14,12 @@ from __future__ import annotations
 import fnmatch
 import os
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import PureWindowsPath
-from typing import Mapping
 
 _MIB = 1024**2
 _GIB = 1024**3
@@ -111,309 +108,340 @@ class ApplicationRoot:
     path: PureWindowsPath
 
 
-# These are deliberately semantic rules rather than broad suffix rules. A
-# directory named "cache" is not automatically disposable: Codex's
-# ``plugins/cache`` is the active installed-plugin store and is therefore kept.
+def _rule(
+    rule_id: str,
+    root_key: str,
+    relative_pattern: str,
+    match_kind: MatchKind,
+    owner: DecisionOwner,
+    last_use: LastUseStrategy,
+    rebuild_cost: RebuildCost,
+    label: str,
+    *,
+    idle_days: float | None = None,
+    min_reclaim_bytes: int = 0,
+    requires_process_closed: bool = False,
+    size_sensitive_idle: bool = True,
+    user_age_buckets: tuple[int, ...] = (),
+    allow_whole_tree: bool = False,
+) -> ApplicationCleanupRule:
+    return ApplicationCleanupRule(
+        rule_id=rule_id,
+        app_id="codex",
+        root_key=root_key,
+        relative_pattern=relative_pattern,
+        match_kind=match_kind,
+        owner=owner,
+        last_use=last_use,
+        rebuild_cost=rebuild_cost,
+        idle_days=idle_days,
+        min_reclaim_bytes=min_reclaim_bytes,
+        requires_process_closed=requires_process_closed,
+        size_sensitive_idle=size_sensitive_idle,
+        user_age_buckets=user_age_buckets,
+        allow_whole_tree=allow_whole_tree,
+        label=label,
+    )
+
+
+_STATE_DATABASES = (
+    "{state_5.sqlite*,goals_1.sqlite*,memories_1.sqlite*,"
+    "queue_1.sqlite*,thread_history_1.sqlite*}"
+)
+_DESKTOP_BROWSER_CACHES = (
+    "{Cache,Code Cache,GPUCache,GrShaderCache,ShaderCache,DawnCache,"
+    "DawnWebGPUCache,GraphiteDawnCache,component_crx_cache,extensions_crx_cache}"
+)
+_DESKTOP_DEFAULT_CACHES = (
+    r"Default\{Cache,Code Cache,GPUCache,GrShaderCache,ShaderCache,DawnCache,"
+    r"DawnWebGPUCache,GraphiteDawnCache}"
+)
+_DESKTOP_PROFILE_STATE = (
+    r"{Local State,Default\Preferences,Default\Cookies*,Default\Login Data*,"
+    r"Default\Local Storage,Default\Session Storage,Default\IndexedDB}"
+)
+
+# A directory named "cache" is not automatically disposable. In particular,
+# Codex ``plugins/cache`` is the active installed-plugin store and is protected.
 CODEX_RULES: tuple[ApplicationCleanupRule, ...] = (
-    ApplicationCleanupRule(
+    _rule(
         "codex-model-catalog",
-        "codex",
         "CODEX_HOME",
         "models_cache.json",
         MatchKind.EXACT,
         DecisionOwner.TOOL,
         LastUseStrategy.FILE_MTIME,
         RebuildCost.LOW,
+        "Codex model catalog cache",
         idle_days=7,
         min_reclaim_bytes=_MIB,
-        label="Codex model catalog cache",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-cloud-config-cache",
-        "codex",
         "CODEX_HOME",
         "cloud-config-bundle-cache.json",
         MatchKind.EXACT,
         DecisionOwner.TOOL,
         LastUseStrategy.FILE_MTIME,
         RebuildCost.LOW,
+        "Codex cloud configuration cache",
         idle_days=7,
         min_reclaim_bytes=_MIB,
-        label="Codex cloud configuration cache",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-version-cache",
-        "codex",
         "CODEX_HOME",
         "version.json",
         MatchKind.EXACT,
         DecisionOwner.TOOL,
         LastUseStrategy.FILE_MTIME,
         RebuildCost.LOW,
+        "Codex update-check cache",
         idle_days=7,
         min_reclaim_bytes=_MIB,
-        label="Codex update-check cache",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-plugin-marketplace-snapshot",
-        "codex",
         "CODEX_HOME",
         r".tmp\plugins",
         MatchKind.PREFIX,
         DecisionOwner.TOOL,
         LastUseStrategy.APP_ACTIVITY,
         RebuildCost.MEDIUM,
+        "Codex curated plugin marketplace snapshot",
         idle_days=30,
         min_reclaim_bytes=16 * _MIB,
         requires_process_closed=True,
         allow_whole_tree=True,
-        label="Codex curated plugin marketplace snapshot",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-plugin-sync-marker",
-        "codex",
         "CODEX_HOME",
         r".tmp\plugins.sha",
         MatchKind.EXACT,
         DecisionOwner.TOOL,
         LastUseStrategy.FILE_MTIME,
         RebuildCost.NONE,
+        "Codex plugin sync marker",
         idle_days=1,
         requires_process_closed=True,
         size_sensitive_idle=False,
-        label="Codex plugin sync marker",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-plugin-sync-lock",
-        "codex",
         "CODEX_HOME",
         r".tmp\plugins.sync.lock",
         MatchKind.EXACT,
         DecisionOwner.TOOL,
         LastUseStrategy.FILE_MTIME,
         RebuildCost.NONE,
+        "Codex plugin synchronization lock",
         idle_days=1,
         requires_process_closed=True,
         size_sensitive_idle=False,
-        label="Codex plugin synchronization lock",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-rollout-maintenance-lock",
-        "codex",
         "CODEX_HOME",
         r".tmp\rollout-maintenance.lock",
         MatchKind.EXACT,
         DecisionOwner.TOOL,
         LastUseStrategy.FILE_MTIME,
         RebuildCost.NONE,
+        "Codex rollout maintenance lock",
         idle_days=1,
         requires_process_closed=True,
         size_sensitive_idle=False,
-        label="Codex rollout maintenance lock",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-rollout-compression-lock",
-        "codex",
         "CODEX_HOME",
         r".tmp\rollout-compression.lock",
         MatchKind.EXACT,
         DecisionOwner.TOOL,
         LastUseStrategy.FILE_MTIME,
         RebuildCost.NONE,
+        "Codex rollout compression lock",
         idle_days=0.25,
         requires_process_closed=True,
         size_sensitive_idle=False,
-        label="Codex rollout compression lock",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-orphan-rollout-temp",
-        "codex",
         "CODEX_HOME",
         r".tmp\*.tmp",
         MatchKind.GLOB,
         DecisionOwner.TOOL,
         LastUseStrategy.FILE_MTIME,
         RebuildCost.NONE,
+        "Codex orphan rollout temporary file",
         idle_days=1,
         requires_process_closed=True,
         size_sensitive_idle=False,
-        label="Codex orphan rollout temporary file",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-log-db",
-        "codex",
         "CODEX_HOME",
         "logs_2.sqlite*",
         MatchKind.GLOB,
         DecisionOwner.TOOL,
         LastUseStrategy.FILE_MTIME,
         RebuildCost.NONE,
+        "Codex tracing log database",
         idle_days=10,
         min_reclaim_bytes=_MIB,
         requires_process_closed=True,
-        label="Codex tracing log database",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-active-sessions",
-        "codex",
         "CODEX_HOME",
         "sessions",
         MatchKind.PREFIX,
         DecisionOwner.USER,
         LastUseStrategy.SESSION_LAST_EVENT,
         RebuildCost.HIGH,
+        "Codex conversation history",
         user_age_buckets=(30, 90, 180),
-        label="Codex conversation history",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-archived-sessions",
-        "codex",
         "CODEX_HOME",
         "archived_sessions",
         MatchKind.PREFIX,
         DecisionOwner.USER,
         LastUseStrategy.SESSION_LAST_EVENT,
         RebuildCost.HIGH,
+        "Codex archived conversation history",
         user_age_buckets=(30, 90, 180),
-        label="Codex archived conversation history",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-input-history",
-        "codex",
         "CODEX_HOME",
         "history.jsonl",
         MatchKind.EXACT,
         DecisionOwner.USER,
         LastUseStrategy.JSONL_RECORD_TS,
         RebuildCost.HIGH,
+        "Codex input history",
         user_age_buckets=(30, 90, 180),
-        label="Codex input history",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-installed-plugin-store",
-        "codex",
         "CODEX_HOME",
         r"plugins\cache",
         MatchKind.PREFIX,
         DecisionOwner.KEEP,
         LastUseStrategy.APP_ACTIVITY,
         RebuildCost.HIGH,
-        label="Codex installed plugin store",
+        "Codex installed plugin store",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-plugin-data",
-        "codex",
         "CODEX_HOME",
         r"plugins\data",
         MatchKind.PREFIX,
         DecisionOwner.KEEP,
         LastUseStrategy.APP_ACTIVITY,
         RebuildCost.HIGH,
-        label="Codex persistent plugin data",
+        "Codex persistent plugin data",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-state-databases",
-        "codex",
         "CODEX_HOME",
-        "{state_5.sqlite*,goals_1.sqlite*,memories_1.sqlite*,queue_1.sqlite*,thread_history_1.sqlite*}",
+        _STATE_DATABASES,
         MatchKind.GLOB,
         DecisionOwner.KEEP,
         LastUseStrategy.APP_ACTIVITY,
         RebuildCost.HIGH,
-        label="Codex persistent state databases",
+        "Codex persistent state databases",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-session-index",
-        "codex",
         "CODEX_HOME",
         "session_index.jsonl",
         MatchKind.EXACT,
         DecisionOwner.KEEP,
         LastUseStrategy.APP_ACTIVITY,
         RebuildCost.HIGH,
-        label="Codex session index",
+        "Codex session index",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-auth",
-        "codex",
         "CODEX_HOME",
         "auth.json",
         MatchKind.EXACT,
         DecisionOwner.KEEP,
         LastUseStrategy.APP_ACTIVITY,
         RebuildCost.HIGH,
-        label="Codex authentication state",
+        "Codex authentication state",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-config",
-        "codex",
         "CODEX_HOME",
         "config.toml",
         MatchKind.EXACT,
         DecisionOwner.KEEP,
         LastUseStrategy.APP_ACTIVITY,
         RebuildCost.HIGH,
-        label="Codex configuration",
+        "Codex configuration",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-desktop-crashpad-reports",
-        "codex",
         "CODEX_DESKTOP",
         r"Crashpad\{reports,pending}",
         MatchKind.GLOB,
         DecisionOwner.TOOL,
         LastUseStrategy.FILE_MTIME,
         RebuildCost.NONE,
+        "Codex desktop crash reports",
         idle_days=7,
         min_reclaim_bytes=_MIB,
         requires_process_closed=True,
-        label="Codex desktop crash reports",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-desktop-browser-cache",
-        "codex",
         "CODEX_DESKTOP",
-        r"{Cache,Code Cache,GPUCache,GrShaderCache,ShaderCache,DawnCache,DawnWebGPUCache,GraphiteDawnCache,component_crx_cache,extensions_crx_cache}",
+        _DESKTOP_BROWSER_CACHES,
         MatchKind.GLOB,
         DecisionOwner.TOOL,
         LastUseStrategy.FILE_MTIME,
         RebuildCost.LOW,
+        "Codex desktop regenerable browser cache",
         idle_days=30,
         min_reclaim_bytes=8 * _MIB,
         requires_process_closed=True,
         allow_whole_tree=True,
-        label="Codex desktop regenerable browser cache",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-desktop-default-browser-cache",
-        "codex",
         "CODEX_DESKTOP",
-        r"Default\{Cache,Code Cache,GPUCache,GrShaderCache,ShaderCache,DawnCache,DawnWebGPUCache,GraphiteDawnCache}",
+        _DESKTOP_DEFAULT_CACHES,
         MatchKind.GLOB,
         DecisionOwner.TOOL,
         LastUseStrategy.FILE_MTIME,
         RebuildCost.LOW,
+        "Codex desktop profile cache",
         idle_days=30,
         min_reclaim_bytes=8 * _MIB,
         requires_process_closed=True,
         allow_whole_tree=True,
-        label="Codex desktop profile cache",
     ),
-    ApplicationCleanupRule(
+    _rule(
         "codex-desktop-profile-state",
-        "codex",
         "CODEX_DESKTOP",
-        r"{Local State,Default\Preferences,Default\Cookies*,Default\Login Data*,Default\Local Storage,Default\Session Storage,Default\IndexedDB}",
+        _DESKTOP_PROFILE_STATE,
         MatchKind.GLOB,
         DecisionOwner.KEEP,
         LastUseStrategy.APP_ACTIVITY,
         RebuildCost.HIGH,
-        label="Codex desktop browser profile state",
+        "Codex desktop browser profile state",
     ),
 )
 
 
-def application_roots(environment: Mapping[str, str] | None = None) -> tuple[ApplicationRoot, ...]:
+def application_roots(
+    environment: Mapping[str, str] | None = None,
+) -> tuple[ApplicationRoot, ...]:
     env = _casefold_env(environment)
     roots: list[ApplicationRoot] = []
     codex_home = env.get("codex_home")
@@ -480,15 +508,21 @@ def evaluate_application_path(
         return None
     current = now or datetime.now(UTC)
     observed = _as_utc(last_used)
-    idle = None
-    if observed is not None:
-        idle = max(0.0, (current - observed).total_seconds() / 86400)
+    idle = (
+        None
+        if observed is None
+        else max(0.0, (current - observed).total_seconds() / 86_400)
+    )
 
     if rule.owner is DecisionOwner.KEEP:
         return ApplicationPolicyDecision(
-            rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
+            rule,
+            PolicyAction.KEEP_PROTECTED,
+            observed,
+            idle,
+            None,
+            0,
         )
-
     if rule.owner is DecisionOwner.USER:
         return ApplicationPolicyDecision(
             rule,
@@ -518,8 +552,11 @@ def evaluate_application_path(
     return ApplicationPolicyDecision(rule, action, observed, idle, threshold, score)
 
 
-def effective_idle_days(rule: ApplicationCleanupRule, logical_size: int) -> float | None:
-    """Shorten an idle threshold only when the reclaim value is materially large."""
+def effective_idle_days(
+    rule: ApplicationCleanupRule,
+    logical_size: int,
+) -> float | None:
+    """Shorten an idle threshold only when reclaim value is materially large."""
 
     base = rule.idle_days
     if base is None or not rule.size_sensitive_idle:
@@ -548,6 +585,7 @@ def application_process_running(app_id: str) -> bool:
             timeout=5,
         )
     except (OSError, subprocess.SubprocessError):
+        # Unknown process state must not widen deletion authority.
         return True
     output = result.stdout.casefold()
     return '"codex.exe"' in output or '"chatgpt.exe"' in output
@@ -588,6 +626,7 @@ def _benefit_score(
         size_score = 80
     else:
         size_score = 100
+
     if idle_days is None:
         idle_score = 0
     elif threshold in (None, 0):
@@ -632,9 +671,6 @@ def _matches(path: str, candidate: str, kind: MatchKind) -> bool:
         return path == candidate or path.startswith(candidate.rstrip("\\") + "\\")
     if fnmatch.fnmatchcase(path, candidate):
         return True
-    # Brace expansion often turns a GLOB rule into a literal directory name.
-    # Treat that literal as a subtree root, while patterns that still contain a
-    # wildcard retain ordinary fnmatch semantics.
     if not any(char in candidate for char in "*?["):
         return path.startswith(candidate.rstrip("\\") + "\\")
     return False
