@@ -1,13 +1,13 @@
 """Application-aware cleanup policy with usage and reclaim-benefit semantics.
 
-Generic filename heuristics are intentionally weaker than this catalog.  An
+Generic filename heuristics are intentionally weaker than this catalog. An
 application profile can say that data is regenerable, user-owned history, or
 persistent state, and can attach an idle threshold, rebuild cost, process guard,
-and minimum reclaim value.  The scanner/classifier may then make a useful
+and minimum reclaim value. The scanner/classifier may then make a useful
 cleanup recommendation without pretending that file age itself determines
 safety.
 
-Codex is the first fully-audited profile.  Future application profiles (Claude
+Codex is the first fully-audited profile. Future application profiles (Claude
 Code, Cursor, Trae, and others) should use the same types and evaluator rather
 than adding one-off path heuristics.
 """
@@ -111,12 +111,10 @@ class ApplicationRoot:
     path: PureWindowsPath
 
 
-# These are deliberately semantic rules rather than broad suffix rules.  A
+# These are deliberately semantic rules rather than broad suffix rules. A
 # directory named "cache" is not automatically disposable: Codex's
 # ``plugins/cache`` is the active installed-plugin store and is therefore kept.
 CODEX_RULES: tuple[ApplicationCleanupRule, ...] = (
-    # Small remote catalogs: safe to regenerate, but usually too small to be
-    # worth deleting.  The 1 MiB floor prevents churn for a few KB of savings.
     ApplicationCleanupRule(
         "codex-model-catalog",
         "codex",
@@ -156,8 +154,6 @@ CODEX_RULES: tuple[ApplicationCleanupRule, ...] = (
         min_reclaim_bytes=_MIB,
         label="Codex update-check cache",
     ),
-    # Downloaded curated-plugin marketplace snapshot.  It is fully regenerable
-    # but re-downloads cost time/network, so keep it while Codex is active.
     ApplicationCleanupRule(
         "codex-plugin-marketplace-snapshot",
         "codex",
@@ -243,9 +239,6 @@ CODEX_RULES: tuple[ApplicationCleanupRule, ...] = (
         size_sensitive_idle=False,
         label="Codex orphan rollout temporary file",
     ),
-    # logs_2.sqlite is diagnostic tracing state.  Deleting the DB group while
-    # Codex is closed loses only diagnostics; WAL/SHM must not be touched while
-    # the writer is active.
     ApplicationCleanupRule(
         "codex-log-db",
         "codex",
@@ -260,9 +253,6 @@ CODEX_RULES: tuple[ApplicationCleanupRule, ...] = (
         requires_process_closed=True,
         label="Codex tracing log database",
     ),
-    # Canonical user history.  Age is only for grouping; deletion is always the
-    # user's choice.  Session content provides a better timestamp than NTFS
-    # metadata when a higher layer is able to parse it.
     ApplicationCleanupRule(
         "codex-active-sessions",
         "codex",
@@ -299,8 +289,6 @@ CODEX_RULES: tuple[ApplicationCleanupRule, ...] = (
         user_age_buckets=(30, 90, 180),
         label="Codex input history",
     ),
-    # Persistent or authoritative state.  The generic classifier must never let
-    # suffixes such as .sqlite or a parent named cache override these meanings.
     ApplicationCleanupRule(
         "codex-installed-plugin-store",
         "codex",
@@ -367,9 +355,6 @@ CODEX_RULES: tuple[ApplicationCleanupRule, ...] = (
         RebuildCost.HIGH,
         label="Codex configuration",
     ),
-    # Windows desktop Chromium/Electron-derived data.  Target only known cache
-    # subtrees; the profile itself, Preferences, Local State, cookies and local
-    # storage are not cache-cleaning targets.
     ApplicationCleanupRule(
         "codex-desktop-crashpad-reports",
         "codex",
@@ -472,8 +457,6 @@ def match_application_rule(
         for expanded in _expand_braces(rule.relative_pattern):
             candidate = root + ("\\" + expanded if expanded else "")
             if _matches(normalized, candidate, rule.match_kind):
-                # Longest pattern wins; KEEP wins ties so an exact persistent
-                # state rule dominates a broader cache subtree.
                 owner_weight = 2 if rule.owner is DecisionOwner.KEEP else 1
                 matches.append((len(candidate), owner_weight * 1000 - index, rule))
     if not matches:
@@ -490,13 +473,7 @@ def evaluate_application_path(
     process_running: bool | None = None,
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationPolicyDecision | None:
-    """Classify one path using semantic safety plus cleanup benefit.
-
-    ``last_used`` should be the best timestamp available to the caller.  File
-    mtime is an acceptable fallback for caches.  Session/history-specific
-    parsers can later pass their embedded event timestamps without changing the
-    policy model.
-    """
+    """Classify one path using semantic safety plus cleanup benefit."""
 
     rule = match_application_rule(path, environment)
     if rule is None:
@@ -508,7 +485,9 @@ def evaluate_application_path(
         idle = max(0.0, (current - observed).total_seconds() / 86400)
 
     if rule.owner is DecisionOwner.KEEP:
-        return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
+        return ApplicationPolicyDecision(
+            rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
+        )
 
     if rule.owner is DecisionOwner.USER:
         return ApplicationPolicyDecision(
@@ -556,11 +535,7 @@ def effective_idle_days(rule: ApplicationCleanupRule, logical_size: int) -> floa
 
 @lru_cache(maxsize=8)
 def application_process_running(app_id: str) -> bool:
-    """Best-effort process guard used during one scan/session.
-
-    The mutation layer should call ``clear_process_cache`` and re-check before
-    deleting a path whose rule requires the application to be closed.
-    """
+    """Best-effort process guard used during one scan/session."""
 
     if app_id != "codex" or os.name != "nt":
         return False
@@ -573,8 +548,6 @@ def application_process_running(app_id: str) -> bool:
             timeout=5,
         )
     except (OSError, subprocess.SubprocessError):
-        # Unknown is treated as running: a failed process check must not widen
-        # what the tool is willing to delete.
         return True
     output = result.stdout.casefold()
     return '"codex.exe"' in output or '"chatgpt.exe"' in output
@@ -657,7 +630,14 @@ def _matches(path: str, candidate: str, kind: MatchKind) -> bool:
         return path == candidate
     if kind is MatchKind.PREFIX:
         return path == candidate or path.startswith(candidate.rstrip("\\") + "\\")
-    return fnmatch.fnmatchcase(path, candidate)
+    if fnmatch.fnmatchcase(path, candidate):
+        return True
+    # Brace expansion often turns a GLOB rule into a literal directory name.
+    # Treat that literal as a subtree root, while patterns that still contain a
+    # wildcard retain ordinary fnmatch semantics.
+    if not any(char in candidate for char in "*?["):
+        return path.startswith(candidate.rstrip("\\") + "\\")
+    return False
 
 
 def _expand_braces(pattern: str) -> tuple[str, ...]:
