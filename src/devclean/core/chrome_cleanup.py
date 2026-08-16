@@ -1,9 +1,9 @@
 """Audited Google Chrome / Chromium storage semantics for Windows cleanup.
 
 Chromium keeps browser profile state and multiple regenerable caches under the
-same user-data tree.  This profile therefore grants whole-tree authority only
-to cache directories proven by Chromium source, while the user-data root and
-all unclassified profile state remain protected.
+same user-data tree. This profile therefore grants whole-tree authority only to
+cache directories proven by Chromium source, while the user-data root and all
+unclassified profile state remain protected.
 
 The Chromium Updater is handled with the same boundary: its downloaded CRX
 payload cache is regenerable, but updater binaries/preferences and legacy
@@ -57,6 +57,7 @@ def _rule(
     min_reclaim_bytes: int = 0,
     requires_process_closed: bool = False,
     size_sensitive_idle: bool = True,
+    user_age_buckets: tuple[int, ...] = (),
     allow_whole_tree: bool = False,
 ) -> ApplicationCleanupRule:
     return ApplicationCleanupRule(
@@ -72,6 +73,7 @@ def _rule(
         min_reclaim_bytes=min_reclaim_bytes,
         requires_process_closed=requires_process_closed,
         size_sensitive_idle=size_sensitive_idle,
+        user_age_buckets=user_age_buckets,
         allow_whole_tree=allow_whole_tree,
         label=label,
     )
@@ -170,10 +172,10 @@ _CHROME_DATA_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
-# Per-profile caches.  These rules are matched against an exact discovered
-# profile root (Default / Profile N / Guest Profile / System Profile), not with
-# a broad recursive glob, so nested folders merely named "Cache" cannot inherit
-# browser deletion authority.
+# Per-profile caches are matched against an exact discovered profile root
+# (Default / Profile N / Guest Profile / System Profile), not with a broad
+# recursive glob, so nested folders merely named "Cache" cannot inherit browser
+# deletion authority.
 _CHROME_PROFILE_RULES: tuple[ApplicationCleanupRule, ...] = (
     _tool_dir(
         "chrome-http-cache",
@@ -211,14 +213,15 @@ _CHROME_PROFILE_RULES: tuple[ApplicationCleanupRule, ...] = (
         min_reclaim_bytes=4 * _MIB,
         rebuild_cost=RebuildCost.LOW,
     ),
-    _tool_dir(
-        "chrome-service-worker-cache-storage",
+    _rule(
+        "chrome-site-cache-storage",
         r"Service Worker\CacheStorage",
-        "Chrome site Cache Storage / offline response cache",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Chrome persistent per-site Cache Storage / offline web data",
         root_kind="profile",
-        idle_days=30,
-        min_reclaim_bytes=32 * _MIB,
-        rebuild_cost=RebuildCost.HIGH,
+        user_age_buckets=(30, 90, 180),
     ),
     _tool_dir(
         "chrome-service-worker-script-cache",
@@ -360,8 +363,11 @@ def chrome_roots(environment: Mapping[str, str] | None = None) -> ChromeRootSet:
         updater.append(base / "Google" / "GoogleUpdater")
         legacy_updater.append(base / "Google" / "Update")
 
-    explicit_data = env.get("chrome_user_data_dir")
-    explicit_cache = env.get("chrome_disk_cache_dir")
+    # These are DevClean-only test/explicit override hooks. They are deliberately
+    # not named like browser environment variables because Windows Chrome uses
+    # command-line/policy configuration rather than CHROME_* environment paths.
+    explicit_data = env.get("devclean_chrome_user_data_dir")
+    explicit_cache = env.get("devclean_chrome_disk_cache_dir")
     if explicit_data:
         data.insert(0, PureWindowsPath(explicit_data))
     if explicit_cache:
@@ -492,6 +498,16 @@ def evaluate_chrome_path(
             idle,
             None,
             0,
+        )
+    if rule.owner is DecisionOwner.USER:
+        return ApplicationPolicyDecision(
+            rule,
+            PolicyAction.USER_DECISION,
+            observed,
+            idle,
+            None,
+            _impl._benefit_score(logical_size, idle, None, rule.rebuild_cost),
+            _impl._age_bucket(idle, rule.user_age_buckets),
         )
 
     threshold = effective_idle_days(rule, logical_size)
