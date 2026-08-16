@@ -11,7 +11,6 @@ from devclean.core.application_cleanup import (
     PolicyAction,
     application_scan_roots,
     evaluate_application_path,
-    match_application_rule,
     process_guard_allows,
     whole_tree_application_rule,
 )
