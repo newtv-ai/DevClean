@@ -1,8 +1,8 @@
 """Read-only result classification for the scan -> review -> cleanup workflow.
 
-Classification describes evidence and review priority.  It never selects an
+Classification describes evidence and review priority. It never selects an
 item, never grants execution authority, and never invokes an AI or cleanup
-operation.  This separation is a permanent safety invariant.
+operation. This separation is a permanent safety invariant.
 """
 
 # ruff: noqa: RUF001
@@ -20,6 +20,7 @@ from functools import lru_cache
 from heapq import heappush, heapreplace
 from pathlib import Path
 
+from devclean.core.application_cleanup import PolicyAction, evaluate_application_path
 from devclean.core.cleanup_catalog import (
     CleanupCategory,
     CleanupPolicy,
@@ -157,10 +158,6 @@ class TriageSession:
         self._observation_rules: UserRules | None = None
         self._keep_cache_rules: UserRules | None = None
         self._keep_cache: tuple[str, ...] = ()
-        # Whole-tree candidates and their running totals.  A scan emits a
-        # directory before any of its descendants, so one streaming pass yields
-        # exact subtree sizes without a second walk over hundreds of thousands
-        # of cache entries.
         self._directory_totals: dict[str, DirectorySubtreeTotals] = {}
         self._ancestor_cache: dict[str, tuple[str, ...]] = {}
 
@@ -182,10 +179,6 @@ class TriageSession:
         else:
             self._accumulate_into_directories(item)
 
-        # REPORT_ONLY observations are never displayed, exported, selected or
-        # promoted by a DELETE rule. Their sizes have already contributed to any
-        # enclosing whole-directory candidate above, so retaining the objects
-        # would only consume memory on large profile scans.
         if (
             item.lane is not ReviewLane.REPORT_ONLY
             and item.execution_policy is ExecutionPolicy.USER_CHOICE_DELETE
@@ -203,10 +196,6 @@ class TriageSession:
         if key in self._directory_totals:
             return
         self._directory_totals[key] = DirectorySubtreeTotals()
-        # Only cached answers that could now be wrong are dropped.  Clearing the
-        # whole cache on every registration turned the ancestor walk back into a
-        # per-file cost, which on a real cache root is hundreds of thousands of
-        # redundant walks.
         stale = [
             directory
             for directory in self._ancestor_cache
@@ -235,11 +224,7 @@ class TriageSession:
             )
 
     def _registered_ancestors(self, directory: str) -> tuple[str, ...]:
-        """Return every registered candidate that contains *directory*.
-
-        Most files in a cache share a parent, so this walk runs once per
-        directory rather than once per file.
-        """
+        """Return every registered candidate that contains *directory*."""
 
         found: list[str] = []
         current = directory
@@ -302,6 +287,7 @@ def triage_file(
         raise ValueError("triage accepts file observations only")
     classification = _classify(
         Path(record.path),
+        record.logical_size,
         record.last_write_time_ns,
         now=now,
         temp_root=temp_root,
@@ -351,14 +337,7 @@ def triage_directory(
     keep_config: KeepClassification,
     known_roots: tuple[KnownCleanupRoot, ...] = (),
 ) -> TriageItem | None:
-    """Classify one directory observation as a whole-tree candidate, or skip it.
-
-    Returns ``None`` for the overwhelming majority of directories.  Only storage
-    that something other than the user's click vouches for -- catalog-recognised
-    vendor storage, or a tool's own regenerable output directory -- is offered as
-    one object, because whole-tree removal is the single action whose reach is
-    not bounded by what a review table can show.
-    """
+    """Classify one directory observation as a whole-tree candidate, or skip it."""
 
     if record.kind is not ScanRecordKind.DIRECTORY:
         raise ValueError("directory triage accepts directory observations only")
@@ -370,13 +349,8 @@ def triage_directory(
             or _normalized_path(known_scan_root.path) != _normalized_path(path)
             or not known_scan_root.delete_root_itself
         ):
-            # Ordinary scan roots are traversal boundaries, not deletion
-            # candidates. A configured root may opt in explicitly; Windows.old
-            # uses that switch so the now-obsolete directory itself can go.
             return None
-    scope = directory_cleanup_scope(
-        path, known_roots, delete_config, keep_config
-    )
+    scope = directory_cleanup_scope(path, known_roots, delete_config, keep_config)
     if scope is DirectoryScope.NOT_ELIGIBLE:
         return None
     known = known_root_for_path(path, known_roots)
@@ -410,9 +384,6 @@ def triage_directory(
     return TriageItem(
         record=record,
         path=record.path,
-        # The directory entry's own size is not its subtree's size.  Exact
-        # subtree totals come from TriageSession.subtree_totals once the scan
-        # that streams the descendants has finished.
         logical_size=0,
         allocated_size=None,
         category=category,
@@ -420,7 +391,6 @@ def triage_directory(
             category, delete_config.category_source_domains
         ),
         lane=ReviewLane.AI_REVIEW,
-        # A whole tree is never low risk, whatever it holds.
         risk_tier=RiskTier.HIGH,
         evidence_kind=EvidenceKind.KNOWN_ROOT_HEURISTIC,
         actionability=Actionability.AI_REVIEW,
@@ -435,6 +405,7 @@ def triage_directory(
 
 def _classify(
     path: Path,
+    logical_size: int,
     last_write_time_ns: int | None,
     *,
     now: datetime | None,
@@ -443,10 +414,16 @@ def _classify(
     delete_config: DeleteClassification,
     keep_config: KeepClassification,
 ) -> _Classification:
-    # A log or a dump is one wherever it sits, so this decides before any other
-    # rule can route the file somewhere less useful.  Placed at the end it never
-    # ran: earlier heuristic branches had already returned AI_REVIEW, and 361
-    # ``.log`` files were queued for a model that did not need to see them.
+    application = _application_classification(
+        path,
+        logical_size,
+        last_write_time_ns,
+        now=now,
+        delete_config=delete_config,
+    )
+    if application is not None:
+        return application
+
     if is_regenerable_byproduct(path, delete_config):
         return _Classification(
             _infer_presentation_category(path, delete_config),
@@ -460,10 +437,6 @@ def _classify(
             ("byproduct",),
         )
 
-    # A directory that calls itself a cache holds cache, including the databases
-    # and lock files inside it.  One rule covers every tool that will ever ship
-    # one, instead of a catalog entry chased after the fact: `.claude\plugins\cache`
-    # and `.puro\shared\caches` were 255 files queued for a model between them.
     if is_inside_cache_directory(path, delete_config):
         return _Classification(
             _infer_presentation_category(path, delete_config),
@@ -477,8 +450,6 @@ def _classify(
             ("cache_directory",),
         )
 
-    # Reached only when no catalog root vouched for the file: inside a recognised
-    # cache the same shapes are cache and stay removable.
     if is_installed_addon_payload(path, keep_config):
         return _Classification(
             _infer_presentation_category(path, delete_config),
@@ -555,8 +526,6 @@ def _classify(
                 ("known_root", "system_managed", "report_only"),
             )
         if known.policy is CleanupPolicy.MANUAL_REVIEW:
-            # Browser/editor/application caches are plausible cleanup
-            # candidates, but the owning application may still be running.
             return _Classification(
                 known.category,
                 ReviewLane.AI_REVIEW,
@@ -667,6 +636,112 @@ def _classify(
     )
 
 
+def _application_classification(
+    path: Path,
+    logical_size: int,
+    last_write_time_ns: int | None,
+    *,
+    now: datetime | None,
+    delete_config: DeleteClassification,
+) -> _Classification | None:
+    last_used = None
+    if last_write_time_ns is not None:
+        last_used = datetime.fromtimestamp(last_write_time_ns / 1_000_000_000, tz=UTC)
+    decision = evaluate_application_path(
+        path,
+        logical_size=logical_size,
+        last_used=last_used,
+        now=now,
+    )
+    if decision is None:
+        return None
+
+    rule = decision.rule
+    category = _infer_presentation_category(path, delete_config)
+    if "crashpad" in rule.rule_id:
+        category = CleanupCategory.CRASH_DUMPS
+    elif "log" in rule.rule_id:
+        category = CleanupCategory.SYSTEM_LOGS
+    elif any(token in rule.rule_id for token in ("cache", "plugin")):
+        category = CleanupCategory.IDE_CACHE
+
+    common_tags = (
+        "application_policy",
+        f"application:{rule.app_id}",
+        f"rule:{rule.rule_id}",
+    )
+    if decision.action is PolicyAction.KEEP_PROTECTED:
+        return _Classification(
+            category,
+            ReviewLane.REPORT_ONLY,
+            RiskTier.PROTECTED,
+            EvidenceKind.KNOWN_ROOT_HEURISTIC,
+            Actionability.REPORT_ONLY,
+            ExecutionPolicy.NONE,
+            RecoveryCapability.NONE,
+            f"{rule.label}：属于应用持久状态，不按缓存或文件后缀清理",
+            (*common_tags, "application_keep"),
+        )
+
+    if decision.action is PolicyAction.USER_DECISION:
+        bucket = decision.age_bucket or "unknown-age"
+        return _Classification(
+            category,
+            ReviewLane.AI_REVIEW,
+            RiskTier.HIGH,
+            EvidenceKind.KNOWN_ROOT_HEURISTIC,
+            Actionability.AI_REVIEW,
+            ExecutionPolicy.USER_CHOICE_DELETE,
+            RecoveryCapability.NONE,
+            f"{rule.label}：用户产生的数据，由用户决定；历史分组 {bucket}",
+            (*common_tags, "user_decision", f"age_bucket:{bucket}"),
+        )
+
+    if decision.action is PolicyAction.TOOL_DELETE:
+        threshold = decision.effective_idle_days
+        threshold_text = "未知" if threshold is None else f"{threshold:g} 天"
+        guard = "；执行前必须确认 Codex 已关闭" if rule.requires_process_closed else ""
+        guard_tags = ("requires_process_closed",) if rule.requires_process_closed else ()
+        return _Classification(
+            category,
+            ReviewLane.DETERMINISTIC_CANDIDATE,
+            RiskTier.LOW,
+            EvidenceKind.AGE_AND_APPROVED_ROOT,
+            Actionability.REVIEW_PLAN,
+            ExecutionPolicy.USER_CHOICE_DELETE,
+            RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT,
+            (
+                f"{rule.label}：可再生数据，达到 {threshold_text} 闲置阈值，"
+                f"删除收益评分 {decision.benefit_score}/100{guard}"
+            ),
+            (
+                *common_tags,
+                "tool_decision",
+                "regenerable",
+                f"benefit:{decision.benefit_score}",
+                *guard_tags,
+            ),
+        )
+
+    reason_by_action = {
+        PolicyAction.TOOL_KEEP_RECENT: "近期仍有复用价值，暂不清理",
+        PolicyAction.TOOL_KEEP_LOW_BENEFIT: "可再生但释放空间太小，不值得制造重建或下载开销",
+        PolicyAction.TOOL_KEEP_IN_USE: "应用仍在运行，避免清理正在写入的数据",
+        PolicyAction.TOOL_KEEP_UNKNOWN_USAGE: "缺少可靠的最近使用时间，暂不自动清理",
+    }
+    return _Classification(
+        category,
+        ReviewLane.REPORT_ONLY,
+        RiskTier.LOW,
+        EvidenceKind.KNOWN_ROOT_HEURISTIC,
+        Actionability.REPORT_ONLY,
+        ExecutionPolicy.NONE,
+        RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT,
+        f"{rule.label}：{reason_by_action[decision.action]}",
+        (*common_tags, "tool_keep", decision.action.value.casefold()),
+    )
+
+
 def _is_descendant(path: Path, root: Path) -> bool:
     try:
         return os.path.commonpath(
@@ -676,33 +751,19 @@ def _is_descendant(path: Path, root: Path) -> bool:
         return False
 
 
-def is_regenerable_byproduct(
-    path: Path, config: DeleteClassification
-) -> bool:
-    """Return whether *path* is output a program writes and rewrites by itself.
-
-    Logs, crash dumps, traces and temp files.  Whatever produced them will
-    produce them again, so no model needs to be asked.
-    """
+def is_regenerable_byproduct(path: Path, config: DeleteClassification) -> bool:
+    """Return whether *path* is output a program writes and rewrites by itself."""
 
     name = path.name.casefold()
     if path.suffix.casefold() in config.byproduct_suffixes:
         return True
-    # Rotated logs: ``app.log.1``, ``app.log.old``, ``trace.txt.bak``.
     stem = Path(name).stem.casefold()
     if Path(stem).suffix.casefold() in config.byproduct_suffixes:
         return True
-    return bool(
-        {part.casefold() for part in path.parts} & config.byproduct_segments
-    )
+    return bool({part.casefold() for part in path.parts} & config.byproduct_segments)
 
 
 def _version_key(name: str, separator_regex: str) -> tuple[int, ...]:
-    """Order version-named directories numerically, not as text.
-
-    ``2.1.9`` must sort below ``2.1.10``, which string comparison gets wrong.
-    """
-
     parts: list[int] = []
     for chunk in re.split(separator_regex, name, flags=re.IGNORECASE):
         if chunk.isdigit():
@@ -715,8 +776,6 @@ def _is_aged_temp_child(
     known_roots: tuple[KnownCleanupRoot, ...],
     old_temp_days: int,
 ) -> bool:
-    """Return whether *path* is an aged directory directly inside a temp root."""
-
     parent = _normalized_path(path.parent)
     if parent not in _age_based_known_roots(known_roots):
         return False
@@ -733,8 +792,6 @@ def _is_aged_temp_child(
 def _age_based_known_roots(
     known_roots: tuple[KnownCleanupRoot, ...],
 ) -> frozenset[str]:
-    """Cache the roots whose entries are judged by age (``%TEMP%``, CrashDumps)."""
-
     return frozenset(
         _normalized_path(root.path)
         for root in known_roots
@@ -745,119 +802,49 @@ def _age_based_known_roots(
 def _newest_version_sibling(
     parent: str, version_name_regex: str, version_separators_regex: str
 ) -> str | None:
-    """Return the highest version-named child of *parent*, if it has several.
-
-    This deliberately reads the directory every time.  Updaters can add or
-    remove versions between scans, and an old cached answer could otherwise
-    mark the only remaining version as stale.
-    """
-
     try:
         with os.scandir(parent) as entries:
             names = [
                 entry.name
                 for entry in entries
                 if entry.is_dir(follow_symlinks=False)
-                and re.fullmatch(
-                    version_name_regex, entry.name, flags=re.IGNORECASE
-                )
+                and re.fullmatch(version_name_regex, entry.name, flags=re.IGNORECASE)
             ]
     except OSError:
         return None
     if len(names) < 2:
         return None
-    return max(
-        names,
-        key=lambda name: _version_key(name, version_separators_regex),
-    )
+    return max(names, key=lambda name: _version_key(name, version_separators_regex))
 
 
-def is_stale_version_directory(
-    path: Path, config: DeleteClassification
-) -> bool:
-    """Return whether *path* is a superseded build left behind by a self-updater.
-
-    Restricted to layouts where an old version really is dead weight, because the
-    general form is unsafe.  Measured on one machine, "several version-named
-    siblings, keep the newest" would have offered
-    ``Android\\Sdk\\build-tools\\35.0.0``, ``ms-playwright-go\\1.50.1``,
-    ``node-gyp\\Cache\\18.18.0``, ``Microsoft\\TypeScript\\5.7`` and both
-    ``tcl8\\8.4`` and ``tcl8\\8.5``.  None of those is a leftover: they are
-    version-keyed stores whose entries are pinned by a project, by a Node
-    version, or shipped together as one installation.  Deleting them breaks
-    builds.
-
-    So the parent has to be a directory whose whole purpose is holding the build
-    that currently runs.  New entries belong in
-    ``delete-rules.json.classification.self_updater_parents`` only with evidence
-    that the owning updater abandons old versions instead of keeping them for
-    rollback.
-    """
-
+def is_stale_version_directory(path: Path, config: DeleteClassification) -> bool:
     if not re.fullmatch(config.version_name_regex, path.name, flags=re.IGNORECASE):
         return False
     if path.parent.name.casefold() not in config.self_updater_parents:
         return False
     newest = _newest_version_sibling(
-        str(path.parent),
-        config.version_name_regex,
-        config.version_separators_regex,
+        str(path.parent), config.version_name_regex, config.version_separators_regex
     )
     return newest is not None and path.name.casefold() != newest.casefold()
 
 
 def is_inside_cache_directory(path: Path, config: DeleteClassification) -> bool:
-    """Return whether any ancestor directory names itself a cache.
-
-    Deliberately exact segment names rather than a substring match: ``cached``
-    would be caught, but so would a project directory called ``cache-warmer``.
-    The parent segments are checked, never the file's own name, so a file called
-    ``cache`` beside real work is untouched.
-    """
-
     return bool(
-        {part.casefold() for part in path.parent.parts}
-        & config.cache_directory_names
+        {part.casefold() for part in path.parent.parts} & config.cache_directory_names
     )
 
 
 def is_program_payload_file(path: Path, config: KeepClassification) -> bool:
-    """Return whether *path* is a program, a library, or a tool's virtual disk.
-
-    ``codex.exe`` is the program.  ``docker_data.vhdx`` is every Docker image and
-    volume in one file.  Neither is something a file-by-file cleaner should
-    offer.  Only reached when no catalog root vouched for the file, so an
-    installer left behind inside a recognised cache root stays removable.
-    """
-
     return path.suffix.casefold() in config.program_payload_suffixes
 
 
 def is_installed_addon_payload(path: Path, config: KeepClassification) -> bool:
-    """Return whether *path* sits inside an installed extension or bundled runtime.
-
-    Not garbage: reinstalling the add-on is the only way to get it back, and no
-    per-file deletion of it frees anything worth freeing.  Reached only when no
-    catalog root vouched for the file, so an extension's *cache* subdirectory is
-    still removable.
-    """
-
     return bool(
-        {part.casefold() for part in path.parts}
-        & config.installed_payload_segments
+        {part.casefold() for part in path.parts} & config.installed_payload_segments
     )
 
 
 def is_application_state_file(path: Path, config: KeepClassification) -> bool:
-    """Return whether *path* is a program's configuration or live state.
-
-    Not garbage, so it is not offered anywhere -- deleting it changes how the
-    program behaves rather than freeing anything worth freeing.  These are
-    typically a few bytes to a few KB; on a real profile the AI queue was full
-    of them.  Only reached when no catalog root vouched for the file: inside a
-    recognised cache root the same shapes are cache and stay removable.
-    """
-
     name = path.name.casefold()
     if path.suffix.casefold() in config.application_state_suffixes:
         return True
@@ -866,19 +853,7 @@ def is_application_state_file(path: Path, config: KeepClassification) -> bool:
     return any(name.endswith(tail) for tail in config.application_state_tails)
 
 
-def is_regenerable_tool_directory(
-    path: Path, config: DeleteClassification
-) -> bool:
-    """Return whether *path* is a directory a tool deterministically rebuilds.
-
-    Membership is decided by the directory's own name and nothing else, so the
-    set is deliberately tiny.  Each entry is created by one tool, holds only
-    that tool's derived output, and is restored by re-running it.  Ambiguous
-    names that projects also use for hand-written content -- ``build``, ``dist``,
-    ``out``, ``target`` -- are excluded even though they appear in the
-    presentation-only build-output heuristic.
-    """
-
+def is_regenerable_tool_directory(path: Path, config: DeleteClassification) -> bool:
     return path.name.casefold() in config.regenerable_tool_directories
 
 
@@ -888,54 +863,19 @@ def directory_cleanup_scope(
     delete_config: DeleteClassification,
     keep_config: KeepClassification,
 ) -> DirectoryScope:
-    """Return why a whole directory may be removed, or that it may not be.
-
-    Whole-tree removal is the one action whose blast radius is not bounded by
-    what the user can see in a table, so it is granted only where something
-    other than the user's selection vouches for the directory: the local
-    catalog recognises it as vendor-owned storage, or its own name marks it as
-    a tool's derived output.  Everything else stays file-by-file.
-    """
-
-    # Only the outermost eligible directory is offered.  Selecting a cache root
-    # already covers everything beneath it, so also offering its descendants
-    # would bury the one useful row under thousands of redundant ones -- a real
-    # npm cache produces nearly ten thousand of them -- without widening what
-    # the user can actually reclaim.
-    #
-    # Both tests are O(1) on purpose.  This runs for every directory a scan
-    # visits, and the overwhelming majority are not eligible, so the expensive
-    # checks below must not run for them.
     is_known_root = _normalized_path(path) in _whole_tree_known_roots(known_roots)
     is_tool_output = is_regenerable_tool_directory(path, delete_config)
     if not is_known_root and not is_tool_output:
-        # A scratch directory sitting directly in %TEMP% goes as one object.
-        # Its contents are one program's working set, so deleting them one file
-        # at a time is slower and gives up halfway through leaving a half-empty
-        # directory behind.  Still age-gated: a directory something created
-        # minutes ago is in use.
-        if _is_aged_temp_child(
-            path, known_roots, delete_config.old_temp_days
-        ):
+        if _is_aged_temp_child(path, known_roots, delete_config.old_temp_days):
             return DirectoryScope.AGED_TEMP_ITEM
-        # Deliberately not subject to the application-payload rule below: a
-        # superseded version under AppData is exactly the leftover worth
-        # removing, and it is the only place most self-updaters put one.
         if is_stale_version_directory(path, delete_config):
             return DirectoryScope.STALE_VERSION
         return DirectoryScope.NOT_ELIGIBLE
     if is_known_root:
         return DirectoryScope.KNOWN_CACHE_ROOT
-    # Everything below narrows the tool-output rule.  These checks run only for
-    # the few directories whose name already matched, so they may be O(roots).
-    if any(
-        is_regenerable_tool_directory(parent, delete_config)
-        for parent in path.parents
-    ):
+    if any(is_regenerable_tool_directory(parent, delete_config) for parent in path.parents):
         return DirectoryScope.NOT_ELIGIBLE
     if known_root_for_path(path, known_roots) is not None:
-        # A recognised cache root already covers this subtree.  npm's own
-        # ``_npx`` staging area, for instance, is full of ``node_modules``.
         return DirectoryScope.NOT_ELIGIBLE
     if _is_application_payload(path, keep_config):
         return DirectoryScope.NOT_ELIGIBLE
@@ -943,20 +883,8 @@ def directory_cleanup_scope(
 
 
 def _is_application_payload(path: Path, config: KeepClassification) -> bool:
-    """Return whether *path* sits inside installed-application storage.
-
-    The tool-output rule assumes a tool will rebuild the directory from a
-    manifest the user controls.  That holds for a project's own ``node_modules``
-    or ``__pycache__``.  It does not hold for a copy vendored inside installed
-    software: nothing the user runs regenerates it, and removing it breaks the
-    application.  A real profile carried two thousand such directories under
-    per-user application data, so the distinction is not hypothetical.  Whatever
-    is genuinely reclaimable in those locations is the catalog's job.
-    """
-
     return bool(
-        {part.casefold() for part in path.parts}
-        & config.application_data_segments
+        {part.casefold() for part in path.parts} & config.application_data_segments
     )
 
 
@@ -966,17 +894,6 @@ def _normalized_path(path: Path) -> str:
 
 @lru_cache(maxsize=8)
 def _whole_tree_known_roots(known_roots: tuple[KnownCleanupRoot, ...]) -> frozenset[str]:
-    """Cache which catalog roots may be removed whole, across one scan.
-
-    ``AGE_BASED_REVIEW`` roots are excluded.  That policy exists because only
-    part of the root -- the entries past the age threshold -- is ever a
-    candidate, so removing the tree would contradict the reason the root is
-    listed.  It also covers the active ``%TEMP%`` directory, and renaming that
-    out from under every running application is disruptive in a way no amount of
-    user approval makes reasonable.  Those roots keep the per-file aged flow,
-    which already handles them well.
-    """
-
     return frozenset(
         _normalized_path(root.path)
         for root in known_roots
@@ -984,27 +901,19 @@ def _whole_tree_known_roots(known_roots: tuple[KnownCleanupRoot, ...]) -> frozen
     )
 
 
-def is_development_cache_hint(
-    path: Path, config: DeleteClassification
-) -> bool:
-    """Return a presentation-only path hint; never an action decision."""
-
+def is_development_cache_hint(path: Path, config: DeleteClassification) -> bool:
     return bool(
-        {part.casefold() for part in path.parts}
-        & config.development_cache_segments
+        {part.casefold() for part in path.parts} & config.development_cache_segments
     )
 
 
 def _infer_presentation_category(
     path: Path, config: DeleteClassification
 ) -> CleanupCategory:
-    """Infer a display category without changing risk or actionability."""
-
     parts = {part.casefold() for part in path.parts}
     suffix = path.suffix.casefold()
     if parts & config.windows_update_segments or any(
-        group.issubset(parts)
-        for group in config.windows_update_segment_groups
+        group.issubset(parts) for group in config.windows_update_segment_groups
     ):
         return CleanupCategory.WINDOWS_UPDATE
     if parts & config.container_segments or suffix in config.container_suffixes:
@@ -1017,9 +926,6 @@ def _infer_presentation_category(
         return CleanupCategory.PROJECT_BUILD_OUTPUT
     if suffix in config.system_log_suffixes:
         return CleanupCategory.SYSTEM_LOGS
-    # A generic .exe can be an application binary, developer tool, or user
-    # asset.  Treat it as an installer only inside Downloads; package formats
-    # whose purpose is explicit may be grouped without changing actionability.
     if parts & config.downloads_segments or suffix in config.installer_suffixes:
         return CleanupCategory.INSTALLERS_DOWNLOADS
     return CleanupCategory.OTHER

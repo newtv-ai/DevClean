@@ -20,6 +20,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from devclean.core.application_cleanup import process_guard_allows
 from devclean.core.cleanup_catalog import (
     CleanupCategory,
     KnownCleanupRoot,
@@ -408,12 +409,7 @@ def prepare_cleanup_plan(
         raise CleanupRefusal("candidate IDs must be unique across the cleanup plan")
     if len({_normalized(candidate.path) for candidate in selected}) != len(selected):
         raise CleanupRefusal("selected candidates must not share a source path")
-    # Checked across the whole plan, not only inside each batch: the split below
-    # is by position, so a directory and something inside it can land in
-    # different batches and escape a per-batch check.
     _reject_overlapping_candidates(selected)
-    # The split is internal bookkeeping for the journal, not a ceiling on the
-    # selection: "select everything and delete" has to work.
     batches = tuple(
         prepare_cleanup_batch(selected[offset : offset + MAX_CLEANUP_BATCH_FILES])
         for offset in range(0, len(selected), MAX_CLEANUP_BATCH_FILES)
@@ -445,11 +441,6 @@ def execute_cleanup_batch(
 
     _require_batch(batch)
     active_journal = journal or CleanupJournal()
-    # No whole-batch gate.  Every candidate is verified again inside the loop
-    # immediately before its own deletion, which is the check that matters, and
-    # a gate here meant one file changing since the scan aborted the other 31 --
-    # then the caller's loop stopped, so a single churning cache file ended the
-    # entire run with "candidate changed since the completed scan".
     intents = tuple(_intent_for(action, batch.batch_id) for action in batch.actions)
     active_journal.record_batch(batch.batch_id, mode, intents)
 
@@ -473,11 +464,6 @@ def execute_cleanup_batch(
                 detail="exact-object mutation beginning before per-item preflight",
             )
             if _optional_metadata(candidate.path) is None:
-                # The object is already gone -- a stale row, or something else
-                # removed it between the scan and now.  The goal of this action
-                # is that the object not exist, and it does not, so this is a
-                # completed action.  Treating it as a failure used to abort the
-                # whole batch on the second click of a delete.
                 if mode is not CleanupMode.RECYCLE:
                     purged_directory_bytes[action.action_id] = 0
                 active_journal.transition(
@@ -502,11 +488,6 @@ def execute_cleanup_batch(
             if mode is CleanupMode.RECYCLE:
                 outcome = recycler(candidate.path, candidate.snapshot, boundary)
                 if not outcome.recycled:
-                    # The source is gone and the Shell accepted a recycle
-                    # request, but a non-increasing *total* bin item count
-                    # cannot distinguish permanent fallback from eviction or a
-                    # concurrent bin change. Remove the completed row without
-                    # claiming either recovery or freed disk space.
                     unverified_recycle_paths.append(str(candidate.path))
                     active_journal.transition(
                         action.action_id,
@@ -558,9 +539,6 @@ def execute_cleanup_batch(
                         on_progress=report_directory,
                     )
                     if not tree.completed or not tree.root_absent:
-                        # A tree that stopped partway is neither done nor undone,
-                        # so the action stays unresolved rather than claiming
-                        # either outcome.
                         raise CleanupRefusal(
                             "tree deletion stopped before the whole tree was removed"
                         )
@@ -580,11 +558,6 @@ def execute_cleanup_batch(
                     detail="handle-bound deletion verified",
                 )
         except Exception as error:
-            # One object's failure says nothing about the next one: every action
-            # is verified and journaled independently.  Stopping the batch here
-            # meant a single locked cache file marked up to 31 unrelated
-            # siblings unattempted -- measured as 984 unattempted against 4,369
-            # deleted on one real run.  Record it and carry on.
             _record_failure(active_journal, action.action_id, error)
         finally:
             _report_cleanup_progress(
@@ -598,9 +571,6 @@ def execute_cleanup_batch(
 
     active_journal.finalize_batch(batch.batch_id)
     actions = active_journal.actions_for_batch(batch.batch_id)
-    # A purged directory reports the bytes its walk actually removed, not the
-    # subtree total observed during the scan, so the reclaim figure never
-    # overstates what left the volume.
     sizes = {
         action.action_id: purged_directory_bytes.get(
             action.action_id, action.candidate.selected_logical_bytes
@@ -654,18 +624,12 @@ def _report_cleanup_progress(
             )
         )
     except Exception:
-        # Progress is presentation only. A closed window or faulty observer must
-        # not turn an already-authorised deletion into a partial failed batch.
         return
+
 
 def _snapshot_from_record(item: TriageItem) -> ExactFileSnapshot:
     record = item.record
     if record.volume_serial is None and record.file_id is None:
-        # The scan recorded this file from directory-enumeration data, without
-        # opening it.  Capture the exact identity now, at the moment the user
-        # selects it, and require the fields the scan *did* observe to still
-        # agree -- so the object being pinned is provably the one the review
-        # table showed, not something that replaced it in the meantime.
         return _snapshot_from_live_read(item)
     if (
         record.volume_serial is None
@@ -745,12 +709,6 @@ def _snapshot_from_live_read(item: TriageItem) -> ExactFileSnapshot:
         raise CleanupRefusal("hard-linked files cannot become cleanup actions")
     if (metadata.attributes or 0) & FILE_ATTRIBUTE_REPARSE_POINT:
         raise CleanupRefusal("reparse-point records cannot become cleanup actions")
-    # The scan's own observations must still hold.  Without this the workbench
-    # could show one file and the plan could pin whatever now sits at that name.
-    # Creation time is checked as well as size and modification time: file-system
-    # timestamp granularity is coarse enough that a replacement written moments
-    # after the original carries the same modification time, so those two alone
-    # cannot distinguish them.
     if metadata.logical_size != record.logical_size:
         raise CleanupRefusal("selected file's size changed since the completed scan")
     if (
@@ -783,6 +741,10 @@ def _preflight_candidate(
     keep_config: KeepClassification,
     known_roots: tuple[KnownCleanupRoot, ...] = (),
 ) -> None:
+    if not process_guard_allows(candidate.path):
+        raise CleanupRefusal(
+            "owning application is running; close it before cleaning this target"
+        )
     _reject_protected_path(candidate.path, known_roots, keep_config)
     _require_strict_descendant(candidate.path, candidate.scan_root)
     if not is_local_fixed_path(candidate.path) or not is_local_fixed_path(candidate.scan_root):
@@ -801,10 +763,6 @@ def _preflight_candidate(
         raise CleanupRefusal("original approved scan root identity changed")
     metadata = read_file_metadata(candidate.path)
     if candidate.target_kind is CleanupTargetKind.DIRECTORY:
-        # Re-derive the reason this tree may be removed at all.  The catalog is
-        # environment-derived, so a redirected variable could have widened the
-        # recognised roots between selection and execution; a directory that no
-        # longer qualifies is refused rather than silently carried through.
         _require_directory_scope(
             candidate.path, known_roots, delete_config, keep_config
         )
@@ -838,12 +796,7 @@ def _intent_for(action: CleanupAction, batch_id: str) -> CleanupIntent:
 
 
 def _directory_identity(snapshot: ExactFileSnapshot) -> ExactDirectorySnapshot:
-    """Project a directory's captured metadata onto its stable identity only.
-
-    Size and last-write time are dropped deliberately: both change whenever a
-    child changes, and a cache being written to between the scan and the
-    deletion is normal rather than suspicious.
-    """
+    """Project a directory's captured metadata onto its stable identity only."""
 
     return ExactDirectorySnapshot(
         volume_serial=snapshot.volume_serial,
@@ -880,9 +833,6 @@ def _record_failure(
     else:
         observation_failed = False
     if action.state is ActionState.PURGE_PENDING or observation_failed:
-        # A delete disposition can be accepted while another shared handle
-        # keeps the name visible.  Never downgrade this phase to recoverable or
-        # automatically replay it based on pathname observation.
         state = ActionState.UNKNOWN
     elif metadata_matches_snapshot(source, action.snapshot):
         state = ActionState.FAILED_UNCHANGED
@@ -1002,11 +952,6 @@ def _reject_protected_path(
     known_roots: tuple[KnownCleanupRoot, ...],
     keep_config: KeepClassification,
 ) -> None:
-    # Only the rules that no review can overturn are enforced here.  The
-    # path-shape risk signals are deliberately absent: they route an item into
-    # the review lane rather than forbidding it, and re-imposing them at
-    # execution would refuse a path the workbench had already offered -- after
-    # the user selected it for deletion.
     _reject_system_anchor(path, known_roots, keep_config)
     state_root = _normalized(data_dir())
     try:

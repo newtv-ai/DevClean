@@ -46,7 +46,7 @@ jobs:
         run: uv pip check
 
       - name: Lint
-        run: uv run --frozen ruff check src scripts tests
+        run: uv run --frozen ruff check --output-format=github src scripts tests
 
       - name: Type check
         run: uv run --frozen python -m mypy
