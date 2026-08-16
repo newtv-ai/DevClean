@@ -146,11 +146,14 @@ VSCODE_RULES: tuple[ApplicationCleanupRule, ...] = (
         "VS Code graphics shader cache",
         idle_days=3,
     ),
-    _tool_dir(
-        "vscode-service-worker-cache-storage",
+    _rule(
+        "vscode-site-cache-storage",
         r"Service Worker\CacheStorage",
-        "VS Code service-worker response cache",
-        idle_days=7,
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "VS Code persistent Cache Storage / offline webview data",
+        user_age_buckets=(30, 90, 180),
     ),
     _tool_dir(
         "vscode-service-worker-script-cache",

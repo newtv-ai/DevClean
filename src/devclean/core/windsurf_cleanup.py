@@ -131,10 +131,14 @@ WINDSURF_RULES: tuple[ApplicationCleanupRule, ...] = (
         "Windsurf graphics shader cache",
         idle_days=3,
     ),
-    _tool_dir(
-        "windsurf-service-worker-cache-storage",
+    _rule(
+        "windsurf-site-cache-storage",
         r"Service Worker\CacheStorage",
-        "Windsurf service-worker response cache",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Windsurf persistent Cache Storage / offline webview data",
+        user_age_buckets=(30, 90, 180),
     ),
     _tool_dir(
         "windsurf-service-worker-script-cache",
