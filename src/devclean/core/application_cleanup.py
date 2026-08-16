@@ -35,6 +35,15 @@ from devclean.core.claude_cleanup import (
     evaluate_claude_path,
     match_claude_rule,
 )
+from devclean.core.cursor_cleanup import (
+    CURSOR_RULES,
+    clear_cursor_process_cache,
+    cursor_application_roots,
+    cursor_process_running,
+    cursor_scan_roots,
+    evaluate_cursor_path,
+    match_cursor_rule,
+)
 
 _ORIGINAL_APPLICATION_ROOTS = _impl.application_roots
 _ORIGINAL_EVALUATE_APPLICATION_PATH = _impl.evaluate_application_path
@@ -47,7 +56,11 @@ def application_roots(
 ) -> tuple[ApplicationRoot, ...]:
     """Return all audited application roots, including redirected locations."""
 
-    return (*_ORIGINAL_APPLICATION_ROOTS(environment), *claude_application_roots(environment))
+    return (
+        *_ORIGINAL_APPLICATION_ROOTS(environment),
+        *claude_application_roots(environment),
+        *cursor_application_roots(environment),
+    )
 
 
 def application_scan_roots(
@@ -56,7 +69,11 @@ def application_scan_roots(
     """Return application-specific roots that may contain reclaimable storage."""
 
     codex = tuple(root.path for root in _ORIGINAL_APPLICATION_ROOTS(environment))
-    return tuple(dict.fromkeys((*codex, *claude_scan_roots(environment))))
+    return tuple(
+        dict.fromkeys(
+            (*codex, *claude_scan_roots(environment), *cursor_scan_roots(environment))
+        )
+    )
 
 
 def match_application_rule(
@@ -65,6 +82,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    cursor = match_cursor_rule(path, environment)
+    if cursor is not None:
+        return cursor
     claude = match_claude_rule(path, environment)
     if claude is not None:
         return claude
@@ -88,7 +108,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_claude_path(
+    decision = evaluate_cursor_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -96,6 +116,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_claude_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = _ORIGINAL_EVALUATE_APPLICATION_PATH(
             path,
@@ -111,6 +140,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "cursor":
+        return cursor_process_running()
     if app_id == "claude":
         return claude_process_running()
     return _ORIGINAL_APPLICATION_PROCESS_RUNNING(app_id)
@@ -119,6 +150,7 @@ def application_process_running(app_id: str) -> bool:
 def clear_process_cache() -> None:
     _impl.clear_process_cache()
     clear_claude_process_cache()
+    clear_cursor_process_cache()
 
 
 def process_guard_allows(
@@ -127,9 +159,6 @@ def process_guard_allows(
 ) -> bool:
     """Refuse USER/KEEP mutation, then re-check any application process guard."""
 
-    # Refresh process and dynamic-policy caches before determining ownership.
-    # This matters when Claude's autoMemoryDirectory or process state changed
-    # after the scan but before the user clicked Delete.
     clear_process_cache()
     rule = match_application_rule(path, environment)
     if rule is not None and rule.owner is not DecisionOwner.TOOL:
@@ -166,12 +195,17 @@ def whole_tree_application_rule(
 
 
 def application_display_name(app_id: str) -> str:
-    return {"codex": "Codex", "claude": "Claude Code"}.get(app_id, app_id)
+    return {
+        "codex": "Codex",
+        "claude": "Claude Code",
+        "cursor": "Cursor",
+    }.get(app_id, app_id)
 
 
 __all__ = [
     "CLAUDE_RULES",
     "CODEX_RULES",
+    "CURSOR_RULES",
     "ApplicationCleanupRule",
     "ApplicationPolicyDecision",
     "ApplicationRoot",

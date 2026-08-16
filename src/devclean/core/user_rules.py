@@ -80,9 +80,36 @@ def _owner_for_stored_rule(rule: DecisionRule) -> DecisionOwner | None:
 
     value = rule.value.replace("/", "\\").casefold()
 
-    # More-specific persistent Claude state must win before the broad projects
-    # history marker below. These fallbacks are for portable/cross-user learned
-    # globs that cannot be resolved against the current user's environment.
+    # Portable/cross-user learned globs can no longer be resolved against the
+    # current environment.  Match their stable semantic anchors before allowing
+    # old AI imports to survive a load/restore migration.
+    cursor_keep_markers = (
+        r"\cursor\user\settings.json",
+        r"\cursor\user\keybindings.json",
+        r"\cursor\user\snippets",
+        r"\cursor\user\globalstorage",
+        r"\.cursor\extensions",
+        r"\.cursor\cli-config.json",
+        r"%appdata%\cursor\user\globalstorage",
+        r"%userprofile%\.cursor\extensions",
+    )
+    cursor_user_markers = (
+        r"\cursor\user\workspacestorage",
+        r"\cursor\user\history",
+        r"\cursor\user\globalstorage\state.vscdb",
+        r"\cursor\user\globalstorage\anysphere.cursor-commits\checkpoints",
+        r"\cursor\user\globalstorage\anysphere.cursor-retrieval\checkpoints",
+        r"\.cursor\projects",
+        r"\.cursor\chats",
+        r"%appdata%\cursor\user\workspacestorage",
+        r"%userprofile%\.cursor\projects",
+        r"%userprofile%\.cursor\chats",
+    )
+    if any(marker in value for marker in cursor_user_markers):
+        return DecisionOwner.USER
+    if any(marker in value for marker in cursor_keep_markers):
+        return DecisionOwner.KEEP
+
     claude_keep_markers = (
         r"\.claude\plugins",
         r"\.claude\settings.json",

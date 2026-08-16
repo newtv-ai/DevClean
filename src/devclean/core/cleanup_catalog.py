@@ -11,6 +11,7 @@ from pathlib import Path
 from devclean.core.application_cleanup import (
     CLAUDE_RULES,
     CODEX_RULES,
+    CURSOR_RULES,
     DecisionOwner,
     application_roots,
     application_scan_roots,
@@ -113,7 +114,7 @@ def _append_application_roots(
         )
 
     root_map = {root.key: root.path for root in application_roots(environment)}
-    for rule in (*CODEX_RULES, *CLAUDE_RULES):
+    for rule in (*CODEX_RULES, *CLAUDE_RULES, *CURSOR_RULES):
         if rule.owner is not DecisionOwner.TOOL or not rule.allow_whole_tree:
             continue
         base = root_map.get(rule.root_key)
@@ -142,7 +143,7 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.SYSTEM_LOGS
     if "temp" in lower or "shell" in lower:
         return CleanupCategory.USER_TEMP
-    if "cache" in lower or "plugin" in lower:
+    if "cache" in lower or "plugin" in lower or "extension" in lower:
         return CleanupCategory.IDE_CACHE
     return CleanupCategory.OTHER
 
@@ -166,19 +167,29 @@ def _append_root(
     except OSError:
         return
     key = os.path.normcase(os.path.normpath(str(path)))
+    replacement = KnownCleanupRoot(
+        path=path,
+        category=category,
+        policy=policy,
+        label=label,
+        allow_inside_system_anchor=allow_inside_system_anchor,
+        delete_root_itself=delete_root_itself,
+    )
     if key in seen:
+        # App-audited TOOL roots are appended after legacy/configured heuristics.
+        # When both identify the same physical directory, the audited root must
+        # upgrade MANUAL_REVIEW/REPORT_ONLY instead of being discarded merely
+        # because it arrived later.  Non-deletable roots never downgrade an
+        # already-known direct cleanup root.
+        if delete_root_itself:
+            for index, existing in enumerate(accepted):
+                existing_key = os.path.normcase(os.path.normpath(str(existing.path)))
+                if existing_key == key:
+                    accepted[index] = replacement
+                    break
         return
     seen.add(key)
-    accepted.append(
-        KnownCleanupRoot(
-            path=path,
-            category=category,
-            policy=policy,
-            label=label,
-            allow_inside_system_anchor=allow_inside_system_anchor,
-            delete_root_itself=delete_root_itself,
-        )
-    )
+    accepted.append(replacement)
 
 
 def known_root_for_path(
