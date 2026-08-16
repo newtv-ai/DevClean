@@ -1,4 +1,4 @@
-"""Discover configured cleanup roots without carrying a second catalog in code."""
+"""Discover configured and audited application cleanup roots."""
 
 from __future__ import annotations
 
@@ -8,6 +8,13 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from devclean.core.application_cleanup import (
+    CLAUDE_RULES,
+    CODEX_RULES,
+    DecisionOwner,
+    application_roots,
+    application_scan_roots,
+)
 from devclean.core.rule_schema import CleanupCategory, CleanupPolicy, SourceDomain
 from devclean.core.user_rules import (
     RuleConfigError,
@@ -35,10 +42,12 @@ def discover_known_cleanup_roots(
     home: Path | None = None,
     temp_root: Path | None = None,
 ) -> tuple[KnownCleanupRoot, ...]:
-    """Resolve the enabled entries in ``scan-rules.json``.
+    """Resolve configured roots plus audited application storage locations.
 
-    The implementation knows how to expand paths and filter unsafe storage; the
-    actual locations, categories, policies and labels all live in the JSON file.
+    Application scan roots are REPORT_ONLY traversal anchors. More-specific TOOL
+    rules that explicitly allow whole-tree deletion are added as vendor-managed
+    roots. This makes redirected locations discoverable without granting generic
+    delete authority to the rest of an application's state directory.
     """
 
     env = dict(os.environ if environment is None else environment)
@@ -70,34 +79,105 @@ def discover_known_cleanup_roots(
                     else (expanded_pattern,)
                 )
                 for match in matches:
-                    path = Path(match)
-                    try:
-                        if not path.is_absolute() or not path.is_dir():
-                            continue
-                        if not is_local_fixed_path(path):
-                            continue
-                    except OSError:
-                        continue
-                    key = os.path.normcase(os.path.normpath(str(path)))
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    accepted.append(
-                        KnownCleanupRoot(
-                            path=path,
-                            category=category,
-                            policy=policy,
-                            label=configured.label,
-                            allow_inside_system_anchor=(
-                                configured.allow_inside_system_anchor
-                            ),
-                            delete_root_itself=(
-                                configured.rule_id in rules.delete_root_ids
-                            ),
-                        )
+                    _append_root(
+                        accepted,
+                        seen,
+                        Path(match),
+                        category=category,
+                        policy=policy,
+                        label=configured.label,
+                        allow_inside_system_anchor=configured.allow_inside_system_anchor,
+                        delete_root_itself=configured.rule_id in rules.delete_root_ids,
                     )
+
+    _append_application_roots(accepted, seen, env)
     return tuple(
         sorted(accepted, key=lambda item: (len(item.path.parts), str(item.path)))
+    )
+
+
+def _append_application_roots(
+    accepted: list[KnownCleanupRoot],
+    seen: set[str],
+    environment: dict[str, str],
+) -> None:
+    for root in application_scan_roots(environment):
+        _append_root(
+            accepted,
+            seen,
+            Path(str(root)),
+            category=CleanupCategory.IDE_CACHE,
+            policy=CleanupPolicy.REPORT_ONLY,
+            label="已审计的应用存储根目录",
+            delete_root_itself=False,
+        )
+
+    root_map = {root.key: root.path for root in application_roots(environment)}
+    for rule in (*CODEX_RULES, *CLAUDE_RULES):
+        if rule.owner is not DecisionOwner.TOOL or not rule.allow_whole_tree:
+            continue
+        base = root_map.get(rule.root_key)
+        if base is None:
+            continue
+        for relative in expand_braces(rule.relative_pattern):
+            if any(token in relative for token in ("*", "?", "[")):
+                continue
+            path = Path(str(base / relative)) if relative else Path(str(base))
+            _append_root(
+                accepted,
+                seen,
+                path,
+                category=_application_category(rule.rule_id),
+                policy=CleanupPolicy.VENDOR_MANAGED,
+                label=rule.label,
+                delete_root_itself=True,
+            )
+
+
+def _application_category(rule_id: str) -> CleanupCategory:
+    lower = rule_id.casefold()
+    if "crash" in lower:
+        return CleanupCategory.CRASH_DUMPS
+    if "log" in lower or "debug" in lower:
+        return CleanupCategory.SYSTEM_LOGS
+    if "temp" in lower or "shell" in lower:
+        return CleanupCategory.USER_TEMP
+    if "cache" in lower or "plugin" in lower:
+        return CleanupCategory.IDE_CACHE
+    return CleanupCategory.OTHER
+
+
+def _append_root(
+    accepted: list[KnownCleanupRoot],
+    seen: set[str],
+    path: Path,
+    *,
+    category: CleanupCategory,
+    policy: CleanupPolicy,
+    label: str,
+    allow_inside_system_anchor: bool = False,
+    delete_root_itself: bool = False,
+) -> None:
+    try:
+        if not path.is_absolute() or not path.is_dir():
+            return
+        if not is_local_fixed_path(path):
+            return
+    except OSError:
+        return
+    key = os.path.normcase(os.path.normpath(str(path)))
+    if key in seen:
+        return
+    seen.add(key)
+    accepted.append(
+        KnownCleanupRoot(
+            path=path,
+            category=category,
+            policy=policy,
+            label=label,
+            allow_inside_system_anchor=allow_inside_system_anchor,
+            delete_root_itself=delete_root_itself,
+        )
     )
 
 
