@@ -16,7 +16,11 @@ from devclean.core.application_cleanup import (
     whole_tree_application_rule,
 )
 from devclean.core.chrome_cleanup import chrome_roots
-from devclean.core.cleanup_catalog import CleanupCategory, CleanupPolicy, discover_known_cleanup_roots
+from devclean.core.cleanup_catalog import (
+    CleanupCategory,
+    CleanupPolicy,
+    discover_known_cleanup_roots,
+)
 from devclean.core.user_rules import default_rules
 
 _NOW = datetime(2026, 8, 16, tzinfo=UTC)
@@ -37,9 +41,15 @@ def test_chrome_default_channel_and_updater_roots_are_discovered() -> None:
     roots = chrome_roots(_env())
     expected = {
         PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\Chrome\User Data"),
-        PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\Chrome Beta\User Data"),
-        PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\Chrome Dev\User Data"),
-        PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\Chrome SxS\User Data"),
+        PureWindowsPath(
+            r"C:\Users\alice\AppData\Local\Google\Chrome Beta\User Data"
+        ),
+        PureWindowsPath(
+            r"C:\Users\alice\AppData\Local\Google\Chrome Dev\User Data"
+        ),
+        PureWindowsPath(
+            r"C:\Users\alice\AppData\Local\Google\Chrome SxS\User Data"
+        ),
         PureWindowsPath(
             r"C:\Users\alice\AppData\Local\Google\Chrome for Testing\User Data"
         ),
@@ -59,11 +69,26 @@ def test_chrome_default_channel_and_updater_roots_are_discovered() -> None:
 
 def test_chrome_profile_caches_are_tool_but_authoritative_profile_state_is_keep() -> None:
     tool_paths = {
-        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default\Cache\Cache_Data\f_001": "chrome-http-cache",
-        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Profile 2\Code Cache\js\index": "chrome-code-cache",
-        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default\GPUCache\data_0": "chrome-profile-gpu-cache",
-        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\ShaderCache\GPUCache\data_0": "chrome-shader-cache",
-        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\component_crx_cache\abc.crx": "chrome-component-crx-cache",
+        (
+            r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
+            r"\Cache\Cache_Data\f_001"
+        ): "chrome-http-cache",
+        (
+            r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Profile 2"
+            r"\Code Cache\js\index"
+        ): "chrome-code-cache",
+        (
+            r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
+            r"\GPUCache\data_0"
+        ): "chrome-profile-gpu-cache",
+        (
+            r"C:\Users\alice\AppData\Local\Google\Chrome\User Data"
+            r"\ShaderCache\GPUCache\data_0"
+        ): "chrome-shader-cache",
+        (
+            r"C:\Users\alice\AppData\Local\Google\Chrome\User Data"
+            r"\component_crx_cache\abc.crx"
+        ): "chrome-component-crx-cache",
     }
     for path, rule_id in tool_paths.items():
         rule = match_application_rule(path, _env())
@@ -74,10 +99,22 @@ def test_chrome_profile_caches_are_tool_but_authoritative_profile_state_is_keep(
     protected = (
         r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default\History",
         r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default\Cookies",
-        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default\Login Data",
-        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default\Preferences",
-        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default\IndexedDB\https_example.indexeddb.leveldb\000003.log",
-        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default\Extensions\abcdefghijklmnop\1.0\manifest.json",
+        (
+            r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
+            r"\Login Data"
+        ),
+        (
+            r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
+            r"\Preferences"
+        ),
+        (
+            r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
+            r"\IndexedDB\https_example.indexeddb.leveldb\000003.log"
+        ),
+        (
+            r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
+            r"\Extensions\abcdefghijklmnop\1.0\manifest.json"
+        ),
     )
     for path in protected:
         rule = match_application_rule(path, _env())
@@ -206,16 +243,19 @@ def test_chrome_cache_process_guard_rechecks_live_browser(
         "devclean.core.application_cleanup.chrome_process_running",
         lambda: True,
     )
-    assert not process_guard_allows(
-        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default\Cache\Cache_Data\f_001",
-        _env(),
+    cache_file = (
+        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
+        r"\Cache\Cache_Data\f_001"
     )
+    assert not process_guard_allows(cache_file, _env())
 
 
 def test_chrome_scan_roots_include_user_data_and_updater_without_whole_tree_authority() -> None:
     scan = set(application_scan_roots(_env()))
     data = PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\Chrome\User Data")
-    updater = PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\GoogleUpdater")
+    updater = PureWindowsPath(
+        r"C:\Users\alice\AppData\Local\Google\GoogleUpdater"
+    )
     assert data in scan
     assert updater in scan
     assert whole_tree_application_rule(data, _env()) is None
