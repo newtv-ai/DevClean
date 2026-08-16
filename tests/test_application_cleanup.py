@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
+import os
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from devclean.core.application_cleanup import (
     DecisionOwner,
     LastUseStrategy,
     PolicyAction,
+    clear_process_cache,
     effective_idle_days,
     evaluate_application_path,
     match_application_rule,
@@ -43,6 +47,33 @@ def test_codex_cache_is_tool_decided_but_recent_download_is_kept() -> None:
     assert recent.action is PolicyAction.TOOL_KEEP_RECENT
     assert stale.action is PolicyAction.TOOL_DELETE
     assert stale.benefit_score > recent.benefit_score
+
+
+def test_recent_codex_activity_prevents_plugin_snapshot_redownload(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / ".codex"
+    plugin = codex_home / ".tmp" / "plugins" / "payload.bin"
+    plugin.parent.mkdir(parents=True)
+    plugin.write_bytes(b"x")
+    state = codex_home / "state_5.sqlite"
+    state.write_bytes(b"state")
+    recent = _NOW - timedelta(days=2)
+    os.utime(state, (recent.timestamp(), recent.timestamp()))
+    clear_process_cache()
+
+    decision = evaluate_application_path(
+        plugin,
+        logical_size=700 * 1024**2,
+        last_used=_NOW - timedelta(days=90),
+        now=_NOW,
+        process_running=False,
+        environment={"CODEX_HOME": str(codex_home)},
+    )
+
+    assert decision is not None
+    assert decision.action is PolicyAction.TOOL_KEEP_RECENT
+    assert decision.last_used == recent
 
 
 def test_large_reclaim_shortens_idle_threshold_without_changing_safety() -> None:
@@ -139,6 +170,36 @@ def test_codex_input_history_is_user_owned() -> None:
     assert decision.rule.owner is DecisionOwner.USER
     assert decision.rule.last_use is LastUseStrategy.JSONL_RECORD_TS
     assert decision.age_bucket == ">=180d"
+
+
+def test_codex_input_history_prefers_embedded_record_timestamp(tmp_path: Path) -> None:
+    codex_home = tmp_path / ".codex"
+    codex_home.mkdir()
+    history = codex_home / "history.jsonl"
+    older = _NOW - timedelta(days=200)
+    latest = _NOW - timedelta(days=40)
+    history.write_text(
+        "\n".join(
+            (
+                json.dumps({"session_id": "one", "ts": older.timestamp(), "text": "old"}),
+                json.dumps({"session_id": "two", "ts": latest.timestamp(), "text": "new"}),
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    decision = evaluate_application_path(
+        history,
+        logical_size=history.stat().st_size,
+        last_used=_NOW - timedelta(days=300),
+        now=_NOW,
+        environment={"CODEX_HOME": str(codex_home)},
+    )
+
+    assert decision is not None
+    assert decision.last_used == latest
+    assert decision.age_bucket == "30-90d"
 
 
 def test_codex_persistent_state_beats_generic_cache_name() -> None:
