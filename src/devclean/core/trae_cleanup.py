@@ -1,0 +1,471 @@
+"""Audited Trae storage semantics for Windows cleanup.
+
+Trae is VS Code/Electron-derived but its proprietary AI/session state is not
+sufficiently documented to treat unknown folders as disposable. This profile is
+therefore aggressive only for well-understood Electron cache/log/crash subtrees
+and defaults all neighboring user/application state to KEEP.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from functools import lru_cache
+from pathlib import PureWindowsPath
+
+from devclean.core import _application_cleanup_impl as _impl
+from devclean.core._application_cleanup_impl import (
+    ApplicationCleanupRule,
+    ApplicationPolicyDecision,
+    DecisionOwner,
+    LastUseStrategy,
+    MatchKind,
+    PolicyAction,
+    RebuildCost,
+    effective_idle_days,
+)
+
+_MIB = 1024**2
+
+
+@dataclass(frozen=True, slots=True)
+class TraeRootSet:
+    data_roots: tuple[PureWindowsPath, ...]
+    extension_roots: tuple[PureWindowsPath, ...]
+    home_roots: tuple[PureWindowsPath, ...]
+
+
+def _rule(
+    rule_id: str,
+    relative_pattern: str,
+    match_kind: MatchKind,
+    owner: DecisionOwner,
+    rebuild_cost: RebuildCost,
+    label: str,
+    *,
+    root_kind: str = "data",
+    idle_days: float | None = None,
+    min_reclaim_bytes: int = 0,
+    requires_process_closed: bool = False,
+    user_age_buckets: tuple[int, ...] = (),
+    allow_whole_tree: bool = False,
+) -> ApplicationCleanupRule:
+    return ApplicationCleanupRule(
+        rule_id=rule_id,
+        app_id="trae",
+        root_key=f"TRAE_{root_kind.upper()}",
+        relative_pattern=relative_pattern,
+        match_kind=match_kind,
+        owner=owner,
+        last_use=LastUseStrategy.FILE_MTIME,
+        rebuild_cost=rebuild_cost,
+        idle_days=idle_days,
+        min_reclaim_bytes=min_reclaim_bytes,
+        requires_process_closed=requires_process_closed,
+        user_age_buckets=user_age_buckets,
+        allow_whole_tree=allow_whole_tree,
+        label=label,
+    )
+
+
+def _tool_dir(
+    rule_id: str,
+    relative: str,
+    label: str,
+    *,
+    idle_days: float = 7,
+    min_reclaim_bytes: int = 4 * _MIB,
+    rebuild_cost: RebuildCost = RebuildCost.LOW,
+) -> ApplicationCleanupRule:
+    return _rule(
+        rule_id,
+        relative,
+        MatchKind.PREFIX,
+        DecisionOwner.TOOL,
+        rebuild_cost,
+        label,
+        idle_days=idle_days,
+        min_reclaim_bytes=min_reclaim_bytes,
+        requires_process_closed=True,
+        allow_whole_tree=True,
+    )
+
+
+TRAE_RULES: tuple[ApplicationCleanupRule, ...] = (
+    _tool_dir("trae-cache", "Cache", "Trae Chromium resource cache"),
+    _tool_dir("trae-cached-data", "CachedData", "Trae cached application data"),
+    _tool_dir("trae-code-cache", "Code Cache", "Trae Chromium code cache"),
+    _tool_dir("trae-gpu-cache", "GPUCache", "Trae GPU cache", idle_days=3),
+    _tool_dir("trae-dawn-cache", "DawnCache", "Trae WebGPU/Dawn cache", idle_days=3),
+    _tool_dir(
+        "trae-cached-extensions",
+        "CachedExtensions",
+        "Trae extension metadata cache",
+    ),
+    _tool_dir(
+        "trae-cached-extension-vsix",
+        "CachedExtensionVSIXs",
+        "Trae downloaded extension package cache",
+        idle_days=14,
+        min_reclaim_bytes=8 * _MIB,
+        rebuild_cost=RebuildCost.MEDIUM,
+    ),
+    _tool_dir(
+        "trae-logs",
+        "logs",
+        "Trae diagnostic logs",
+        idle_days=7,
+        min_reclaim_bytes=_MIB,
+        rebuild_cost=RebuildCost.NONE,
+    ),
+    _tool_dir(
+        "trae-crashpad-reports",
+        r"Crashpad\reports",
+        "Trae Crashpad reports",
+        idle_days=1,
+        min_reclaim_bytes=_MIB,
+        rebuild_cost=RebuildCost.NONE,
+    ),
+    _tool_dir(
+        "trae-crashpad-pending",
+        r"Crashpad\pending",
+        "Trae pending crash reports",
+        idle_days=1,
+        min_reclaim_bytes=_MIB,
+        rebuild_cost=RebuildCost.NONE,
+    ),
+    _rule(
+        "trae-workspace-state",
+        r"User\workspaceStorage",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Trae workspace-local state; may contain AI/session metadata",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "trae-local-history",
+        r"User\History",
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        RebuildCost.HIGH,
+        "Trae local file history",
+        user_age_buckets=(30, 90, 180),
+    ),
+    _rule(
+        "trae-hot-exit-backups",
+        "Backups",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Trae unsaved editor / recovery data",
+    ),
+    _rule(
+        "trae-user-state",
+        "User",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Trae settings, global storage, extension state, and proprietary AI state",
+    ),
+    _rule(
+        "trae-extension-root",
+        "",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Trae installed extensions",
+        root_kind="extensions",
+    ),
+    _rule(
+        "trae-home-root",
+        "",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Trae home configuration and persistent data",
+        root_kind="home",
+    ),
+    _rule(
+        "trae-unknown-state",
+        "",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Unclassified Trae application state",
+    ),
+)
+
+
+def trae_roots(environment: Mapping[str, str] | None = None) -> TraeRootSet:
+    env = _casefold_env(environment)
+    appdata = env.get("appdata")
+    localappdata = env.get("localappdata")
+    profile = env.get("userprofile")
+    data: list[PureWindowsPath] = []
+    extensions: list[PureWindowsPath] = []
+    homes: list[PureWindowsPath] = []
+
+    explicit_data = env.get("trae_user_data_dir")
+    explicit_extensions = env.get("trae_extensions_dir")
+    if explicit_data:
+        data.append(PureWindowsPath(explicit_data))
+    if explicit_extensions:
+        extensions.append(PureWindowsPath(explicit_extensions))
+
+    if environment is None:
+        running_data, running_extensions = _running_override_roots()
+        data.extend(running_data)
+        extensions.extend(running_extensions)
+
+    if appdata:
+        data.extend(
+            (
+                PureWindowsPath(appdata) / "Trae",
+                PureWindowsPath(appdata) / "Trae CN",
+            )
+        )
+    if localappdata:
+        data.extend(
+            (
+                PureWindowsPath(localappdata) / "Trae",
+                PureWindowsPath(localappdata) / "Trae CN",
+            )
+        )
+    if profile:
+        home = PureWindowsPath(profile) / ".trae"
+        homes.append(home)
+        extensions.append(home / "extensions")
+
+    return TraeRootSet(
+        data_roots=_unique_paths(data),
+        extension_roots=_unique_paths(extensions),
+        home_roots=_unique_paths(homes),
+    )
+
+
+def trae_scan_roots(
+    environment: Mapping[str, str] | None = None,
+) -> tuple[PureWindowsPath, ...]:
+    return trae_roots(environment).data_roots
+
+
+def match_trae_rule(
+    path: str | os.PathLike[str],
+    environment: Mapping[str, str] | None = None,
+) -> ApplicationCleanupRule | None:
+    normalized = _impl._normalize(path)
+    roots = trae_roots(environment)
+    groups = {
+        "TRAE_DATA": roots.data_roots,
+        "TRAE_EXTENSIONS": roots.extension_roots,
+        "TRAE_HOME": roots.home_roots,
+    }
+    matches: list[tuple[int, int, ApplicationCleanupRule]] = []
+    for index, rule in enumerate(TRAE_RULES):
+        for root in groups.get(rule.root_key, ()):
+            normalized_root = _impl._normalize(root)
+            for expanded in _impl._expand_braces(rule.relative_pattern):
+                candidate = normalized_root + ("\\" + expanded if expanded else "")
+                if not _impl._matches(normalized, candidate, rule.match_kind):
+                    continue
+                if rule.owner is DecisionOwner.KEEP:
+                    owner_weight = 3
+                elif rule.owner is DecisionOwner.USER:
+                    owner_weight = 2
+                else:
+                    owner_weight = 1
+                matches.append((len(candidate), owner_weight * 1000 - index, rule))
+    if not matches:
+        return None
+    return max(matches, key=lambda item: (item[0], item[1]))[2]
+
+
+def trae_audited_tool_roots(
+    environment: Mapping[str, str] | None = None,
+) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
+    roots = trae_roots(environment)
+    found: list[tuple[PureWindowsPath, ApplicationCleanupRule]] = []
+    seen: set[str] = set()
+    for rule in TRAE_RULES:
+        if rule.owner is not DecisionOwner.TOOL or not rule.allow_whole_tree:
+            continue
+        if rule.root_key != "TRAE_DATA":
+            continue
+        if any(token in rule.relative_pattern for token in ("*", "?", "[", "{")):
+            continue
+        for root in roots.data_roots:
+            path = root / rule.relative_pattern if rule.relative_pattern else root
+            key = _impl._normalize(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append((path, rule))
+    return tuple(found)
+
+
+def whole_tree_trae_rule(
+    path: str | os.PathLike[str],
+    environment: Mapping[str, str] | None = None,
+) -> ApplicationCleanupRule | None:
+    target = _impl._normalize(path)
+    for root, rule in trae_audited_tool_roots(environment):
+        if target == _impl._normalize(root):
+            return rule
+    return None
+
+
+def evaluate_trae_path(
+    path: str | os.PathLike[str],
+    *,
+    logical_size: int,
+    last_used: datetime | None,
+    now: datetime | None = None,
+    process_running: bool | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> ApplicationPolicyDecision | None:
+    rule = match_trae_rule(path, environment)
+    if rule is None:
+        return None
+    current = _impl._as_utc(now or datetime.now(UTC))
+    assert current is not None
+    observed = _impl._as_utc(last_used)
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
+
+    if rule.owner is DecisionOwner.KEEP:
+        return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
+    if rule.owner is DecisionOwner.USER:
+        return ApplicationPolicyDecision(
+            rule,
+            PolicyAction.USER_DECISION,
+            observed,
+            idle,
+            None,
+            _impl._benefit_score(logical_size, idle, None, rule.rebuild_cost),
+            _impl._age_bucket(idle, rule.user_age_buckets),
+        )
+
+    threshold = effective_idle_days(rule, logical_size)
+    running = process_running
+    if running is None and rule.requires_process_closed:
+        running = trae_process_running()
+    score = _impl._benefit_score(logical_size, idle, threshold, rule.rebuild_cost)
+    if rule.requires_process_closed and running:
+        action = PolicyAction.TOOL_KEEP_IN_USE
+    elif logical_size < rule.min_reclaim_bytes:
+        action = PolicyAction.TOOL_KEEP_LOW_BENEFIT
+    elif idle is None or threshold is None:
+        action = PolicyAction.TOOL_KEEP_UNKNOWN_USAGE
+    elif idle < threshold:
+        action = PolicyAction.TOOL_KEEP_RECENT
+    else:
+        action = PolicyAction.TOOL_DELETE
+    return ApplicationPolicyDecision(rule, action, observed, idle, threshold, score)
+
+
+@lru_cache(maxsize=1)
+def trae_process_running() -> bool:
+    if os.name != "nt":
+        return False
+    script = (
+        "$p=Get-CimInstance Win32_Process | Where-Object { "
+        "$_.Name -ieq 'Trae.exe' -or $_.Name -ieq 'Trae CN.exe' }; "
+        "if ($p) { 'RUNNING' }"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=6,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return True
+    if result.returncode != 0:
+        return True
+    return "RUNNING" in result.stdout
+
+
+@lru_cache(maxsize=1)
+def _running_override_roots() -> tuple[tuple[PureWindowsPath, ...], tuple[PureWindowsPath, ...]]:
+    if os.name != "nt":
+        return (), ()
+    script = (
+        "$p=Get-CimInstance Win32_Process | Where-Object { "
+        "$_.Name -ieq 'Trae.exe' -or $_.Name -ieq 'Trae CN.exe' }; "
+        "$p | ForEach-Object { $_.CommandLine }"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=6,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return (), ()
+    if result.returncode != 0:
+        return (), ()
+    data: list[PureWindowsPath] = []
+    extensions: list[PureWindowsPath] = []
+    for line in result.stdout.splitlines():
+        user_data = _argument_value(line, "--user-data-dir")
+        extension_dir = _argument_value(line, "--extensions-dir")
+        if user_data:
+            data.append(PureWindowsPath(user_data))
+        if extension_dir:
+            extensions.append(PureWindowsPath(extension_dir))
+    return _unique_paths(data), _unique_paths(extensions)
+
+
+def _argument_value(command_line: str, flag: str) -> str | None:
+    pattern = re.compile(
+        rf"(?:^|\s){re.escape(flag)}(?:=|\s+)(?:\"(?P<quoted>[^\"]+)\"|(?P<bare>[^\s]+))",
+        re.IGNORECASE,
+    )
+    match = pattern.search(command_line)
+    if match is None:
+        return None
+    return match.group("quoted") or match.group("bare")
+
+
+def clear_trae_process_cache() -> None:
+    trae_process_running.cache_clear()
+    _running_override_roots.cache_clear()
+
+
+def _unique_paths(paths: list[PureWindowsPath]) -> tuple[PureWindowsPath, ...]:
+    found: list[PureWindowsPath] = []
+    seen: set[str] = set()
+    for path in paths:
+        key = str(path).casefold().rstrip("\\/")
+        if key in seen:
+            continue
+        seen.add(key)
+        found.append(path)
+    return tuple(found)
+
+
+def _casefold_env(environment: Mapping[str, str] | None) -> dict[str, str]:
+    source = os.environ if environment is None else environment
+    return {key.casefold(): value for key, value in source.items() if value}
+
+
+__all__ = [
+    "TRAE_RULES",
+    "TraeRootSet",
+    "clear_trae_process_cache",
+    "evaluate_trae_path",
+    "match_trae_rule",
+    "trae_audited_tool_roots",
+    "trae_process_running",
+    "trae_roots",
+    "trae_scan_roots",
+    "whole_tree_trae_rule",
+]
