@@ -212,6 +212,16 @@ from devclean.core.windsurf_cleanup import (
     windsurf_process_running,
     windsurf_scan_roots,
 )
+from devclean.core.yarn_cleanup import (
+    YARN_RULES,
+    clear_yarn_process_cache,
+    evaluate_yarn_path,
+    match_yarn_rule,
+    whole_tree_yarn_rule,
+    yarn_audited_tool_roots,
+    yarn_process_running,
+    yarn_scan_roots,
+)
 
 _ORIGINAL_APPLICATION_ROOTS = _impl.application_roots
 _ORIGINAL_EVALUATE_APPLICATION_PATH = _impl.evaluate_application_path
@@ -248,6 +258,7 @@ def application_scan_roots(
                 *windsurf_scan_roots(environment),
                 *npm_scan_roots(environment),
                 *pnpm_scan_roots(environment),
+                *yarn_scan_roots(environment),
                 *chrome_scan_roots(environment),
                 *edge_scan_roots(environment),
                 *brave_scan_roots(environment),
@@ -276,6 +287,7 @@ def audited_dynamic_tool_roots(
         *windsurf_audited_tool_roots(environment),
         *npm_audited_tool_roots(environment),
         *pnpm_audited_tool_roots(environment),
+        *yarn_audited_tool_roots(environment),
         *chrome_audited_tool_roots(environment),
         *edge_audited_tool_roots(environment),
         *brave_audited_tool_roots(environment),
@@ -347,6 +359,9 @@ def match_application_rule(
     claude = match_claude_rule(path, environment)
     if claude is not None:
         return claude
+    yarn = match_yarn_rule(path, environment)
+    if yarn is not None:
+        return yarn
     pnpm = match_pnpm_rule(path, environment)
     if pnpm is not None:
         return pnpm
@@ -526,6 +541,15 @@ def evaluate_application_path(
             environment=environment,
         )
     if decision is None:
+        decision = evaluate_yarn_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
+    if decision is None:
         decision = evaluate_pnpm_path(
             path,
             logical_size=logical_size,
@@ -582,6 +606,8 @@ def application_process_running(app_id: str) -> bool:
         return edge_process_running()
     if app_id == "chrome":
         return chrome_process_running()
+    if app_id == "yarn":
+        return yarn_process_running()
     if app_id == "pnpm":
         return pnpm_process_running()
     if app_id == "npm":
@@ -608,6 +634,7 @@ def clear_process_cache() -> None:
     clear_windsurf_process_cache()
     clear_npm_process_cache()
     clear_pnpm_process_cache()
+    clear_yarn_process_cache()
     clear_chrome_process_cache()
     clear_edge_process_cache()
     clear_brave_process_cache()
@@ -676,6 +703,9 @@ def whole_tree_application_rule(
     dynamic = whole_tree_chrome_rule(path, environment)
     if dynamic is not None:
         return dynamic
+    dynamic = whole_tree_yarn_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_pnpm_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -730,6 +760,7 @@ def application_display_name(app_id: str) -> str:
         "cursor": "Cursor",
         "npm": "npm",
         "pnpm": "pnpm",
+        "yarn": "Yarn",
         "vscode": "VS Code",
         "trae": "Trae",
         "windsurf": "Windsurf",
@@ -757,6 +788,7 @@ __all__ = [
     "VIVALDI_RULES",
     "VSCODE_RULES",
     "WINDSURF_RULES",
+    "YARN_RULES",
     "ApplicationCleanupRule",
     "ApplicationPolicyDecision",
     "ApplicationRoot",
