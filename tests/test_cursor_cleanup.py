@@ -77,16 +77,37 @@ def test_cursor_known_cache_is_tool_owned_and_process_guarded() -> None:
 
 
 def test_cursor_graphics_crash_and_extension_caches_are_tool_owned() -> None:
-    paths = {
-        r"C:\Users\alice\AppData\Roaming\Cursor\DawnCache\index": "cursor-roaming-dawn-cache",
-        r"C:\Users\alice\AppData\Roaming\Cursor\GrShaderCache\data": "cursor-roaming-grshader-cache",
-        r"C:\Users\alice\AppData\Roaming\Cursor\ShaderCache\data": "cursor-roaming-shader-cache",
-        r"C:\Users\alice\AppData\Roaming\Cursor\CachedExtensions\index.json": "cursor-roaming-cached-extensions",
-        r"C:\Users\alice\AppData\Roaming\Cursor\CachedExtensionVSIXs\ext.vsix": "cursor-roaming-cached-extension-vsix",
-        r"C:\Users\alice\AppData\Roaming\Cursor\Crashpad\reports\crash.dmp": "cursor-roaming-crashpad-reports",
-        r"C:\Users\alice\AppData\Roaming\Cursor\Crashpad\pending\crash.dmp": "cursor-roaming-crashpad-pending",
-    }
-    for path, rule_id in paths.items():
+    paths = (
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\DawnCache\index",
+            "cursor-roaming-dawn-cache",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\GrShaderCache\data",
+            "cursor-roaming-grshader-cache",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\ShaderCache\data",
+            "cursor-roaming-shader-cache",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\CachedExtensions\index.json",
+            "cursor-roaming-cached-extensions",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\CachedExtensionVSIXs\ext.vsix",
+            "cursor-roaming-cached-extension-vsix",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\Crashpad\reports\crash.dmp",
+            "cursor-roaming-crashpad-reports",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\Crashpad\pending\crash.dmp",
+            "cursor-roaming-crashpad-pending",
+        ),
+    )
+    for path, rule_id in paths:
         rule = match_application_rule(path, _env())
         assert rule is not None
         assert rule.owner is DecisionOwner.TOOL
@@ -119,11 +140,13 @@ def test_cursor_workspace_and_chat_databases_are_user_owned() -> None:
 
 def test_cursor_recovery_copy_rule_outranks_global_storage_keep() -> None:
     recovery = match_application_rule(
-        r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage\state.vscdb.corrupted.1767892516529",
+        r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage"
+        r"\state.vscdb.corrupted.1767892516529",
         _env(),
     )
     backup = match_application_rule(
-        r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage\state.vscdb.backup",
+        r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage"
+        r"\state.vscdb.backup",
         _env(),
     )
     assert recovery is not None
