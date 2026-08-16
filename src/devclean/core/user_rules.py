@@ -44,7 +44,6 @@ from devclean.core._user_rules_impl import (
     parse_rule_documents,
     read_rule_documents,
     render_rule_documents,
-    restore_default_rules,
     reusable_path_pattern,
     rules_dir,
     save_rules,
@@ -55,6 +54,7 @@ from devclean.core.application_cleanup import DecisionOwner, match_application_r
 _ORIGINAL_ADD_AI_VERDICTS = _impl.add_ai_verdicts
 _ORIGINAL_ADD_USER_VERDICTS = _impl.add_user_verdicts
 _ORIGINAL_LOAD_RULES = _impl.load_rules
+_ORIGINAL_RESTORE_DEFAULT_RULES = _impl.restore_default_rules
 _packaged_documents = _impl._packaged_documents
 
 
@@ -202,9 +202,16 @@ def load_rules(*, create_missing: bool = True) -> UserRules:
     )
 
 
+def restore_default_rules() -> UserRules:
+    """Restore packaged defaults without re-enabling unsafe application rules."""
+
+    return _persist_if_sanitized(_ORIGINAL_RESTORE_DEFAULT_RULES())
+
+
 _impl.add_ai_verdicts = add_ai_verdicts
 _impl.add_user_verdicts = add_user_verdicts
 _impl.load_rules = load_rules
+_impl.restore_default_rules = restore_default_rules
 sys.modules[__name__] = _impl
 
 
