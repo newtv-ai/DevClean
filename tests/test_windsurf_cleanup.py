@@ -75,8 +75,8 @@ def test_windsurf_electron_caches_are_tool_owned_and_process_guarded() -> None:
         ): "windsurf-extension-vsix-cache",
         (
             r"C:\Users\alice\AppData\Roaming\Windsurf"
-            r"\Service Worker\CacheStorage\entry"
-        ): "windsurf-service-worker-cache-storage",
+            r"\Service Worker\ScriptCache\entry"
+        ): "windsurf-service-worker-script-cache",
         (
             r"C:\Users\alice\AppData\Roaming\Windsurf"
             r"\Crashpad\reports\crash.dmp"
@@ -109,6 +109,31 @@ def test_windsurf_electron_caches_are_tool_owned_and_process_guarded() -> None:
     )
     assert running is not None
     assert running.action is PolicyAction.TOOL_KEEP_IN_USE
+
+
+def test_windsurf_cache_storage_is_user_owned_persistent_data() -> None:
+    path = (
+        r"C:\Users\alice\AppData\Roaming\Windsurf"
+        r"\Service Worker\CacheStorage\origin\entry"
+    )
+    rule = match_application_rule(path, _env())
+    assert rule is not None
+    assert rule.rule_id == "windsurf-site-cache-storage"
+    assert rule.owner is DecisionOwner.USER
+    decision = evaluate_application_path(
+        path,
+        logical_size=200 * _MIB,
+        last_used=_NOW - timedelta(days=120),
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+    assert decision is not None
+    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Windsurf\Service Worker\CacheStorage",
+        _env(),
+    ) is None
 
 
 def test_windsurf_cascade_memories_and_plans_are_user_owned() -> None:
