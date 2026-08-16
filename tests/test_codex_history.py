@@ -6,6 +6,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -133,10 +134,13 @@ for line in sys.stdin:
             print(json.dumps({"id": msg["id"], "result": {}}), flush=True)
 '''
 
-    def fake_popen(_args: object, **kwargs: object) -> subprocess.Popen[str]:
-        return subprocess.Popen(
-            [sys.executable, "-u", "-c", server],
-            **kwargs,
+    def fake_popen(_args: object, **kwargs: Any) -> subprocess.Popen[str]:
+        return cast(
+            subprocess.Popen[str],
+            subprocess.Popen(
+                [sys.executable, "-u", "-c", server],
+                **kwargs,
+            ),
         )
 
     result = delete_codex_threads(
@@ -173,10 +177,13 @@ for line in sys.stdin:
             print(json.dumps({"id": msg["id"], "error": {"message": "referenced by another thread"}}), flush=True)
 '''
 
-    def fake_popen(_args: object, **kwargs: object) -> subprocess.Popen[str]:
-        return subprocess.Popen(
-            [sys.executable, "-u", "-c", server],
-            **kwargs,
+    def fake_popen(_args: object, **kwargs: Any) -> subprocess.Popen[str]:
+        return cast(
+            subprocess.Popen[str],
+            subprocess.Popen(
+                [sys.executable, "-u", "-c", server],
+                **kwargs,
+            ),
         )
 
     result = delete_codex_threads(
