@@ -127,12 +127,15 @@ def process_guard_allows(
 ) -> bool:
     """Refuse USER/KEEP mutation, then re-check any application process guard."""
 
+    # Refresh process and dynamic-policy caches before determining ownership.
+    # This matters when Claude's autoMemoryDirectory or process state changed
+    # after the scan but before the user clicked Delete.
+    clear_process_cache()
     rule = match_application_rule(path, environment)
     if rule is not None and rule.owner is not DecisionOwner.TOOL:
         return False
     if rule is None or not rule.requires_process_closed:
         return True
-    clear_process_cache()
     return not application_process_running(rule.app_id)
 
 
