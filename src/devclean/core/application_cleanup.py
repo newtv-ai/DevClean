@@ -26,6 +26,14 @@ from devclean.core._application_cleanup_impl import (
     RebuildCost,
     effective_idle_days,
 )
+from devclean.core.android_avd_cleanup import (
+    ANDROID_AVD_RULES,
+    android_avd_process_running,
+    android_avd_scan_roots,
+    clear_android_avd_process_cache,
+    evaluate_android_avd_path,
+    match_android_avd_rule,
+)
 from devclean.core.android_sdk_cleanup import (
     ANDROID_SDK_RULES,
     android_sdk_audited_tool_roots,
@@ -251,6 +259,7 @@ def application_scan_roots(
                 *android_studio_scan_roots(environment),
                 *gradle_scan_roots(environment),
                 *android_sdk_scan_roots(environment),
+                *android_avd_scan_roots(environment),
             )
         )
     )
@@ -287,6 +296,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    android_avd = match_android_avd_rule(path, environment)
+    if android_avd is not None:
+        return android_avd
     android_sdk = match_android_sdk_rule(path, environment)
     if android_sdk is not None:
         return android_sdk
@@ -361,7 +373,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_android_sdk_path(
+    decision = evaluate_android_avd_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -369,6 +381,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_android_sdk_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = evaluate_gradle_path(
             path,
@@ -537,6 +558,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "android_avd":
+        return android_avd_process_running()
     if app_id == "android_sdk":
         return android_sdk_process_running()
     if app_id == "gradle":
@@ -596,6 +619,7 @@ def clear_process_cache() -> None:
     clear_android_studio_process_cache()
     clear_gradle_process_cache()
     clear_android_sdk_process_cache()
+    clear_android_avd_process_cache()
 
 
 def process_guard_allows(
@@ -689,6 +713,7 @@ def whole_tree_application_rule(
 
 def application_display_name(app_id: str) -> str:
     return {
+        "android_avd": "Android Emulator AVD",
         "android_sdk": "Android SDK",
         "gradle": "Gradle",
         "android_studio": "Android Studio",
@@ -712,6 +737,7 @@ def application_display_name(app_id: str) -> str:
 
 
 __all__ = [
+    "ANDROID_AVD_RULES",
     "ANDROID_SDK_RULES",
     "ANDROID_STUDIO_RULES",
     "BRAVE_RULES",
