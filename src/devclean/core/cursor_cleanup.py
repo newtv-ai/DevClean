@@ -403,7 +403,12 @@ def match_cursor_rule(
             if _impl._matches(normalized, candidate, rule.match_kind):
                 # Specificity dominates. On equal specificity, KEEP wins to keep
                 # ambiguous state out of generic deletion authority.
-                owner_weight = 3 if rule.owner is DecisionOwner.KEEP else 2 if rule.owner is DecisionOwner.USER else 1
+                if rule.owner is DecisionOwner.KEEP:
+                    owner_weight = 3
+                elif rule.owner is DecisionOwner.USER:
+                    owner_weight = 2
+                else:
+                    owner_weight = 1
                 matches.append((len(candidate), owner_weight * 1000 - index, rule))
     if not matches:
         return None
