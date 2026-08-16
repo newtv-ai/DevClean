@@ -26,6 +26,16 @@ from devclean.core._application_cleanup_impl import (
     RebuildCost,
     effective_idle_days,
 )
+from devclean.core.android_studio_cleanup import (
+    ANDROID_STUDIO_RULES,
+    android_studio_audited_tool_roots,
+    android_studio_process_running,
+    android_studio_scan_roots,
+    clear_android_studio_process_cache,
+    evaluate_android_studio_path,
+    match_android_studio_rule,
+    whole_tree_android_studio_rule,
+)
 from devclean.core.brave_cleanup import (
     BRAVE_RULES,
     brave_audited_tool_roots,
@@ -218,6 +228,7 @@ def application_scan_roots(
                 *firefox_scan_roots(environment),
                 *jetbrains_scan_roots(environment),
                 *toolbox_scan_roots(environment),
+                *android_studio_scan_roots(environment),
             )
         )
     )
@@ -242,6 +253,7 @@ def audited_dynamic_tool_roots(
         *firefox_audited_tool_roots(environment),
         *jetbrains_audited_tool_roots(environment),
         *toolbox_audited_tool_roots(environment),
+        *android_studio_audited_tool_roots(environment),
     )
 
 
@@ -251,6 +263,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    android_studio = match_android_studio_rule(path, environment)
+    if android_studio is not None:
+        return android_studio
     toolbox = match_toolbox_rule(path, environment)
     if toolbox is not None:
         return toolbox
@@ -316,7 +331,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_toolbox_path(
+    decision = evaluate_android_studio_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -324,6 +339,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_toolbox_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = evaluate_jetbrains_path(
             path,
@@ -465,6 +489,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "android_studio":
+        return android_studio_process_running()
     if app_id == "toolbox":
         return toolbox_process_running()
     if app_id == "jetbrains":
@@ -515,6 +541,7 @@ def clear_process_cache() -> None:
     clear_firefox_process_cache()
     clear_jetbrains_process_cache()
     clear_toolbox_process_cache()
+    clear_android_studio_process_cache()
 
 
 def process_guard_allows(
@@ -538,6 +565,9 @@ def whole_tree_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return a TOOL rule only when *path* is exactly an audited whole-tree root."""
 
+    dynamic = whole_tree_android_studio_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_toolbox_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -599,6 +629,7 @@ def whole_tree_application_rule(
 
 def application_display_name(app_id: str) -> str:
     return {
+        "android_studio": "Android Studio",
         "brave": "Brave",
         "chrome": "Chrome / Chromium",
         "edge": "Microsoft Edge",
@@ -619,6 +650,7 @@ def application_display_name(app_id: str) -> str:
 
 
 __all__ = [
+    "ANDROID_STUDIO_RULES",
     "BRAVE_RULES",
     "CHROME_RULES",
     "CLAUDE_RULES",
