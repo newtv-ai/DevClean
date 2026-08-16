@@ -10,6 +10,7 @@ from devclean.ui.app import DevCleanWindow
 from devclean.ui.claude_maintenance_dialog import open_claude_maintenance_dialog
 from devclean.ui.codex_history_dialog import open_codex_history_dialog
 from devclean.ui.cursor_maintenance_dialog import open_cursor_maintenance_dialog
+from devclean.ui.vscode_maintenance_dialog import open_vscode_maintenance_dialog
 
 
 def _install_tools_menu(root: tk.Tk) -> None:
@@ -26,6 +27,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Cursor 存储维护…",
         command=lambda: open_cursor_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="VS Code 存储维护…",
+        command=lambda: open_vscode_maintenance_dialog(root),
     )
     menu.add_cascade(label="工具", menu=tools)
     root.configure(menu=menu)
