@@ -79,6 +79,40 @@ def _owner_for_stored_rule(rule: DecisionRule) -> DecisionOwner | None:
         return owner
 
     value = rule.value.replace("/", "\\").casefold()
+
+    # More-specific persistent Claude state must win before the broad projects
+    # history marker below. These fallbacks are for portable/cross-user learned
+    # globs that cannot be resolved against the current user's environment.
+    claude_keep_markers = (
+        r"\.claude\plugins",
+        r"\.claude\settings.json",
+        r"\.claude\.credentials.json",
+        r"\.claude\claude.md",
+        r"\.claude\agent-memory",
+        r"\.claude\rules",
+        r"\.claude\skills",
+        r"\.claude\commands",
+        r"\.claude\agents",
+        r"\.claude\output-styles",
+        r"\.claude\keybindings.json",
+        r"\.claude\themes",
+        r"\projects\*\memory",
+        r"%claude_config_dir%\plugins",
+        r"%claude_config_dir%\settings.json",
+        r"%claude_config_dir%\.credentials.json",
+        r"%claude_config_dir%\agent-memory",
+        r"%claude_config_dir%\rules",
+        r"%claude_config_dir%\skills",
+        r"%claude_config_dir%\commands",
+        r"%claude_config_dir%\agents",
+        r"%claude_config_dir%\output-styles",
+        r"%userprofile%\.claude.json",
+    )
+    if any(marker in value for marker in claude_keep_markers):
+        return DecisionOwner.KEEP
+    if "\\.claude.json" in value and "\\.claude\\" not in value:
+        return DecisionOwner.KEEP
+
     user_markers = (
         r"\.codex\sessions",
         r"\.codex\archived_sessions",
@@ -86,9 +120,18 @@ def _owner_for_stored_rule(rule: DecisionRule) -> DecisionOwner | None:
         r"%codex_home%\sessions",
         r"%codex_home%\archived_sessions",
         r"%codex_home%\history.jsonl",
+        r"\.claude\projects",
+        r"\.claude\file-history",
+        r"\.claude\history.jsonl",
+        r"\.claude\stats-cache.json",
+        r"%claude_config_dir%\projects",
+        r"%claude_config_dir%\file-history",
+        r"%claude_config_dir%\history.jsonl",
+        r"%claude_config_dir%\stats-cache.json",
     )
     if any(marker in value for marker in user_markers):
         return DecisionOwner.USER
+
     keep_markers = (
         r"\.codex\plugins\cache",
         r"\.codex\plugins\data",
