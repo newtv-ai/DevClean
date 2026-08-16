@@ -167,19 +167,29 @@ def _append_root(
     except OSError:
         return
     key = os.path.normcase(os.path.normpath(str(path)))
+    replacement = KnownCleanupRoot(
+        path=path,
+        category=category,
+        policy=policy,
+        label=label,
+        allow_inside_system_anchor=allow_inside_system_anchor,
+        delete_root_itself=delete_root_itself,
+    )
     if key in seen:
+        # App-audited TOOL roots are appended after legacy/configured heuristics.
+        # When both identify the same physical directory, the audited root must
+        # upgrade MANUAL_REVIEW/REPORT_ONLY instead of being discarded merely
+        # because it arrived later.  Non-deletable roots never downgrade an
+        # already-known direct cleanup root.
+        if delete_root_itself:
+            for index, existing in enumerate(accepted):
+                existing_key = os.path.normcase(os.path.normpath(str(existing.path)))
+                if existing_key == key:
+                    accepted[index] = replacement
+                    break
         return
     seen.add(key)
-    accepted.append(
-        KnownCleanupRoot(
-            path=path,
-            category=category,
-            policy=policy,
-            label=label,
-            allow_inside_system_anchor=allow_inside_system_anchor,
-            delete_root_itself=delete_root_itself,
-        )
-    )
+    accepted.append(replacement)
 
 
 def known_root_for_path(
