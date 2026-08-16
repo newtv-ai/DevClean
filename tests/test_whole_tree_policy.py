@@ -12,7 +12,11 @@ from devclean.core.application_cleanup import (
     MatchKind,
     RebuildCost,
 )
-from devclean.core.cleanup_catalog import CleanupCategory, CleanupPolicy, KnownCleanupRoot
+from devclean.core.cleanup_catalog import (
+    CleanupCategory,
+    CleanupPolicy,
+    KnownCleanupRoot,
+)
 from devclean.core.whole_tree_policy import (
     WholeTreePolicyRefusal,
     require_application_whole_tree_policy,
@@ -22,7 +26,11 @@ from devclean.scanner.filesystem import ScanRecord, ScanRecordKind
 _MIB = 1024**2
 
 
-def _rule(*, min_reclaim: int = 16 * _MIB, idle_days: float = 30) -> ApplicationCleanupRule:
+def _rule(
+    *,
+    min_reclaim: int = 16 * _MIB,
+    idle_days: float = 30,
+) -> ApplicationCleanupRule:
     return ApplicationCleanupRule(
         rule_id="test-browser-cache",
         app_id="test-browser",
@@ -74,6 +82,10 @@ def _records(path: Path, *, size: int, age_days: int) -> tuple[ScanRecord, ...]:
     )
 
 
+def _fake_scan(records: tuple[ScanRecord, ...]) -> object:
+    return lambda *_args, **_kwargs: iter(records)
+
+
 def test_recent_child_blocks_whole_tree_even_when_root_directory_is_old(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -82,8 +94,16 @@ def test_recent_child_blocks_whole_tree_even_when_root_directory_is_old(
 
     root = tmp_path / "Cache"
     rule = _rule()
-    monkeypatch.setattr(policy, "scan_roots", lambda *_args, **_kwargs: iter(_records(root, size=64 * _MIB, age_days=1)))
-    monkeypatch.setattr(policy, "evaluate_application_path", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        policy,
+        "scan_roots",
+        _fake_scan(_records(root, size=64 * _MIB, age_days=1)),
+    )
+    monkeypatch.setattr(
+        policy,
+        "evaluate_application_path",
+        lambda *_args, **_kwargs: None,
+    )
 
     with pytest.raises(WholeTreePolicyRefusal, match="too recently"):
         require_application_whole_tree_policy(root, (_known(root, rule),))
@@ -97,8 +117,16 @@ def test_stale_large_application_tree_passes_and_returns_fresh_evidence(
 
     root = tmp_path / "Cache"
     rule = _rule()
-    monkeypatch.setattr(policy, "scan_roots", lambda *_args, **_kwargs: iter(_records(root, size=64 * _MIB, age_days=45)))
-    monkeypatch.setattr(policy, "evaluate_application_path", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        policy,
+        "scan_roots",
+        _fake_scan(_records(root, size=64 * _MIB, age_days=45)),
+    )
+    monkeypatch.setattr(
+        policy,
+        "evaluate_application_path",
+        lambda *_args, **_kwargs: None,
+    )
 
     evidence = require_application_whole_tree_policy(root, (_known(root, rule),))
 
@@ -115,8 +143,16 @@ def test_application_tree_below_reclaim_threshold_is_refused(
 
     root = tmp_path / "Cache"
     rule = _rule(min_reclaim=16 * _MIB)
-    monkeypatch.setattr(policy, "scan_roots", lambda *_args, **_kwargs: iter(_records(root, size=2 * _MIB, age_days=90)))
-    monkeypatch.setattr(policy, "evaluate_application_path", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        policy,
+        "scan_roots",
+        _fake_scan(_records(root, size=2 * _MIB, age_days=90)),
+    )
+    monkeypatch.setattr(
+        policy,
+        "evaluate_application_path",
+        lambda *_args, **_kwargs: None,
+    )
 
     with pytest.raises(WholeTreePolicyRefusal, match="minimum reclaim"):
         require_application_whole_tree_policy(root, (_known(root, rule),))
@@ -139,7 +175,7 @@ def test_incomplete_fresh_scan_fails_closed(
             error="access denied",
         ),
     )
-    monkeypatch.setattr(policy, "scan_roots", lambda *_args, **_kwargs: iter(records))
+    monkeypatch.setattr(policy, "scan_roots", _fake_scan(records))
 
     with pytest.raises(WholeTreePolicyRefusal, match="incomplete"):
         require_application_whole_tree_policy(root, (_known(root, _rule()),))
@@ -184,8 +220,16 @@ def test_non_mtime_rule_without_native_evaluator_fails_closed(
         allow_whole_tree=rule.allow_whole_tree,
         label=rule.label,
     )
-    monkeypatch.setattr(policy, "scan_roots", lambda *_args, **_kwargs: iter(_records(root, size=64 * _MIB, age_days=90)))
-    monkeypatch.setattr(policy, "evaluate_application_path", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        policy,
+        "scan_roots",
+        _fake_scan(_records(root, size=64 * _MIB, age_days=90)),
+    )
+    monkeypatch.setattr(
+        policy,
+        "evaluate_application_path",
+        lambda *_args, **_kwargs: None,
+    )
 
     with pytest.raises(WholeTreePolicyRefusal, match="cannot be re-established"):
         require_application_whole_tree_policy(root, (_known(root, rule),))
