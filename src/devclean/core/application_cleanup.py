@@ -26,6 +26,16 @@ from devclean.core._application_cleanup_impl import (
     RebuildCost,
     effective_idle_days,
 )
+from devclean.core.android_sdk_cleanup import (
+    ANDROID_SDK_RULES,
+    android_sdk_audited_tool_roots,
+    android_sdk_process_running,
+    android_sdk_scan_roots,
+    clear_android_sdk_process_cache,
+    evaluate_android_sdk_path,
+    match_android_sdk_rule,
+    whole_tree_android_sdk_rule,
+)
 from devclean.core.android_studio_cleanup import (
     ANDROID_STUDIO_RULES,
     android_studio_audited_tool_roots,
@@ -240,6 +250,7 @@ def application_scan_roots(
                 *toolbox_scan_roots(environment),
                 *android_studio_scan_roots(environment),
                 *gradle_scan_roots(environment),
+                *android_sdk_scan_roots(environment),
             )
         )
     )
@@ -266,6 +277,7 @@ def audited_dynamic_tool_roots(
         *toolbox_audited_tool_roots(environment),
         *android_studio_audited_tool_roots(environment),
         *gradle_audited_tool_roots(environment),
+        *android_sdk_audited_tool_roots(environment),
     )
 
 
@@ -275,6 +287,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    android_sdk = match_android_sdk_rule(path, environment)
+    if android_sdk is not None:
+        return android_sdk
     gradle = match_gradle_rule(path, environment)
     if gradle is not None:
         return gradle
@@ -346,7 +361,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_gradle_path(
+    decision = evaluate_android_sdk_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -354,6 +369,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_gradle_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = evaluate_android_studio_path(
             path,
@@ -513,6 +537,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "android_sdk":
+        return android_sdk_process_running()
     if app_id == "gradle":
         return gradle_process_running()
     if app_id == "android_studio":
@@ -569,6 +595,7 @@ def clear_process_cache() -> None:
     clear_toolbox_process_cache()
     clear_android_studio_process_cache()
     clear_gradle_process_cache()
+    clear_android_sdk_process_cache()
 
 
 def process_guard_allows(
@@ -592,6 +619,9 @@ def whole_tree_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return a TOOL rule only when *path* is exactly an audited whole-tree root."""
 
+    dynamic = whole_tree_android_sdk_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_gradle_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -659,6 +689,7 @@ def whole_tree_application_rule(
 
 def application_display_name(app_id: str) -> str:
     return {
+        "android_sdk": "Android SDK",
         "gradle": "Gradle",
         "android_studio": "Android Studio",
         "brave": "Brave",
@@ -681,6 +712,7 @@ def application_display_name(app_id: str) -> str:
 
 
 __all__ = [
+    "ANDROID_SDK_RULES",
     "ANDROID_STUDIO_RULES",
     "BRAVE_RULES",
     "CHROME_RULES",
