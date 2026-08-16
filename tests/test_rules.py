@@ -17,6 +17,7 @@ from tests import _test_rules_impl as _original
 
 _REPLACED = {
     "test_ai_rules_port_user_profile_and_reuse_dated_path_shapes",
+    "test_ai_rules_replace_encoded_foreign_username_and_dynamic_hash",
     "test_age_dependent_delete_is_portable_but_not_generalized",
     "test_conflicting_ai_shape_removes_template_and_keeps_exact_answers",
 }
