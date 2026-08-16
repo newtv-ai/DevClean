@@ -243,12 +243,12 @@ def pnpm_roots(environment: Mapping[str, str] | None = None) -> PnpmRootSet:
     if global_bin_value:
         global_bins.append(PureWindowsPath(global_bin_value))
     if store_value:
-        stores.append(PureWindowsPath(store_value))
+        stores.append(_store_config_root(PureWindowsPath(store_value)))
 
     if environment is None:
         active_store = _active_pnpm_store_path()
         if active_store:
-            stores.append(PureWindowsPath(active_store))
+            stores.append(_store_config_root(PureWindowsPath(active_store)))
         for volume in fixed_volume_roots():
             candidate = PureWindowsPath(str(volume)) / ".pnpm-store"
             if _path_is_directory(candidate):
@@ -482,6 +482,13 @@ def _first_config_path(
         or environment.get(f"npm_config_{env_suffix}")
         or effective.get(config_key)
     )
+
+
+def _store_config_root(path: PureWindowsPath) -> PureWindowsPath:
+    name = path.name.casefold()
+    if len(name) > 1 and name.startswith("v") and name[1:].isdigit():
+        return path.parent
+    return path
 
 
 def _unique_paths(paths: list[PureWindowsPath]) -> tuple[PureWindowsPath, ...]:
