@@ -22,7 +22,6 @@ from devclean.core.firefox_cleanup import (
     evaluate_firefox_path,
     firefox_roots,
     match_firefox_rule,
-    whole_tree_firefox_rule,
 )
 from devclean.core.user_rules import default_rules
 
@@ -105,7 +104,9 @@ def test_firefox_local_profile_is_cache_only_tool_root() -> None:
     assert decision.action is PolicyAction.TOOL_DELETE
 
 
-def test_explicit_local_profile_does_not_authorize_sibling_directories(tmp_path: Path) -> None:
+def test_explicit_local_profile_does_not_authorize_sibling_directories(
+    tmp_path: Path,
+) -> None:
     parent = tmp_path / "shared-cache-parent"
     profile = parent / "FirefoxLocalProfile"
     sibling = parent / "UnrelatedApp"
@@ -129,7 +130,9 @@ def test_explicit_local_profile_does_not_authorize_sibling_directories(tmp_path:
     assert whole_tree_application_rule(sibling, env) is None
 
 
-def test_custom_profile_never_gains_whole_tree_authority_but_cache_child_can(tmp_path: Path) -> None:
+def test_custom_profile_never_gains_whole_tree_authority_but_cache_child_can(
+    tmp_path: Path,
+) -> None:
     profile = tmp_path / "portable-profile"
     cache = profile / "cache2"
     cache.mkdir(parents=True)
