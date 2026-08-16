@@ -20,7 +20,11 @@ from functools import lru_cache
 from heapq import heappush, heapreplace
 from pathlib import Path
 
-from devclean.core.application_cleanup import PolicyAction, evaluate_application_path
+from devclean.core.application_cleanup import (
+    PolicyAction,
+    application_display_name,
+    evaluate_application_path,
+)
 from devclean.core.cleanup_catalog import (
     CleanupCategory,
     CleanupPolicy,
@@ -660,7 +664,7 @@ def _application_classification(
     category = _infer_presentation_category(path, delete_config)
     if "crashpad" in rule.rule_id:
         category = CleanupCategory.CRASH_DUMPS
-    elif "log" in rule.rule_id:
+    elif "log" in rule.rule_id or "debug" in rule.rule_id:
         category = CleanupCategory.SYSTEM_LOGS
     elif any(token in rule.rule_id for token in ("cache", "plugin")):
         category = CleanupCategory.IDE_CACHE
@@ -700,7 +704,12 @@ def _application_classification(
     if decision.action is PolicyAction.TOOL_DELETE:
         threshold = decision.effective_idle_days
         threshold_text = "未知" if threshold is None else f"{threshold:g} 天"
-        guard = "；执行前必须确认 Codex 已关闭" if rule.requires_process_closed else ""
+        app_name = application_display_name(rule.app_id)
+        guard = (
+            f"；执行前必须确认 {app_name} 已关闭"
+            if rule.requires_process_closed
+            else ""
+        )
         guard_tags = ("requires_process_closed",) if rule.requires_process_closed else ()
         return _Classification(
             category,
