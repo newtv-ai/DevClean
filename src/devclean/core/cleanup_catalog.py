@@ -153,9 +153,11 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.CRASH_DUMPS
     if "log" in lower or "debug" in lower:
         return CleanupCategory.SYSTEM_LOGS
-    if lower.startswith("chrome-updater-"):
+    if lower.startswith("chrome-updater-") or lower.startswith(
+        "brave-updater-install"
+    ):
         return CleanupCategory.INSTALLERS_DOWNLOADS
-    if lower.startswith(("chrome-", "edge-")):
+    if lower.startswith(("brave-", "chrome-", "edge-")):
         return CleanupCategory.BROWSER_CACHE
     if lower.startswith(("npm-", "pnpm-")):
         return CleanupCategory.NPM_CACHE
