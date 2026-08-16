@@ -158,10 +158,6 @@ class TriageSession:
         self._observation_rules: UserRules | None = None
         self._keep_cache_rules: UserRules | None = None
         self._keep_cache: tuple[str, ...] = ()
-        # Whole-tree candidates and their running totals. A scan emits a
-        # directory before any of its descendants, so one streaming pass yields
-        # exact subtree sizes without a second walk over hundreds of thousands
-        # of cache entries.
         self._directory_totals: dict[str, DirectorySubtreeTotals] = {}
         self._ancestor_cache: dict[str, tuple[str, ...]] = {}
 
@@ -183,10 +179,6 @@ class TriageSession:
         else:
             self._accumulate_into_directories(item)
 
-        # REPORT_ONLY observations are never displayed, exported, selected or
-        # promoted by a DELETE rule. Their sizes have already contributed to any
-        # enclosing whole-directory candidate above, so retaining the objects
-        # would only consume memory on large profile scans.
         if (
             item.lane is not ReviewLane.REPORT_ONLY
             and item.execution_policy is ExecutionPolicy.USER_CHOICE_DELETE
@@ -232,11 +224,7 @@ class TriageSession:
             )
 
     def _registered_ancestors(self, directory: str) -> tuple[str, ...]:
-        """Return every registered candidate that contains *directory*.
-
-        Most files in a cache share a parent, so this walk runs once per
-        directory rather than once per file.
-        """
+        """Return every registered candidate that contains *directory*."""
 
         found: list[str] = []
         current = directory
@@ -674,10 +662,14 @@ def _application_classification(
         category = CleanupCategory.CRASH_DUMPS
     elif "log" in rule.rule_id:
         category = CleanupCategory.SYSTEM_LOGS
-    elif any(token in rule.rule_id for token in ("cache", "plugin", "codex-")):
+    elif any(token in rule.rule_id for token in ("cache", "plugin")):
         category = CleanupCategory.IDE_CACHE
 
-    common_tags = ("application_policy", f"application:{rule.app_id}", f"rule:{rule.rule_id}")
+    common_tags = (
+        "application_policy",
+        f"application:{rule.app_id}",
+        f"rule:{rule.rule_id}",
+    )
     if decision.action is PolicyAction.KEEP_PROTECTED:
         return _Classification(
             category,
@@ -709,6 +701,7 @@ def _application_classification(
         threshold = decision.effective_idle_days
         threshold_text = "未知" if threshold is None else f"{threshold:g} 天"
         guard = "；执行前必须确认 Codex 已关闭" if rule.requires_process_closed else ""
+        guard_tags = ("requires_process_closed",) if rule.requires_process_closed else ()
         return _Classification(
             category,
             ReviewLane.DETERMINISTIC_CANDIDATE,
@@ -726,7 +719,7 @@ def _application_classification(
                 "tool_decision",
                 "regenerable",
                 f"benefit:{decision.benefit_score}",
-                *("requires_process_closed",) if rule.requires_process_closed else (),
+                *guard_tags,
             ),
         )
 
