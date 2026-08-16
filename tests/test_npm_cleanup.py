@@ -65,6 +65,11 @@ def test_npm_explicit_cache_prefix_userconfig_and_logs_dir_are_first_class() -> 
     assert PureWindowsPath(r"E:\npm-global") in scan
     assert PureWindowsPath(r"G:\npm-logs") in scan
 
+    userconfig = match_application_rule(r"F:\npm\account.npmrc", env)
+    assert userconfig is not None
+    assert userconfig.rule_id == "npm-user-config"
+    assert userconfig.owner is DecisionOwner.KEEP
+
 
 def test_npm_content_npx_and_default_logs_are_tool_owned() -> None:
     paths = {
@@ -94,6 +99,17 @@ def test_npm_content_npx_and_default_logs_are_tool_owned() -> None:
         assert decision.rule.owner is DecisionOwner.TOOL
         assert decision.rule.rule_id == rule_id
         assert decision.action is PolicyAction.TOOL_DELETE
+
+
+def test_npx_cached_package_metadata_stays_under_npx_tool_semantics() -> None:
+    path = (
+        r"C:\Users\alice\AppData\Local\npm-cache"
+        r"\_npx\deadbeef\package.json"
+    )
+    rule = match_application_rule(path, _env())
+    assert rule is not None
+    assert rule.rule_id == "npm-npx-cache"
+    assert rule.owner is DecisionOwner.TOOL
 
 
 def test_npm_cache_items_are_blocked_while_npm_is_running() -> None:
