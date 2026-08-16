@@ -283,6 +283,7 @@ def vscode_roots(environment: Mapping[str, str] | None = None) -> VSCodeRootSet:
 
     appdata = env.get("appdata")
     profile = env.get("userprofile")
+    temp_base = env.get("temp") or env.get("tmp")
     if appdata:
         data.extend(
             (
@@ -298,10 +299,15 @@ def vscode_roots(environment: Mapping[str, str] | None = None) -> VSCodeRootSet:
                 profile_path / ".vscode-insiders" / "extensions",
             )
         )
-        # Remote-WSL downloads server archives/trees to this Windows-side cache
-        # before installing them inside a distro. The cache is re-downloadable;
-        # remote authoritative state lives inside the distro instead.
-        wsl_downloads.append(profile_path / "vscode-remote-wsl" / "stable")
+        # Current Remote-WSL builds cache downloaded server packages under the
+        # user profile, partitioned by VS Code quality and commit.
+        wsl_base = profile_path / "vscode-remote-wsl"
+        wsl_downloads.extend((wsl_base / "stable", wsl_base / "insider"))
+    if temp_base:
+        # Older Remote-WSL builds used the Windows temp directory for the same
+        # re-downloadable server archives. Keep this legacy root audited so old
+        # machines do not retain gigabytes of orphaned server packages forever.
+        wsl_downloads.append(PureWindowsPath(temp_base) / "vscode-remote-wsl")
 
     portable = env.get("vscode_portable")
     if portable:
@@ -480,15 +486,14 @@ def evaluate_vscode_path(
 def vscode_process_running() -> bool:
     if os.name != "nt":
         return False
+    script = (
+        "$p=Get-CimInstance Win32_Process | Where-Object { "
+        "$_.Name -ieq 'Code.exe' -or $_.Name -ieq 'Code - Insiders.exe' }; "
+        "if ($p) { 'RUNNING' }"
+    )
     try:
         result = subprocess.run(
-            [
-                "powershell.exe",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "$p=Get-Process -Name Code -ErrorAction SilentlyContinue; if ($p) { 'RUNNING' }",
-            ],
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
             check=False,
             capture_output=True,
             text=True,
@@ -506,7 +511,8 @@ def _running_override_roots() -> tuple[tuple[PureWindowsPath, ...], tuple[PureWi
     if os.name != "nt":
         return (), ()
     script = (
-        "$p=Get-CimInstance Win32_Process | Where-Object { $_.Name -ieq 'Code.exe' }; "
+        "$p=Get-CimInstance Win32_Process | Where-Object { "
+        "$_.Name -ieq 'Code.exe' -or $_.Name -ieq 'Code - Insiders.exe' }; "
         "$p | ForEach-Object { $_.CommandLine }"
     )
     try:
