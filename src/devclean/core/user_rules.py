@@ -203,15 +203,9 @@ def _remove_semantically_invalid_rules(
         return rule.match is not RuleMatch.PATH_GLOB
 
     delete_rules = tuple(
-        rule
-        for rule in rules.delete.rules
-        if keep_rule(rule, RuleDecision.DELETE)
+        rule for rule in rules.delete.rules if keep_rule(rule, RuleDecision.DELETE)
     )
-    keep_rules = tuple(
-        rule
-        for rule in rules.keep.rules
-        if keep_rule(rule, RuleDecision.KEEP)
-    )
+    keep_rules = tuple(rule for rule in rules.keep.rules if keep_rule(rule, RuleDecision.KEEP))
     if delete_rules == rules.delete.rules and keep_rules == rules.keep.rules:
         return rules, False
     return (
@@ -267,9 +261,7 @@ def add_user_verdicts(
 def load_rules(*, create_missing: bool = True) -> UserRules:
     """Load rules and migrate stale generic authority over application data."""
 
-    return _persist_if_sanitized(
-        _ORIGINAL_LOAD_RULES(create_missing=create_missing)
-    )
+    return _persist_if_sanitized(_ORIGINAL_LOAD_RULES(create_missing=create_missing))
 
 
 def restore_default_rules() -> UserRules:
