@@ -64,6 +64,16 @@ from devclean.core.vscode_cleanup import (
     vscode_scan_roots,
     whole_tree_vscode_rule,
 )
+from devclean.core.windsurf_cleanup import (
+    WINDSURF_RULES,
+    clear_windsurf_process_cache,
+    evaluate_windsurf_path,
+    match_windsurf_rule,
+    windsurf_audited_tool_roots,
+    windsurf_process_running,
+    windsurf_scan_roots,
+    whole_tree_windsurf_rule,
+)
 
 _ORIGINAL_APPLICATION_ROOTS = _impl.application_roots
 _ORIGINAL_EVALUATE_APPLICATION_PATH = _impl.evaluate_application_path
@@ -97,6 +107,7 @@ def application_scan_roots(
                 *cursor_scan_roots(environment),
                 *vscode_scan_roots(environment),
                 *trae_scan_roots(environment),
+                *windsurf_scan_roots(environment),
             )
         )
     )
@@ -110,6 +121,7 @@ def audited_dynamic_tool_roots(
     return (
         *vscode_audited_tool_roots(environment),
         *trae_audited_tool_roots(environment),
+        *windsurf_audited_tool_roots(environment),
     )
 
 
@@ -119,6 +131,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    windsurf = match_windsurf_rule(path, environment)
+    if windsurf is not None:
+        return windsurf
     trae = match_trae_rule(path, environment)
     if trae is not None:
         return trae
@@ -151,7 +166,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_trae_path(
+    decision = evaluate_windsurf_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -159,6 +174,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_trae_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = evaluate_vscode_path(
             path,
@@ -201,6 +225,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "windsurf":
+        return windsurf_process_running()
     if app_id == "trae":
         return trae_process_running()
     if app_id == "vscode":
@@ -218,6 +244,7 @@ def clear_process_cache() -> None:
     clear_cursor_process_cache()
     clear_vscode_process_cache()
     clear_trae_process_cache()
+    clear_windsurf_process_cache()
 
 
 def process_guard_allows(
@@ -241,6 +268,9 @@ def whole_tree_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return a TOOL rule only when *path* is exactly an audited whole-tree root."""
 
+    dynamic = whole_tree_windsurf_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_trae_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -274,6 +304,7 @@ def application_display_name(app_id: str) -> str:
         "cursor": "Cursor",
         "vscode": "VS Code",
         "trae": "Trae",
+        "windsurf": "Windsurf",
     }.get(app_id, app_id)
 
 
@@ -283,6 +314,7 @@ __all__ = [
     "CURSOR_RULES",
     "TRAE_RULES",
     "VSCODE_RULES",
+    "WINDSURF_RULES",
     "ApplicationCleanupRule",
     "ApplicationPolicyDecision",
     "ApplicationRoot",
