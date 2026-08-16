@@ -11,6 +11,7 @@ from devclean.core.application_cleanup import (
     PolicyAction,
     application_scan_roots,
     evaluate_application_path,
+    match_application_rule,
     process_guard_allows,
     whole_tree_application_rule,
 )
@@ -32,13 +33,18 @@ def _env() -> dict[str, str]:
     }
 
 
-def test_vscode_default_stable_and_insiders_roots_are_discovered() -> None:
+def test_vscode_default_stable_insiders_and_wsl_roots_are_discovered() -> None:
     roots = vscode_roots(_env())
-    assert PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Code") in roots.data_roots
-    assert PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Code - Insiders") in roots.data_roots
+    stable = PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Code")
+    insiders = PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Code - Insiders")
+    wsl_cache = PureWindowsPath(r"C:\Users\alice\vscode-remote-wsl\stable")
+    assert stable in roots.data_roots
+    assert insiders in roots.data_roots
     assert PureWindowsPath(r"C:\Users\alice\.vscode\extensions") in roots.extension_roots
     assert PureWindowsPath(r"C:\Users\alice\.vscode-insiders\extensions") in roots.extension_roots
-    assert PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Code") in application_scan_roots(_env())
+    assert roots.wsl_download_roots == (wsl_cache,)
+    assert stable in application_scan_roots(_env())
+    assert wsl_cache in application_scan_roots(_env())
 
 
 def test_vscode_portable_and_explicit_roots_are_first_class() -> None:
@@ -84,6 +90,73 @@ def test_vscode_cache_is_tool_owned_and_process_guarded() -> None:
         path,
         logical_size=200 * _MIB,
         last_used=_NOW - timedelta(days=20),
+        now=_NOW,
+        process_running=True,
+        environment=_env(),
+    )
+    assert running is not None
+    assert running.action is PolicyAction.TOOL_KEEP_IN_USE
+
+
+def test_vscode_extended_electron_caches_are_tool_owned() -> None:
+    paths = (
+        (
+            r"C:\Users\alice\AppData\Roaming\Code\CachedExtensions\index.json",
+            "vscode-cached-extensions",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Code\GrShaderCache\data",
+            "vscode-grshader-cache",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Code\ShaderCache\data",
+            "vscode-shader-cache",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Code\Service Worker\CacheStorage\entry",
+            "vscode-service-worker-cache-storage",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Code\Service Worker\ScriptCache\entry",
+            "vscode-service-worker-script-cache",
+        ),
+    )
+    for path, rule_id in paths:
+        rule = match_application_rule(path, _env())
+        assert rule is not None
+        assert rule.owner is DecisionOwner.TOOL
+        assert rule.rule_id == rule_id
+
+
+def test_vscode_other_service_worker_state_is_not_blanket_deleted() -> None:
+    rule = match_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Code\Service Worker\Database\000003.log",
+        _env(),
+    )
+    assert rule is not None
+    assert rule.rule_id == "vscode-service-worker-other-state"
+    assert rule.owner is DecisionOwner.KEEP
+
+
+def test_vscode_wsl_server_download_cache_is_tool_owned_and_guarded() -> None:
+    path = r"C:\Users\alice\vscode-remote-wsl\stable\abc123\server.tar.gz"
+    decision = evaluate_application_path(
+        path,
+        logical_size=500 * _MIB,
+        last_used=_NOW - timedelta(days=30),
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+    assert decision is not None
+    assert decision.rule.rule_id == "vscode-wsl-server-download-cache"
+    assert decision.rule.owner is DecisionOwner.TOOL
+    assert decision.action is PolicyAction.TOOL_DELETE
+
+    running = evaluate_application_path(
+        path,
+        logical_size=500 * _MIB,
+        last_used=_NOW - timedelta(days=30),
         now=_NOW,
         process_running=True,
         environment=_env(),
@@ -153,19 +226,35 @@ def test_vscode_portable_temp_is_tool_owned_but_recent_data_is_kept() -> None:
     assert recent is not None and recent.action is PolicyAction.TOOL_KEEP_RECENT
 
 
-def test_vscode_dynamic_whole_tree_cache_root_is_audited() -> None:
+def test_vscode_dynamic_whole_tree_cache_roots_are_exact() -> None:
     env = {**_env(), "VSCODE_USER_DATA_DIR": r"D:\VSCodeState"}
     cache = r"D:\VSCodeState\Cache"
-    rule = whole_tree_application_rule(cache, env)
-    assert rule is not None
-    assert rule.rule_id == "vscode-cache"
-    assert rule.owner is DecisionOwner.TOOL
+    cache_rule = whole_tree_application_rule(cache, env)
+    assert cache_rule is not None
+    assert cache_rule.rule_id == "vscode-cache"
+    assert cache_rule.owner is DecisionOwner.TOOL
+
+    wsl_root = r"C:\Users\alice\vscode-remote-wsl\stable"
+    wsl_rule = whole_tree_application_rule(wsl_root, env)
+    assert wsl_rule is not None
+    assert wsl_rule.rule_id == "vscode-wsl-server-download-cache"
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Code",
+        env,
+    ) is None
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\.vscode\extensions",
+        env,
+    ) is None
 
 
 def test_vscode_process_guard_never_allows_workspace_or_backup_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace = r"C:\Users\alice\AppData\Roaming\Code\User\workspaceStorage\abc\state.vscdb"
+    workspace = (
+        r"C:\Users\alice\AppData\Roaming\Code\User\workspaceStorage"
+        r"\abc\state.vscdb"
+    )
     backup = r"C:\Users\alice\AppData\Roaming\Code\Backups\window\untitled.txt"
     assert not process_guard_allows(workspace, _env())
     assert not process_guard_allows(backup, _env())
@@ -174,17 +263,26 @@ def test_vscode_process_guard_never_allows_workspace_or_backup_state(
         "devclean.core.application_cleanup.vscode_process_running",
         lambda: True,
     )
-    assert not process_guard_allows(r"C:\Users\alice\AppData\Roaming\Code\Cache\data_0", _env())
+    assert not process_guard_allows(
+        r"C:\Users\alice\AppData\Roaming\Code\Cache\data_0",
+        _env(),
+    )
+    assert not process_guard_allows(
+        r"C:\Users\alice\vscode-remote-wsl\stable\abc\server.tar.gz",
+        _env(),
+    )
 
 
-def test_catalog_upgrades_vscode_cache_but_not_user_data_root(tmp_path: Path) -> None:
+def test_catalog_upgrades_vscode_cache_and_wsl_download_root(tmp_path: Path) -> None:
     appdata = tmp_path / "roaming"
     home = tmp_path / "home"
     code = appdata / "Code"
     cache = code / "Cache"
     workspace = code / "User" / "workspaceStorage"
+    wsl_cache = home / "vscode-remote-wsl" / "stable"
     cache.mkdir(parents=True)
     workspace.mkdir(parents=True)
+    wsl_cache.mkdir(parents=True)
     env = {
         "USERPROFILE": str(home),
         "APPDATA": str(appdata),
@@ -196,12 +294,15 @@ def test_catalog_upgrades_vscode_cache_but_not_user_data_root(tmp_path: Path) ->
     by_path = {os.path.normcase(str(root.path)): root for root in discovered}
     code_root = by_path[os.path.normcase(str(code))]
     cache_root = by_path[os.path.normcase(str(cache))]
+    wsl_root = by_path[os.path.normcase(str(wsl_cache))]
     workspace_root = by_path.get(os.path.normcase(str(workspace)))
 
     assert code_root.policy is CleanupPolicy.REPORT_ONLY
     assert not code_root.delete_root_itself
     assert cache_root.policy is CleanupPolicy.VENDOR_MANAGED
     assert cache_root.delete_root_itself
+    assert wsl_root.policy is CleanupPolicy.VENDOR_MANAGED
+    assert wsl_root.delete_root_itself
     assert workspace_root is None or not workspace_root.delete_root_itself
 
 
