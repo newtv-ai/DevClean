@@ -44,6 +44,16 @@ from devclean.core.cursor_cleanup import (
     evaluate_cursor_path,
     match_cursor_rule,
 )
+from devclean.core.vscode_cleanup import (
+    VSCODE_RULES,
+    clear_vscode_process_cache,
+    evaluate_vscode_path,
+    match_vscode_rule,
+    vscode_audited_tool_roots,
+    vscode_process_running,
+    vscode_scan_roots,
+    whole_tree_vscode_rule,
+)
 
 _ORIGINAL_APPLICATION_ROOTS = _impl.application_roots
 _ORIGINAL_EVALUATE_APPLICATION_PATH = _impl.evaluate_application_path
@@ -54,7 +64,7 @@ _ORIGINAL_APPLICATION_PROCESS_RUNNING = _impl.application_process_running
 def application_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[ApplicationRoot, ...]:
-    """Return all audited application roots, including redirected locations."""
+    """Return audited roots represented by the fixed-key application profiles."""
 
     return (
         *_ORIGINAL_APPLICATION_ROOTS(environment),
@@ -71,9 +81,22 @@ def application_scan_roots(
     codex = tuple(root.path for root in _ORIGINAL_APPLICATION_ROOTS(environment))
     return tuple(
         dict.fromkeys(
-            (*codex, *claude_scan_roots(environment), *cursor_scan_roots(environment))
+            (
+                *codex,
+                *claude_scan_roots(environment),
+                *cursor_scan_roots(environment),
+                *vscode_scan_roots(environment),
+            )
         )
     )
+
+
+def audited_dynamic_tool_roots(
+    environment: Mapping[str, str] | None = None,
+) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
+    """Return whole-tree TOOL roots for profiles with multiple/dynamic roots."""
+
+    return vscode_audited_tool_roots(environment)
 
 
 def match_application_rule(
@@ -82,6 +105,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    vscode = match_vscode_rule(path, environment)
+    if vscode is not None:
+        return vscode
     cursor = match_cursor_rule(path, environment)
     if cursor is not None:
         return cursor
@@ -108,7 +134,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_cursor_path(
+    decision = evaluate_vscode_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -116,6 +142,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_cursor_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = evaluate_claude_path(
             path,
@@ -140,6 +175,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "vscode":
+        return vscode_process_running()
     if app_id == "cursor":
         return cursor_process_running()
     if app_id == "claude":
@@ -151,6 +188,7 @@ def clear_process_cache() -> None:
     _impl.clear_process_cache()
     clear_claude_process_cache()
     clear_cursor_process_cache()
+    clear_vscode_process_cache()
 
 
 def process_guard_allows(
@@ -172,8 +210,11 @@ def whole_tree_application_rule(
     path: str | os.PathLike[str],
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationCleanupRule | None:
-    """Return a TOOL rule only when *path* is exactly its audited whole-tree root."""
+    """Return a TOOL rule only when *path* is exactly an audited whole-tree root."""
 
+    dynamic = whole_tree_vscode_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     rule = match_application_rule(path, environment)
     if (
         rule is None
@@ -199,6 +240,7 @@ def application_display_name(app_id: str) -> str:
         "codex": "Codex",
         "claude": "Claude Code",
         "cursor": "Cursor",
+        "vscode": "VS Code",
     }.get(app_id, app_id)
 
 
@@ -206,6 +248,7 @@ __all__ = [
     "CLAUDE_RULES",
     "CODEX_RULES",
     "CURSOR_RULES",
+    "VSCODE_RULES",
     "ApplicationCleanupRule",
     "ApplicationPolicyDecision",
     "ApplicationRoot",
@@ -218,6 +261,7 @@ __all__ = [
     "application_process_running",
     "application_roots",
     "application_scan_roots",
+    "audited_dynamic_tool_roots",
     "clear_process_cache",
     "effective_idle_days",
     "evaluate_application_path",

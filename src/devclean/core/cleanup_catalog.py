@@ -15,6 +15,7 @@ from devclean.core.application_cleanup import (
     DecisionOwner,
     application_roots,
     application_scan_roots,
+    audited_dynamic_tool_roots,
 )
 from devclean.core.rule_schema import CleanupCategory, CleanupPolicy, SourceDomain
 from devclean.core.user_rules import (
@@ -134,6 +135,17 @@ def _append_application_roots(
                 delete_root_itself=True,
             )
 
+    for path, rule in audited_dynamic_tool_roots(environment):
+        _append_root(
+            accepted,
+            seen,
+            Path(str(path)),
+            category=_application_category(rule.rule_id),
+            policy=CleanupPolicy.VENDOR_MANAGED,
+            label=rule.label,
+            delete_root_itself=True,
+        )
+
 
 def _application_category(rule_id: str) -> CleanupCategory:
     lower = rule_id.casefold()
@@ -179,7 +191,7 @@ def _append_root(
         # App-audited TOOL roots are appended after legacy/configured heuristics.
         # When both identify the same physical directory, the audited root must
         # upgrade MANUAL_REVIEW/REPORT_ONLY instead of being discarded merely
-        # because it arrived later.  Non-deletable roots never downgrade an
+        # because it arrived later. Non-deletable roots never downgrade an
         # already-known direct cleanup root.
         if delete_root_itself:
             for index, existing in enumerate(accepted):
