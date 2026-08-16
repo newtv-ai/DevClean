@@ -157,7 +157,7 @@ def _application_category(rule_id: str) -> CleanupCategory:
         "brave-updater-install"
     ):
         return CleanupCategory.INSTALLERS_DOWNLOADS
-    if lower.startswith(("brave-", "chrome-", "edge-", "vivaldi-")):
+    if lower.startswith(("brave-", "chrome-", "edge-", "opera-", "vivaldi-")):
         return CleanupCategory.BROWSER_CACHE
     if lower.startswith(("npm-", "pnpm-")):
         return CleanupCategory.NPM_CACHE
