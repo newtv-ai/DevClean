@@ -1,5 +1,7 @@
 """Vendor-aware maintenance actions that must not use the generic file purger."""
 
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import os
