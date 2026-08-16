@@ -1,4 +1,4 @@
-"""Original rule-engine tests plus Codex semantic-authority regressions."""
+"""Original rule-engine tests plus application semantic-authority regressions."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ for _name in dir(_original):
         globals()[_name] = getattr(_original, _name)
 
 
-def _codex_test_environment(
+def _application_test_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -42,7 +42,7 @@ def test_ai_cannot_decide_or_generalize_codex_session_history(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _codex_test_environment(tmp_path, monkeypatch)
+    _application_test_environment(tmp_path, monkeypatch)
     target = (
         r"C:\Users\person\.codex\sessions\2026\07\27"
         r"\rollout-2026-07-27T10-20-30-1234567890.jsonl"
@@ -69,7 +69,7 @@ def test_user_codex_history_delete_does_not_become_generic_file_rule(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _codex_test_environment(tmp_path, monkeypatch)
+    _application_test_environment(tmp_path, monkeypatch)
     old_session = (
         r"C:\Users\person\.codex\sessions\2026\01\02"
         r"\rollout-2026-01-02T10-20-30.jsonl"
@@ -101,6 +101,47 @@ def test_user_codex_history_delete_does_not_become_generic_file_rule(
     assert updated.decision_for(old_session) is None
     assert updated.decision_for(newer_session) is RuleDecision.KEEP
     assert updated.decision_for(unseen) is None
+
+
+def test_ai_cannot_decide_claude_history_or_persistent_plugin_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _application_test_environment(tmp_path, monkeypatch)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", r"D:\ClaudeState")
+    monkeypatch.setenv("CLAUDE_CODE_PLUGIN_CACHE_DIR", r"F:\ClaudePlugins")
+    session = r"D:\ClaudeState\projects\D--work\session-123.jsonl"
+    plugin = r"F:\ClaudePlugins\cache\market\plugin\1.2.3\index.js"
+    baseline = load_rules()
+    baseline_ai_count = baseline.ai_rule_count
+
+    updated = add_ai_verdicts(
+        baseline,
+        [
+            (session, RuleDecision.DELETE, "old transcript"),
+            (plugin, RuleDecision.DELETE, "directory name says cache"),
+        ],
+    )
+
+    assert updated.decision_for(session) is None
+    assert updated.decision_for(plugin) is None
+    assert updated.ai_rule_count == baseline_ai_count
+
+
+def test_user_claude_history_delete_does_not_become_generic_file_rule(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _application_test_environment(tmp_path, monkeypatch)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", r"D:\ClaudeState")
+    session = r"D:\ClaudeState\projects\D--work\session-123.jsonl"
+
+    updated = add_user_verdicts(
+        load_rules(),
+        [(session, RuleDecision.DELETE, "用户明确要清理旧 Claude 会话")],
+    )
+
+    assert updated.decision_for(session) is None
 
 
 def test_generic_ai_shape_conflicts_still_collapse_to_exact_answers(
