@@ -79,7 +79,7 @@ _PATH_PROPERTIES = {
 }
 _PROCESS_NAME_REGEX = (
     r"(?i)^(?:idea|pycharm|webstorm|phpstorm|clion|datagrip|goland|rider|"
-    r"rubymine|rustrover|dataspell|aqua)64?\.exe$"
+    r"rubymine|rustrover|dataspell|aqua|mps)64?\.exe$"
 )
 
 
@@ -472,9 +472,7 @@ def jetbrains_process_running() -> bool:
         return False
     script = (
         "$p=Get-CimInstance Win32_Process | Where-Object { "
-        "$n=$_.Name; $x=$_.ExecutablePath; "
-        f"$n -match '{_PROCESS_NAME_REGEX}' "
-        "-or ($x -and $x -match '(?i)\\\\JetBrains\\\\') }; "
+        f"$_.Name -match '{_PROCESS_NAME_REGEX}' }}; "
         "if ($p) { 'RUNNING' }"
     )
     try:
