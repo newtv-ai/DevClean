@@ -83,7 +83,7 @@ def test_brave_chromium_cache_and_profile_boundaries() -> None:
     assert cache_rule.rule_id == "brave-http-cache"
     assert cache_rule.owner is DecisionOwner.TOOL
     assert cache_storage_rule is not None
-    assert cache_storage_rule.rule_id == "brave-service-worker-cache-storage"
+    assert cache_storage_rule.rule_id == "brave-site-cache-storage"
     assert cache_storage_rule.owner is DecisionOwner.USER
     assert cache_storage_rule.user_age_buckets == (30, 90, 180)
     assert history_rule is not None
