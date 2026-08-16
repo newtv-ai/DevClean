@@ -1,0 +1,49 @@
+name: Temporary VS Code policy formatter
+
+on:
+  push:
+    branches:
+      - agent/vscode-cleanup-policy
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-2025
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: agent/vscode-cleanup-policy
+          persist-credentials: true
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.6"
+          python-version: "3.13"
+      - name: Sync environment
+        run: uv sync --frozen
+      - name: Apply Ruff fixes and formatting
+        shell: pwsh
+        run: |
+          uv run --frozen ruff check --fix src/devclean/core/vscode_cleanup.py src/devclean/core/vscode_maintenance.py src/devclean/ui/vscode_maintenance_dialog.py tests/test_vscode_cleanup.py tests/test_vscode_rule_authority.py
+          uv run --frozen ruff format src/devclean/core/vscode_cleanup.py src/devclean/core/vscode_maintenance.py src/devclean/ui/vscode_maintenance_dialog.py tests/test_vscode_cleanup.py tests/test_vscode_rule_authority.py
+      - name: Verify VS Code policy checks
+        shell: pwsh
+        run: |
+          uv run --frozen ruff check src scripts tests
+          uv run --frozen mypy src scripts tests
+          uv run --frozen pytest -q
+      - name: Commit formatted files and remove temporary workflow
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/format-vscode-temp.yml
+          git add src/devclean/core/vscode_cleanup.py src/devclean/core/vscode_maintenance.py src/devclean/ui/vscode_maintenance_dialog.py tests/test_vscode_cleanup.py tests/test_vscode_rule_authority.py
+          if (-not (git diff --cached --quiet)) {
+            git commit -m "format VS Code cleanup policy"
+            git push origin HEAD:agent/vscode-cleanup-policy
+          }
