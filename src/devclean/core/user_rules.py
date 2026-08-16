@@ -2,8 +2,9 @@
 
 The parser and persistence engine live in ``_user_rules_impl`` unchanged. This
 module adds one application-aware boundary: AI verdicts may not decide data that
-an audited application profile marks USER or KEEP, and a user's decision about
-one history item may not become a reusable template for all history items.
+an audited application profile marks USER or KEEP, and user-owned application
+history may not be converted into a generic file-delete rule. Such history is
+handled by an application-specific user action instead.
 """
 
 from __future__ import annotations
@@ -125,10 +126,10 @@ def _remove_semantically_invalid_rules(
             return True
         if rule.source == "AI_IMPORT":
             return False
+        if decision is RuleDecision.DELETE:
+            return False
         if rule.source != "USER_DECISION":
             return True
-        if owner is DecisionOwner.KEEP and decision is RuleDecision.DELETE:
-            return False
         return rule.match is not RuleMatch.PATH_GLOB
 
     delete_rules = tuple(
@@ -179,14 +180,14 @@ def add_user_verdicts(
     rules: UserRules,
     verdicts: list[tuple[str, RuleDecision, str]],
 ) -> UserRules:
-    """Persist user choices without generalizing application-owned history."""
+    """Persist generic user rules only where no application action owns deletion."""
 
     allowed = [
         verdict
         for verdict in verdicts
         if not (
             verdict[1] is RuleDecision.DELETE
-            and _owner_for_path(verdict[0]) is DecisionOwner.KEEP
+            and _owner_for_path(verdict[0]) in {DecisionOwner.USER, DecisionOwner.KEEP}
         )
     ]
     updated = _ORIGINAL_ADD_USER_VERDICTS(rules, allowed) if allowed else rules
@@ -194,7 +195,7 @@ def add_user_verdicts(
 
 
 def load_rules(*, create_missing: bool = True) -> UserRules:
-    """Load rules and migrate away stale AI authority over application data."""
+    """Load rules and migrate stale generic authority over application data."""
 
     return _persist_if_sanitized(
         _ORIGINAL_LOAD_RULES(create_missing=create_missing)
