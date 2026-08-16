@@ -104,6 +104,16 @@ from devclean.core.trae_cleanup import (
     trae_scan_roots,
     whole_tree_trae_rule,
 )
+from devclean.core.vivaldi_cleanup import (
+    VIVALDI_RULES,
+    clear_vivaldi_process_cache,
+    evaluate_vivaldi_path,
+    match_vivaldi_rule,
+    vivaldi_audited_tool_roots,
+    vivaldi_process_running,
+    vivaldi_scan_roots,
+    whole_tree_vivaldi_rule,
+)
 from devclean.core.vscode_cleanup import (
     VSCODE_RULES,
     clear_vscode_process_cache,
@@ -163,6 +173,7 @@ def application_scan_roots(
                 *chrome_scan_roots(environment),
                 *edge_scan_roots(environment),
                 *brave_scan_roots(environment),
+                *vivaldi_scan_roots(environment),
             )
         )
     )
@@ -182,6 +193,7 @@ def audited_dynamic_tool_roots(
         *chrome_audited_tool_roots(environment),
         *edge_audited_tool_roots(environment),
         *brave_audited_tool_roots(environment),
+        *vivaldi_audited_tool_roots(environment),
     )
 
 
@@ -191,6 +203,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    vivaldi = match_vivaldi_rule(path, environment)
+    if vivaldi is not None:
+        return vivaldi
     brave = match_brave_rule(path, environment)
     if brave is not None:
         return brave
@@ -241,7 +256,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_brave_path(
+    decision = evaluate_vivaldi_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -249,6 +264,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_brave_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = evaluate_edge_path(
             path,
@@ -345,6 +369,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "vivaldi":
+        return vivaldi_process_running()
     if app_id == "brave":
         return brave_process_running()
     if app_id == "edge":
@@ -380,6 +406,7 @@ def clear_process_cache() -> None:
     clear_chrome_process_cache()
     clear_edge_process_cache()
     clear_brave_process_cache()
+    clear_vivaldi_process_cache()
 
 
 def process_guard_allows(
@@ -403,6 +430,9 @@ def whole_tree_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return a TOOL rule only when *path* is exactly an audited whole-tree root."""
 
+    dynamic = whole_tree_vivaldi_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_brave_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -452,6 +482,7 @@ def application_display_name(app_id: str) -> str:
         "brave": "Brave",
         "chrome": "Chrome / Chromium",
         "edge": "Microsoft Edge",
+        "vivaldi": "Vivaldi",
         "codex": "Codex",
         "claude": "Claude Code",
         "cursor": "Cursor",
@@ -473,6 +504,7 @@ __all__ = [
     "NPM_RULES",
     "PNPM_RULES",
     "TRAE_RULES",
+    "VIVALDI_RULES",
     "VSCODE_RULES",
     "WINDSURF_RULES",
     "ApplicationCleanupRule",
