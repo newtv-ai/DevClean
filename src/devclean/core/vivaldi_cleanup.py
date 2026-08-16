@@ -278,7 +278,7 @@ def _running_override_roots() -> tuple[
         return (), ()
     script = (
         "$p=Get-CimInstance Win32_Process | Where-Object { $_.Name -ieq 'vivaldi.exe' }; "
-        "$p | ForEach-Object { '{0}`t{1}' -f $_.ExecutablePath,$_.CommandLine }"
+        "$p | ForEach-Object { \"{0}`t{1}\" -f $_.ExecutablePath,$_.CommandLine }"
     )
     try:
         result = subprocess.run(
