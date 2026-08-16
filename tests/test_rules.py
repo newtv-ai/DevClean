@@ -145,6 +145,59 @@ def test_user_claude_history_delete_does_not_become_generic_file_rule(
     assert updated.decision_for(session) is None
 
 
+def test_ai_cannot_decide_cursor_user_history_or_persistent_extensions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _application_test_environment(tmp_path, monkeypatch)
+    workspace = (
+        r"C:\Users\person\AppData\Roaming\Cursor\User\workspaceStorage"
+        r"\abc123\state.vscdb"
+    )
+    transcript = (
+        r"C:\Users\person\.cursor\projects\repo"
+        r"\agent-transcripts\thread.txt"
+    )
+    extension = (
+        r"C:\Users\person\.cursor\extensions"
+        r"\publisher.ext-1.2.3\extension.js"
+    )
+    baseline = load_rules()
+    baseline_ai_count = baseline.ai_rule_count
+
+    updated = add_ai_verdicts(
+        baseline,
+        [
+            (workspace, RuleDecision.DELETE, "looks like workspace cache"),
+            (transcript, RuleDecision.DELETE, "old transcript"),
+            (extension, RuleDecision.DELETE, "extension directory is large"),
+        ],
+    )
+
+    assert updated.decision_for(workspace) is None
+    assert updated.decision_for(transcript) is None
+    assert updated.decision_for(extension) is None
+    assert updated.ai_rule_count == baseline_ai_count
+
+
+def test_user_cursor_chat_database_delete_does_not_become_generic_rule(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _application_test_environment(tmp_path, monkeypatch)
+    database = (
+        r"C:\Users\person\AppData\Roaming\Cursor\User"
+        r"\globalStorage\state.vscdb"
+    )
+
+    updated = add_user_verdicts(
+        load_rules(),
+        [(database, RuleDecision.DELETE, "用户明确要清理旧 Cursor 聊天")],
+    )
+
+    assert updated.decision_for(database) is None
+
+
 def test_generic_ai_shape_conflicts_still_collapse_to_exact_answers(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
