@@ -160,6 +160,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         "toolbox-product-logs",
     }:
         return CleanupCategory.SYSTEM_LOGS
+    if lower == "android-sdk-install-temp":
+        return CleanupCategory.INSTALLERS_DOWNLOADS
     if lower.startswith("gradle-"):
         return CleanupCategory.GRADLE_CACHE
     if lower == "toolbox-download-cache":
