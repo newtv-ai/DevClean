@@ -80,7 +80,7 @@ def _rule(
 
 
 # These TOOL paths are documented by Anthropic as containing no user-facing
-# content when removed, or as server/cache/temp data that is recreated.  User
+# content when removed, or as server/cache/temp data that is recreated. User
 # transcripts/checkpoints/statistics and persistent memory are intentionally
 # separate rules below even where Claude Code itself applies an age retention.
 CLAUDE_RULES: tuple[ApplicationCleanupRule, ...] = (
@@ -249,7 +249,7 @@ CLAUDE_RULES: tuple[ApplicationCleanupRule, ...] = (
     _rule(
         "claude-project-auto-memory",
         "CLAUDE_HOME",
-        r"projects\*\memory",
+        r"{projects\*\memory,projects\*\memory\*}",
         MatchKind.GLOB,
         DecisionOwner.KEEP,
         LastUseStrategy.FILE_MTIME,
