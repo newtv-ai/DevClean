@@ -155,10 +155,13 @@ def _application_category(rule_id: str) -> CleanupCategory:
     lower = rule_id.casefold()
     if lower in {
         "android-studio-product-logs",
+        "gradle-daemon-log",
         "jetbrains-product-logs",
         "toolbox-product-logs",
     }:
         return CleanupCategory.SYSTEM_LOGS
+    if lower.startswith("gradle-"):
+        return CleanupCategory.GRADLE_CACHE
     if lower == "toolbox-download-cache":
         return CleanupCategory.INSTALLERS_DOWNLOADS
     if lower == "toolbox-install-temp":
