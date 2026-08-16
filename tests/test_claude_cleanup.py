@@ -165,6 +165,41 @@ def test_claude_custom_auto_memory_is_protected(tmp_path: Path) -> None:
     assert rule.rule_id == "claude-custom-auto-memory"
 
 
+def test_process_guard_refreshes_changed_custom_auto_memory(tmp_path: Path) -> None:
+    home = tmp_path / "claude-home"
+    memory_a = tmp_path / "memory-a"
+    memory_b = tmp_path / "memory-b"
+    home.mkdir()
+    memory_a.mkdir()
+    memory_b.mkdir()
+    settings = home / "settings.json"
+    settings.write_text(
+        json.dumps({"autoMemoryDirectory": str(memory_a)}),
+        encoding="utf-8",
+    )
+    env = {
+        "USERPROFILE": str(tmp_path),
+        "CLAUDE_CONFIG_DIR": str(home),
+        "TEMP": str(tmp_path / "temp"),
+    }
+
+    first = match_application_rule(memory_a / "MEMORY.md", env)
+    assert first is not None and first.owner is DecisionOwner.KEEP
+
+    settings.write_text(
+        json.dumps({"autoMemoryDirectory": str(memory_b)}),
+        encoding="utf-8",
+    )
+    stale = match_application_rule(memory_b / "MEMORY.md", env)
+    assert stale is None
+
+    assert not process_guard_allows(memory_b / "MEMORY.md", env)
+    refreshed = match_application_rule(memory_b / "MEMORY.md", env)
+    assert refreshed is not None
+    assert refreshed.rule_id == "claude-custom-auto-memory"
+    assert refreshed.owner is DecisionOwner.KEEP
+
+
 def test_claude_remote_settings_and_legacy_todos_are_tool_owned() -> None:
     env = _env()
     remote = match_application_rule(r"D:\ClaudeState\remote-settings.json", env)
