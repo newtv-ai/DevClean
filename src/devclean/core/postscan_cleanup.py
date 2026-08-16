@@ -45,6 +45,11 @@ from devclean.core.triage import (
     directory_cleanup_scope,
 )
 from devclean.core.user_rules import DeleteClassification, KeepClassification
+from devclean.core.whole_tree_policy import (
+    WholeTreePolicyEvidence,
+    WholeTreePolicyRefusal,
+    require_application_whole_tree_policy,
+)
 from devclean.platform.windows.exact_cleanup import (
     DirectoryPurgeProgress,
     DirectoryPurgeResult,
@@ -288,6 +293,12 @@ def candidate_from_directory_item(
     )
     if totals.files < 0 or totals.logical_bytes < 0:
         raise CleanupRefusal("directory subtree totals must be non-negative")
+    policy_evidence = _application_whole_tree_policy(path, known_roots)
+    subtree_files = totals.files
+    subtree_bytes = totals.logical_bytes
+    if policy_evidence is not None:
+        subtree_files = policy_evidence.files
+        subtree_bytes = policy_evidence.logical_bytes
     snapshot = _snapshot_selected_directory(item)
     root_snapshot = _directory_snapshot(scan_root, "original scan root")
     candidate_id = "candidate_" + secrets.token_hex(16)
@@ -300,8 +311,8 @@ def candidate_from_directory_item(
         item.category,
         CleanupTargetKind.DIRECTORY,
         scope,
-        totals.files,
-        totals.logical_bytes,
+        subtree_files,
+        subtree_bytes,
     )
     return ScanCleanupCandidate(
         candidate_id=candidate_id,
@@ -312,8 +323,8 @@ def candidate_from_directory_item(
         category=item.category,
         target_kind=CleanupTargetKind.DIRECTORY,
         directory_scope=scope,
-        subtree_files=totals.files,
-        subtree_bytes=totals.logical_bytes,
+        subtree_files=subtree_files,
+        subtree_bytes=subtree_bytes,
         _integrity=integrity,
         _seal=_SEAL,
     )
@@ -364,6 +375,16 @@ def _require_directory_scope(
             "deterministically regenerable tool directories"
         )
     return scope
+
+
+def _application_whole_tree_policy(
+    path: Path,
+    known_roots: tuple[KnownCleanupRoot, ...],
+) -> WholeTreePolicyEvidence | None:
+    try:
+        return require_application_whole_tree_policy(path, known_roots)
+    except WholeTreePolicyRefusal as error:
+        raise CleanupRefusal(str(error)) from error
 
 
 def prepare_cleanup_batch(
@@ -770,6 +791,7 @@ def _preflight_candidate(
             metadata, _directory_identity(candidate.snapshot)
         ):
             raise CleanupRefusal("candidate directory changed since the completed scan")
+        _application_whole_tree_policy(candidate.path, known_roots)
         return
     if not metadata_matches_snapshot(metadata, candidate.snapshot):
         raise CleanupRefusal("candidate changed since the completed scan")
