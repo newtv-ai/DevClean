@@ -14,6 +14,7 @@ from devclean.core.application_cleanup import (
     evaluate_application_path,
     match_application_rule,
     process_guard_allows,
+    whole_tree_application_rule,
 )
 from devclean.core.cleanup_catalog import CleanupPolicy, discover_known_cleanup_roots
 from devclean.core.cursor_cleanup import cursor_roots
@@ -75,10 +76,50 @@ def test_cursor_known_cache_is_tool_owned_and_process_guarded() -> None:
     assert running.action is PolicyAction.TOOL_KEEP_IN_USE
 
 
+def test_cursor_graphics_crash_and_extension_caches_are_tool_owned() -> None:
+    paths = (
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\DawnCache\index",
+            "cursor-roaming-dawn-cache",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\GrShaderCache\data",
+            "cursor-roaming-grshader-cache",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\ShaderCache\data",
+            "cursor-roaming-shader-cache",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\CachedExtensions\index.json",
+            "cursor-roaming-cached-extensions",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\CachedExtensionVSIXs\ext.vsix",
+            "cursor-roaming-cached-extension-vsix",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\Crashpad\reports\crash.dmp",
+            "cursor-roaming-crashpad-reports",
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Cursor\Crashpad\pending\crash.dmp",
+            "cursor-roaming-crashpad-pending",
+        ),
+    )
+    for path, rule_id in paths:
+        rule = match_application_rule(path, _env())
+        assert rule is not None
+        assert rule.owner is DecisionOwner.TOOL
+        assert rule.rule_id == rule_id
+
+
 def test_cursor_workspace_and_chat_databases_are_user_owned() -> None:
     paths = (
         r"C:\Users\alice\AppData\Roaming\Cursor\User\workspaceStorage\abc\state.vscdb",
         r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage\state.vscdb",
+        r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage\state.vscdb.backup",
+        r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage\state.vscdb.corrupted.123",
         r"C:\Users\alice\AppData\Roaming\Cursor\User\History\abc\entries.json",
         r"C:\Users\alice\.cursor\projects\repo\agent-transcripts\thread.txt",
         r"C:\Users\alice\.cursor\chats\workspace\chat-id\transcript.jsonl",
@@ -97,6 +138,25 @@ def test_cursor_workspace_and_chat_databases_are_user_owned() -> None:
         assert decision.action is PolicyAction.KEEP_PROTECTED
 
 
+def test_cursor_recovery_copy_rule_outranks_global_storage_keep() -> None:
+    recovery = match_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage"
+        r"\state.vscdb.corrupted.1767892516529",
+        _env(),
+    )
+    backup = match_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage"
+        r"\state.vscdb.backup",
+        _env(),
+    )
+    assert recovery is not None
+    assert recovery.rule_id == "cursor-global-chat-recovery-files"
+    assert recovery.owner is DecisionOwner.USER
+    assert backup is not None
+    assert backup.rule_id == "cursor-global-chat-backup"
+    assert backup.owner is DecisionOwner.USER
+
+
 def test_cursor_checkpoints_outrank_broad_global_storage_keep() -> None:
     path = (
         r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage"
@@ -108,9 +168,13 @@ def test_cursor_checkpoints_outrank_broad_global_storage_keep() -> None:
     assert rule.owner is DecisionOwner.USER
 
 
-def test_cursor_unknown_state_and_installed_extensions_are_kept() -> None:
+def test_cursor_unknown_state_unsaved_backups_and_extensions_are_kept() -> None:
     unknown = match_application_rule(
         r"C:\Users\alice\AppData\Roaming\Cursor\Network\Cookies",
+        _env(),
+    )
+    unsaved = match_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Cursor\Backups\window\untitled.txt",
         _env(),
     )
     extension = match_application_rule(
@@ -118,6 +182,8 @@ def test_cursor_unknown_state_and_installed_extensions_are_kept() -> None:
         _env(),
     )
     assert unknown is not None and unknown.owner is DecisionOwner.KEEP
+    assert unsaved is not None and unsaved.owner is DecisionOwner.KEEP
+    assert unsaved.rule_id == "cursor-hot-exit-backups"
     assert extension is not None and extension.owner is DecisionOwner.KEEP
 
 
@@ -125,7 +191,12 @@ def test_cursor_process_guard_never_allows_user_database(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     db = r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage\state.vscdb"
+    recovery = (
+        r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage"
+        r"\state.vscdb.corrupted.123"
+    )
     assert not process_guard_allows(db, _env())
+    assert not process_guard_allows(recovery, _env())
 
     monkeypatch.setattr(
         "devclean.core.application_cleanup.cursor_process_running",
@@ -133,6 +204,21 @@ def test_cursor_process_guard_never_allows_user_database(
     )
     cache = r"C:\Users\alice\AppData\Roaming\Cursor\Cache\data_0"
     assert not process_guard_allows(cache, _env())
+
+
+def test_cursor_whole_tree_delete_is_exact_cache_only() -> None:
+    cache = r"C:\Users\alice\AppData\Roaming\Cursor\Cache"
+    rule = whole_tree_application_rule(cache, _env())
+    assert rule is not None
+    assert rule.owner is DecisionOwner.TOOL
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Cursor",
+        _env(),
+    ) is None
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Cursor\User",
+        _env(),
+    ) is None
 
 
 def test_catalog_exposes_only_audited_cursor_cache_subtrees(tmp_path: Path) -> None:
@@ -166,15 +252,19 @@ def test_catalog_exposes_only_audited_cursor_cache_subtrees(tmp_path: Path) -> N
     assert workspace_root is None or not workspace_root.delete_root_itself
 
 
-def test_cursor_inventory_counts_chat_db_and_local_transcripts(tmp_path: Path) -> None:
+def test_cursor_inventory_separates_live_backup_recovery_and_transcripts(
+    tmp_path: Path,
+) -> None:
     roaming = tmp_path / "roaming"
     home = tmp_path / "home"
     global_storage = roaming / "Cursor" / "User" / "globalStorage"
     global_storage.mkdir(parents=True)
     (global_storage / "state.vscdb").write_bytes(b"x" * 200)
+    (global_storage / "state.vscdb.backup").write_bytes(b"b" * 300)
+    (global_storage / "state.vscdb.corrupted.123").write_bytes(b"c" * 400)
     transcripts = home / ".cursor" / "projects" / "repo" / "agent-transcripts"
     transcripts.mkdir(parents=True)
-    (transcripts / "thread.txt").write_bytes(b"y" * 300)
+    (transcripts / "thread.txt").write_bytes(b"y" * 500)
     env = {
         "USERPROFILE": str(home),
         "APPDATA": str(roaming),
@@ -184,6 +274,10 @@ def test_cursor_inventory_counts_chat_db_and_local_transcripts(tmp_path: Path) -
 
     inventory = inventory_cursor_storage(env)
     chat_db = inventory.by_key("chat_db")
+    backup = inventory.by_key("chat_db_backup")
+    recovery = inventory.by_key("chat_db_recovery")
     projects = inventory.by_key("agent_projects")
     assert chat_db is not None and chat_db.logical_bytes == 200 and chat_db.user_data
-    assert projects is not None and projects.logical_bytes == 300 and projects.user_data
+    assert backup is not None and backup.logical_bytes == 300 and backup.user_data
+    assert recovery is not None and recovery.logical_bytes == 400 and recovery.user_data
+    assert projects is not None and projects.logical_bytes == 500 and projects.user_data
