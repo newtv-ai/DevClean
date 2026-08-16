@@ -8,7 +8,6 @@ import pytest
 
 from devclean.core.user_rules import (
     RuleDecision,
-    RuleMatch,
     UserRules,
     add_ai_verdicts,
     add_user_verdicts,
@@ -22,9 +21,6 @@ _REPLACED = {
     "test_conflicting_ai_shape_removes_template_and_keeps_exact_answers",
 }
 
-# Retain the stable pre-existing suite without copying or rewriting it. Only the
-# three tests that encoded the old, unsafe Codex-session generalization policy
-# are replaced below.
 for _name in dir(_original):
     if _name.startswith("test_") and _name not in _REPLACED:
         globals()[_name] = getattr(_original, _name)
@@ -69,7 +65,7 @@ def test_ai_cannot_decide_or_generalize_codex_session_history(
     assert load_rules().decision_for(target) is None
 
 
-def test_user_codex_history_choice_is_exact_and_not_generalized(
+def test_user_codex_history_delete_does_not_become_generic_file_rule(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -89,14 +85,10 @@ def test_user_codex_history_choice_is_exact_and_not_generalized(
         [(old_session, RuleDecision.DELETE, "用户选择清理 90 天以上历史")],
     )
 
-    assert updated.decision_for(old_session) is RuleDecision.DELETE
+    # USER-owned history is deleted only through Codex's application action;
+    # the generic exact-file rule engine must not gain deletion authority.
+    assert updated.decision_for(old_session) is None
     assert updated.decision_for(newer_session) is None
-    assert not any(
-        rule.source == "USER_DECISION"
-        and rule.match is RuleMatch.PATH_GLOB
-        and "\\.codex\\sessions\\" in rule.value.casefold()
-        for rule in updated.delete.rules
-    )
 
     updated = add_user_verdicts(
         updated,
@@ -106,7 +98,7 @@ def test_user_codex_history_choice_is_exact_and_not_generalized(
         r"C:\Users\person\.codex\sessions\2026\07\29"
         r"\rollout-2026-07-29T10-20-30.jsonl"
     )
-    assert updated.decision_for(old_session) is RuleDecision.DELETE
+    assert updated.decision_for(old_session) is None
     assert updated.decision_for(newer_session) is RuleDecision.KEEP
     assert updated.decision_for(unseen) is None
 
@@ -144,7 +136,6 @@ def test_generic_ai_shape_conflicts_still_collapse_to_exact_answers(
     assert updated.decision_for(second) is RuleDecision.KEEP
     assert updated.decision_for(third) is None
 
-    # Rebuilding a UserRules object must preserve the same exact conflict state.
     rebuilt = UserRules(
         scan=updated.scan,
         delete=updated.delete,
