@@ -124,34 +124,58 @@ def test_chrome_profile_caches_are_tool_but_authoritative_profile_state_is_keep(
         assert not process_guard_allows(path, _env())
 
 
-def test_chrome_service_worker_cache_is_precise_not_whole_service_worker_state() -> None:
-    cache = (
+def test_chrome_cache_storage_is_user_data_but_script_cache_is_tool() -> None:
+    cache_storage = (
         r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
         r"\Service Worker\CacheStorage\https_example\data"
+    )
+    script_cache = (
+        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
+        r"\Service Worker\ScriptCache\0123456789abcdef_0"
     )
     registration = (
         r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
         r"\Service Worker\Database\000003.log"
     )
-    cache_rule = match_application_rule(cache, _env())
+
+    site_rule = match_application_rule(cache_storage, _env())
+    script_rule = match_application_rule(script_cache, _env())
     state_rule = match_application_rule(registration, _env())
-    assert cache_rule is not None
-    assert cache_rule.rule_id == "chrome-service-worker-cache-storage"
-    assert cache_rule.owner is DecisionOwner.TOOL
+    assert site_rule is not None
+    assert site_rule.rule_id == "chrome-site-cache-storage"
+    assert site_rule.owner is DecisionOwner.USER
+    assert script_rule is not None
+    assert script_rule.rule_id == "chrome-service-worker-script-cache"
+    assert script_rule.owner is DecisionOwner.TOOL
     assert state_rule is not None
     assert state_rule.rule_id == "chrome-service-worker-state"
     assert state_rule.owner is DecisionOwner.KEEP
 
-    decision = evaluate_application_path(
-        cache,
+    site_decision = evaluate_application_path(
+        cache_storage,
         logical_size=128 * _MIB,
         last_used=_NOW - timedelta(days=90),
         now=_NOW,
         process_running=False,
         environment=_env(),
     )
-    assert decision is not None
-    assert decision.action is PolicyAction.TOOL_DELETE
+    script_decision = evaluate_application_path(
+        script_cache,
+        logical_size=128 * _MIB,
+        last_used=_NOW - timedelta(days=90),
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+    assert site_decision is not None
+    assert site_decision.action is PolicyAction.KEEP_PROTECTED
+    assert script_decision is not None
+    assert script_decision.action is PolicyAction.TOOL_DELETE
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
+        r"\Service Worker\CacheStorage",
+        _env(),
+    ) is None
 
 
 def test_arbitrary_nested_cache_name_does_not_gain_chrome_deletion_authority() -> None:
@@ -166,7 +190,7 @@ def test_arbitrary_nested_cache_name_does_not_gain_chrome_deletion_authority() -
 
 
 def test_explicit_disk_cache_is_a_dedicated_tool_root() -> None:
-    env = {**_env(), "CHROME_DISK_CACHE_DIR": r"D:\ChromeDiskCache"}
+    env = {**_env(), "DEVCLEAN_CHROME_DISK_CACHE_DIR": r"D:\ChromeDiskCache"}
     rule = match_application_rule(r"D:\ChromeDiskCache\Cache_Data\f_001", env)
     assert rule is not None
     assert rule.rule_id == "chrome-explicit-disk-cache"
