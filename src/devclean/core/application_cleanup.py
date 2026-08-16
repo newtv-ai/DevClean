@@ -26,6 +26,16 @@ from devclean.core._application_cleanup_impl import (
     RebuildCost,
     effective_idle_days,
 )
+from devclean.core.chrome_cleanup import (
+    CHROME_RULES,
+    chrome_audited_tool_roots,
+    chrome_process_running,
+    chrome_scan_roots,
+    clear_chrome_process_cache,
+    evaluate_chrome_path,
+    match_chrome_rule,
+    whole_tree_chrome_rule,
+)
 from devclean.core.claude_cleanup import (
     CLAUDE_RULES,
     claude_application_roots,
@@ -130,6 +140,7 @@ def application_scan_roots(
                 *windsurf_scan_roots(environment),
                 *npm_scan_roots(environment),
                 *pnpm_scan_roots(environment),
+                *chrome_scan_roots(environment),
             )
         )
     )
@@ -146,6 +157,7 @@ def audited_dynamic_tool_roots(
         *windsurf_audited_tool_roots(environment),
         *npm_audited_tool_roots(environment),
         *pnpm_audited_tool_roots(environment),
+        *chrome_audited_tool_roots(environment),
     )
 
 
@@ -155,6 +167,9 @@ def match_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return the most-specific audited application rule for *path*."""
 
+    chrome = match_chrome_rule(path, environment)
+    if chrome is not None:
+        return chrome
     windsurf = match_windsurf_rule(path, environment)
     if windsurf is not None:
         return windsurf
@@ -196,7 +211,7 @@ def evaluate_application_path(
     to remove it.
     """
 
-    decision = evaluate_windsurf_path(
+    decision = evaluate_chrome_path(
         path,
         logical_size=logical_size,
         last_used=last_used,
@@ -204,6 +219,15 @@ def evaluate_application_path(
         process_running=process_running,
         environment=environment,
     )
+    if decision is None:
+        decision = evaluate_windsurf_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
     if decision is None:
         decision = evaluate_trae_path(
             path,
@@ -273,6 +297,8 @@ def evaluate_application_path(
 
 
 def application_process_running(app_id: str) -> bool:
+    if app_id == "chrome":
+        return chrome_process_running()
     if app_id == "pnpm":
         return pnpm_process_running()
     if app_id == "npm":
@@ -299,6 +325,7 @@ def clear_process_cache() -> None:
     clear_windsurf_process_cache()
     clear_npm_process_cache()
     clear_pnpm_process_cache()
+    clear_chrome_process_cache()
 
 
 def process_guard_allows(
@@ -322,6 +349,9 @@ def whole_tree_application_rule(
 ) -> ApplicationCleanupRule | None:
     """Return a TOOL rule only when *path* is exactly an audited whole-tree root."""
 
+    dynamic = whole_tree_chrome_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_pnpm_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -359,6 +389,7 @@ def whole_tree_application_rule(
 
 def application_display_name(app_id: str) -> str:
     return {
+        "chrome": "Chrome / Chromium",
         "codex": "Codex",
         "claude": "Claude Code",
         "cursor": "Cursor",
@@ -371,6 +402,7 @@ def application_display_name(app_id: str) -> str:
 
 
 __all__ = [
+    "CHROME_RULES",
     "CLAUDE_RULES",
     "CODEX_RULES",
     "CURSOR_RULES",
