@@ -433,6 +433,15 @@ def _edge_policy_paths(
     )
 
 
+def _replace_policy_token(text: str, key: str, replacement: str) -> str:
+    pattern = re.compile(rf"\$\{{{re.escape(key)}\}}", re.IGNORECASE)
+
+    def literal_replacement(_match: re.Match[str]) -> str:
+        return replacement
+
+    return pattern.sub(literal_replacement, text)
+
+
 def _policy_path(value: str | None, env: Mapping[str, str]) -> PureWindowsPath | None:
     if not value:
         return None
@@ -449,12 +458,7 @@ def _policy_path(value: str | None, env: Mapping[str, str]) -> PureWindowsPath |
     expanded = value
     for key, replacement in mapping.items():
         if replacement:
-            expanded = re.sub(
-                rf"\$\{{{re.escape(key)}\}}",
-                lambda _match, replacement=replacement: replacement,
-                expanded,
-                flags=re.IGNORECASE,
-            )
+            expanded = _replace_policy_token(expanded, key, replacement)
     if re.search(r"\$\{[^}]+\}|%[^%]+%", expanded):
         return None
     path = PureWindowsPath(expanded)
