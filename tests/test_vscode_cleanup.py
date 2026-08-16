@@ -121,10 +121,6 @@ def test_vscode_extended_electron_caches_are_tool_owned() -> None:
             "vscode-shader-cache",
         ),
         (
-            r"C:\Users\alice\AppData\Roaming\Code\Service Worker\CacheStorage\entry",
-            "vscode-service-worker-cache-storage",
-        ),
-        (
             r"C:\Users\alice\AppData\Roaming\Code\Service Worker\ScriptCache\entry",
             "vscode-service-worker-script-cache",
         ),
@@ -134,6 +130,28 @@ def test_vscode_extended_electron_caches_are_tool_owned() -> None:
         assert rule is not None
         assert rule.owner is DecisionOwner.TOOL
         assert rule.rule_id == rule_id
+
+
+def test_vscode_cache_storage_is_user_owned_persistent_data() -> None:
+    path = r"C:\Users\alice\AppData\Roaming\Code\Service Worker\CacheStorage\entry"
+    rule = match_application_rule(path, _env())
+    assert rule is not None
+    assert rule.rule_id == "vscode-site-cache-storage"
+    assert rule.owner is DecisionOwner.USER
+    decision = evaluate_application_path(
+        path,
+        logical_size=200 * _MIB,
+        last_used=_NOW - timedelta(days=120),
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+    assert decision is not None
+    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Code\Service Worker\CacheStorage",
+        _env(),
+    ) is None
 
 
 def test_vscode_other_service_worker_state_is_not_blanket_deleted() -> None:
