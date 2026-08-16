@@ -1,8 +1,9 @@
 """Audited Visual Studio Code storage semantics for Windows cleanup.
 
-VS Code supports default Stable/Insiders roots, explicit user-data/extension
-roots, and portable mode.  This profile treats those as first-class locations
-while keeping workspace/chat/history/recovery state outside generic deletion.
+VS Code supports Stable/Insiders roots, explicit user-data/extension roots,
+portable mode, and Windows-side Remote-WSL server download caches. Regenerable
+cache trees are TOOL-owned while workspace/chat/history/recovery state and
+installed extensions remain outside generic deletion.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ class VSCodeRootSet:
     data_roots: tuple[PureWindowsPath, ...]
     extension_roots: tuple[PureWindowsPath, ...]
     temp_roots: tuple[PureWindowsPath, ...]
+    wsl_download_roots: tuple[PureWindowsPath, ...]
 
 
 def _rule(
@@ -79,9 +81,11 @@ def _tool_dir(
     relative: str,
     label: str,
     *,
+    root_kind: str = "data",
     idle_days: float = 7,
     min_reclaim_bytes: int = 4 * _MIB,
     rebuild_cost: RebuildCost = RebuildCost.LOW,
+    size_sensitive_idle: bool = True,
 ) -> ApplicationCleanupRule:
     return _rule(
         rule_id,
@@ -90,9 +94,11 @@ def _tool_dir(
         DecisionOwner.TOOL,
         rebuild_cost,
         label,
+        root_kind=root_kind,
         idle_days=idle_days,
         min_reclaim_bytes=min_reclaim_bytes,
         requires_process_closed=True,
+        size_sensitive_idle=size_sensitive_idle,
         allow_whole_tree=True,
     )
 
@@ -110,6 +116,11 @@ VSCODE_RULES: tuple[ApplicationCleanupRule, ...] = (
         "CachedProfilesData",
         "VS Code cached profile metadata",
     ),
+    _tool_dir(
+        "vscode-cached-extensions",
+        "CachedExtensions",
+        "VS Code extension metadata cache",
+    ),
     _tool_dir("vscode-code-cache", "Code Cache", "VS Code Chromium code cache"),
     _tool_dir(
         "vscode-gpu-cache",
@@ -122,6 +133,30 @@ VSCODE_RULES: tuple[ApplicationCleanupRule, ...] = (
         "DawnCache",
         "VS Code WebGPU/Dawn shader cache",
         idle_days=3,
+    ),
+    _tool_dir(
+        "vscode-grshader-cache",
+        "GrShaderCache",
+        "VS Code graphics shader cache",
+        idle_days=3,
+    ),
+    _tool_dir(
+        "vscode-shader-cache",
+        "ShaderCache",
+        "VS Code graphics shader cache",
+        idle_days=3,
+    ),
+    _tool_dir(
+        "vscode-service-worker-cache-storage",
+        r"Service Worker\CacheStorage",
+        "VS Code service-worker response cache",
+        idle_days=7,
+    ),
+    _tool_dir(
+        "vscode-service-worker-script-cache",
+        r"Service Worker\ScriptCache",
+        "VS Code service-worker script cache",
+        idle_days=7,
     ),
     _tool_dir(
         "vscode-extension-vsix-cache",
@@ -154,6 +189,15 @@ VSCODE_RULES: tuple[ApplicationCleanupRule, ...] = (
         idle_days=1,
         min_reclaim_bytes=_MIB,
         rebuild_cost=RebuildCost.NONE,
+    ),
+    _tool_dir(
+        "vscode-wsl-server-download-cache",
+        "",
+        "VS Code Remote-WSL downloaded server packages",
+        root_kind="wsl_cache",
+        idle_days=7,
+        min_reclaim_bytes=8 * _MIB,
+        rebuild_cost=RebuildCost.MEDIUM,
     ),
     _rule(
         "vscode-workspace-state",
@@ -188,6 +232,14 @@ VSCODE_RULES: tuple[ApplicationCleanupRule, ...] = (
         DecisionOwner.KEEP,
         RebuildCost.HIGH,
         "VS Code settings, profiles, extension state, snippets, and global storage",
+    ),
+    _rule(
+        "vscode-service-worker-other-state",
+        "Service Worker",
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Unclassified VS Code service-worker persistent state",
     ),
     _rule(
         "vscode-extension-root",
@@ -227,6 +279,7 @@ def vscode_roots(environment: Mapping[str, str] | None = None) -> VSCodeRootSet:
     data: list[PureWindowsPath] = []
     extensions: list[PureWindowsPath] = []
     temp: list[PureWindowsPath] = []
+    wsl_downloads: list[PureWindowsPath] = []
 
     appdata = env.get("appdata")
     profile = env.get("userprofile")
@@ -238,12 +291,17 @@ def vscode_roots(environment: Mapping[str, str] | None = None) -> VSCodeRootSet:
             )
         )
     if profile:
+        profile_path = PureWindowsPath(profile)
         extensions.extend(
             (
-                PureWindowsPath(profile) / ".vscode" / "extensions",
-                PureWindowsPath(profile) / ".vscode-insiders" / "extensions",
+                profile_path / ".vscode" / "extensions",
+                profile_path / ".vscode-insiders" / "extensions",
             )
         )
+        # Remote-WSL downloads server archives/trees to this Windows-side cache
+        # before installing them inside a distro. The cache is re-downloadable;
+        # remote authoritative state lives inside the distro instead.
+        wsl_downloads.append(profile_path / "vscode-remote-wsl" / "stable")
 
     portable = env.get("vscode_portable")
     if portable:
@@ -268,6 +326,7 @@ def vscode_roots(environment: Mapping[str, str] | None = None) -> VSCodeRootSet:
         data_roots=_unique_paths(data),
         extension_roots=_unique_paths(extensions),
         temp_roots=_unique_paths(temp),
+        wsl_download_roots=_unique_paths(wsl_downloads),
     )
 
 
@@ -275,14 +334,19 @@ def vscode_scan_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[PureWindowsPath, ...]:
     roots = vscode_roots(environment)
-    return (*roots.data_roots, *roots.temp_roots)
+    return (*roots.data_roots, *roots.temp_roots, *roots.wsl_download_roots)
 
 
 def vscode_storage_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[PureWindowsPath, ...]:
     roots = vscode_roots(environment)
-    return (*roots.data_roots, *roots.extension_roots, *roots.temp_roots)
+    return (
+        *roots.data_roots,
+        *roots.extension_roots,
+        *roots.temp_roots,
+        *roots.wsl_download_roots,
+    )
 
 
 def match_vscode_rule(
@@ -295,6 +359,7 @@ def match_vscode_rule(
         "VSCODE_DATA": roots.data_roots,
         "VSCODE_EXTENSIONS": roots.extension_roots,
         "VSCODE_TEMP": roots.temp_roots,
+        "VSCODE_WSL_CACHE": roots.wsl_download_roots,
     }
     matches: list[tuple[int, int, ApplicationCleanupRule]] = []
     for index, rule in enumerate(VSCODE_RULES):
@@ -322,6 +387,7 @@ def vscode_audited_tool_roots(
     root_groups = {
         "VSCODE_DATA": roots.data_roots,
         "VSCODE_TEMP": roots.temp_roots,
+        "VSCODE_WSL_CACHE": roots.wsl_download_roots,
     }
     found: list[tuple[PureWindowsPath, ApplicationCleanupRule]] = []
     seen: set[str] = set()
@@ -366,10 +432,21 @@ def evaluate_vscode_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
+    idle = (
+        None
+        if observed is None
+        else max(0.0, (current - observed).total_seconds() / 86_400)
+    )
 
     if rule.owner is DecisionOwner.KEEP:
-        return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
+        return ApplicationPolicyDecision(
+            rule,
+            PolicyAction.KEEP_PROTECTED,
+            observed,
+            idle,
+            None,
+            0,
+        )
     if rule.owner is DecisionOwner.USER:
         return ApplicationPolicyDecision(
             rule,
