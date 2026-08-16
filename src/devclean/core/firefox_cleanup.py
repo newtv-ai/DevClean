@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import configparser
 import os
+import re
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ _MIB = 1024**2
 
 @dataclass(frozen=True, slots=True)
 class FirefoxRootSet:
+    state_roots: tuple[PureWindowsPath, ...]
     persistent_parents: tuple[PureWindowsPath, ...]
     local_parents: tuple[PureWindowsPath, ...]
     custom_profiles: tuple[PureWindowsPath, ...]
@@ -145,6 +147,16 @@ _FIREFOX_PERSISTENT_PROFILE_RULE = _rule(
     root_key="FIREFOX_PROFILE",
 )
 
+_FIREFOX_ROAMING_STATE_RULE = _rule(
+    "firefox-roaming-state",
+    "",
+    MatchKind.PREFIX,
+    DecisionOwner.KEEP,
+    RebuildCost.HIGH,
+    "Firefox roaming state, profile registry and cross-profile datastore",
+    root_key="FIREFOX_ROOT",
+)
+
 _FIREFOX_CRASH_PENDING_RULE = _rule(
     "firefox-pending-crash-reports",
     "pending",
@@ -188,10 +200,10 @@ _FIREFOX_UPDATE_LOG_RULES: tuple[ApplicationCleanupRule, ...] = tuple(
         (
             r"*\updates\0\update.log",
             r"*\updates\0\update-elevated.log",
-            r"*\backup-update.log",
-            r"*\backup-update-elevated.log",
-            r"*\last-update.log",
-            r"*\last-update-elevated.log",
+            r"*\updates\backup-update.log",
+            r"*\updates\backup-update-elevated.log",
+            r"*\updates\last-update.log",
+            r"*\updates\last-update-elevated.log",
         ),
         start=1,
     )
@@ -211,6 +223,7 @@ FIREFOX_RULES: tuple[ApplicationCleanupRule, ...] = (
     _FIREFOX_LOCAL_PROFILE_RULE,
     *_FIREFOX_CACHE_RULES,
     _FIREFOX_PERSISTENT_PROFILE_RULE,
+    _FIREFOX_ROAMING_STATE_RULE,
     _FIREFOX_CRASH_PENDING_RULE,
     _FIREFOX_CRASH_STATE_RULE,
     *_FIREFOX_UPDATE_LOG_RULES,
@@ -224,6 +237,7 @@ def firefox_roots(environment: Mapping[str, str] | None = None) -> FirefoxRootSe
     localappdata = env.get("localappdata")
     programdata = env.get("programdata") or env.get("allusersprofile")
 
+    state_roots: list[PureWindowsPath] = []
     persistent_parents: list[PureWindowsPath] = []
     local_parents: list[PureWindowsPath] = []
     custom_profiles: list[PureWindowsPath] = []
@@ -233,6 +247,7 @@ def firefox_roots(environment: Mapping[str, str] | None = None) -> FirefoxRootSe
     firefox_base: PureWindowsPath | None = None
     if appdata:
         firefox_base = PureWindowsPath(appdata) / "Mozilla" / "Firefox"
+        state_roots.append(firefox_base)
         persistent_parents.append(firefox_base / "Profiles")
         crash_roots.append(firefox_base / "Crash Reports")
         custom_profiles.extend(_profiles_ini_paths(firefox_base, localappdata))
@@ -241,6 +256,7 @@ def firefox_roots(environment: Mapping[str, str] | None = None) -> FirefoxRootSe
         local_parents.append(local_base / "Mozilla" / "Firefox" / "Profiles")
         _append_msix_roots(
             local_base,
+            state_roots,
             persistent_parents,
             local_parents,
             crash_roots,
@@ -258,7 +274,11 @@ def firefox_roots(environment: Mapping[str, str] | None = None) -> FirefoxRootSe
     if explicit_update:
         update_parents.insert(0, PureWindowsPath(explicit_update))
 
+    if environment is None:
+        custom_profiles[0:0] = _running_profile_roots()
+
     return FirefoxRootSet(
+        state_roots=_unique_paths(state_roots),
         persistent_parents=_unique_paths(persistent_parents),
         local_parents=_unique_paths(local_parents),
         custom_profiles=_unique_paths(custom_profiles),
@@ -274,6 +294,7 @@ def firefox_scan_roots(
     return tuple(
         dict.fromkeys(
             (
+                *roots.state_roots,
                 *roots.persistent_parents,
                 *roots.local_parents,
                 *roots.custom_profiles,
@@ -330,6 +351,11 @@ def match_firefox_rule(
     for crash_root in roots.crash_roots:
         _append_match(matches, normalized, crash_root, _FIREFOX_CRASH_PENDING_RULE, 0)
         _append_match(matches, normalized, crash_root, _FIREFOX_CRASH_STATE_RULE, 100)
+
+    # The complete Roaming Firefox root is persistent state. Specific profile or
+    # crash rules above remain authoritative because their candidates are longer.
+    for state_root in roots.state_roots:
+        _append_match(matches, normalized, state_root, _FIREFOX_ROAMING_STATE_RULE, 1000)
 
     for update_parent in roots.update_parents:
         for index, rule in enumerate(_FIREFOX_UPDATE_LOG_RULES):
@@ -455,8 +481,49 @@ def firefox_process_running() -> bool:
     return "RUNNING" in result.stdout
 
 
+@lru_cache(maxsize=1)
+def _running_profile_roots() -> tuple[PureWindowsPath, ...]:
+    if os.name != "nt":
+        return ()
+    script = (
+        "$p=Get-CimInstance Win32_Process | Where-Object { $_.Name -ieq 'firefox.exe' }; "
+        "$p | ForEach-Object { $_.CommandLine }"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=6,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ()
+    if result.returncode != 0:
+        return ()
+
+    found: list[PureWindowsPath] = []
+    for line in result.stdout.splitlines():
+        value = _profile_switch_path(line)
+        if value:
+            found.append(PureWindowsPath(value))
+    return _unique_paths(found)
+
+
 def clear_firefox_process_cache() -> None:
     firefox_process_running.cache_clear()
+    _running_profile_roots.cache_clear()
+
+
+def _profile_switch_path(command_line: str) -> str | None:
+    pattern = re.compile(
+        r'''(?:^|\s)--?profile(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))''',
+        re.IGNORECASE,
+    )
+    match = pattern.search(command_line)
+    if not match:
+        return None
+    return next((group for group in match.groups() if group), None)
 
 
 def _profiles_ini_paths(
@@ -499,6 +566,7 @@ def _profiles_ini_paths(
 
 def _append_msix_roots(
     localappdata: PureWindowsPath,
+    state_roots: list[PureWindowsPath],
     persistent_parents: list[PureWindowsPath],
     local_parents: list[PureWindowsPath],
     crash_roots: list[PureWindowsPath],
@@ -514,6 +582,7 @@ def _append_msix_roots(
         package = PureWindowsPath(str(child)) / "LocalCache"
         roaming = package / "Roaming" / "Mozilla" / "Firefox"
         local = package / "Local" / "Mozilla" / "Firefox"
+        state_roots.append(roaming)
         persistent_parents.append(roaming / "Profiles")
         local_parents.append(local / "Profiles")
         crash_roots.append(roaming / "Crash Reports")
