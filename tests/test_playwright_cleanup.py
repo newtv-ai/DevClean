@@ -4,6 +4,8 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PureWindowsPath
 
+import pytest
+
 import devclean.core.application_cleanup as application_cleanup
 from devclean.core.application_cleanup import (
     DecisionOwner,
@@ -72,9 +74,7 @@ def test_playwright_project_local_mode_is_fail_closed(tmp_path: Path) -> None:
 
     assert roots.browser_registry_roots == ()
     assert roots.project_local_browsers
-    assert application_scan_roots(env) == tuple(
-        root for root in application_scan_roots(env) if "ms-playwright" not in str(root)
-    )
+    assert all("ms-playwright" not in str(root) for root in application_scan_roots(env))
 
 
 def test_playwright_relative_override_is_not_guessed(tmp_path: Path) -> None:
@@ -134,7 +134,9 @@ def test_playwright_registry_is_catalogued_report_only(tmp_path: Path) -> None:
     assert item.application_rule is None
 
 
-def test_playwright_process_dispatch_does_not_alias_docker(monkeypatch) -> None:
+def test_playwright_process_dispatch_does_not_alias_docker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(application_cleanup, "playwright_process_running", lambda: True)
     monkeypatch.setattr(application_cleanup, "docker_process_running", lambda: False)
     assert application_cleanup.application_process_running("playwright")
