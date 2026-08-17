@@ -115,7 +115,11 @@ def _append_application_roots(
             Path(str(root)),
             category=(CleanupCategory.UV_CACHE if is_uv_cache else CleanupCategory.IDE_CACHE),
             policy=CleanupPolicy.REPORT_ONLY,
-            label=(uv_rule.label if is_uv_cache and uv_rule is not None else "已审计的应用存储根目录"),
+            label=(
+                uv_rule.label
+                if is_uv_cache and uv_rule is not None
+                else "已审计的应用存储根目录"
+            ),
             delete_root_itself=False,
             replace_existing=True,
         )
