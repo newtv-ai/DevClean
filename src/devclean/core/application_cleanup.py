@@ -272,6 +272,16 @@ from devclean.core.pnpm_cleanup import (
     pnpm_scan_roots,
     whole_tree_pnpm_rule,
 )
+from devclean.core.puppeteer_cleanup import (
+    PUPPETEER_RULES,
+    clear_puppeteer_process_cache,
+    evaluate_puppeteer_path,
+    match_puppeteer_rule,
+    puppeteer_audited_tool_roots,
+    puppeteer_process_running,
+    puppeteer_scan_roots,
+    whole_tree_puppeteer_rule,
+)
 from devclean.core.toolbox_cleanup import (
     TOOLBOX_RULES,
     clear_toolbox_process_cache,
@@ -391,6 +401,7 @@ def application_scan_roots(
                 *ollama_scan_roots(environment),
                 *docker_scan_roots(environment),
                 *playwright_scan_roots(environment),
+                *puppeteer_scan_roots(environment),
                 *chrome_scan_roots(environment),
                 *edge_scan_roots(environment),
                 *brave_scan_roots(environment),
@@ -432,6 +443,7 @@ def audited_dynamic_tool_roots(
         *ollama_audited_tool_roots(environment),
         *docker_audited_tool_roots(environment),
         *playwright_audited_tool_roots(environment),
+        *puppeteer_audited_tool_roots(environment),
         *chrome_audited_tool_roots(environment),
         *edge_audited_tool_roots(environment),
         *brave_audited_tool_roots(environment),
@@ -503,6 +515,9 @@ def match_application_rule(
     claude = match_claude_rule(path, environment)
     if claude is not None:
         return claude
+    puppeteer = match_puppeteer_rule(path, environment)
+    if puppeteer is not None:
+        return puppeteer
     playwright = match_playwright_rule(path, environment)
     if playwright is not None:
         return playwright
@@ -721,6 +736,15 @@ def evaluate_application_path(
             environment=environment,
         )
     if decision is None:
+        decision = evaluate_puppeteer_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
+    if decision is None:
         decision = evaluate_playwright_path(
             path,
             logical_size=logical_size,
@@ -894,6 +918,8 @@ def application_process_running(app_id: str) -> bool:
         return edge_process_running()
     if app_id == "chrome":
         return chrome_process_running()
+    if app_id == "puppeteer":
+        return puppeteer_process_running()
     if app_id == "playwright":
         return playwright_process_running()
     if app_id == "docker":
@@ -959,6 +985,7 @@ def clear_process_cache() -> None:
     clear_ollama_process_cache()
     clear_docker_process_cache()
     clear_playwright_process_cache()
+    clear_puppeteer_process_cache()
     clear_chrome_process_cache()
     clear_edge_process_cache()
     clear_brave_process_cache()
@@ -1025,6 +1052,9 @@ def whole_tree_application_rule(
     if dynamic is not None:
         return dynamic
     dynamic = whole_tree_chrome_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
+    dynamic = whole_tree_puppeteer_rule(path, environment)
     if dynamic is not None:
         return dynamic
     dynamic = whole_tree_playwright_rule(path, environment)
@@ -1121,6 +1151,7 @@ def application_display_name(app_id: str) -> str:
         "maven": "Apache Maven",
         "ollama": "Ollama",
         "playwright": "Playwright",
+        "puppeteer": "Puppeteer",
         "toolbox": "JetBrains Toolbox",
         "nuget": "NuGet",
         "opera": "Opera / Opera GX",
@@ -1166,6 +1197,7 @@ __all__ = [
     "PIP_RULES",
     "PLAYWRIGHT_RULES",
     "PNPM_RULES",
+    "PUPPETEER_RULES",
     "TOOLBOX_RULES",
     "TRAE_RULES",
     "UV_RULES",
