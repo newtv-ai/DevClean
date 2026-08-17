@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from devclean.core.uv_cleanup import uv_process_running, uv_roots
+from devclean.core.uv_cleanup import clear_uv_process_cache, uv_process_running, uv_roots
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +76,7 @@ def prune_uv_cache(
     audited = {_normalized(Path(str(path))) for path in uv_roots(environment).cache_roots}
     if _normalized(root) not in audited:
         raise ValueError(f"不是已审计的 uv cache 根目录: {root}")
+    clear_uv_process_cache()
     if uv_process_running():
         raise RuntimeError("uv 正在运行; 请关闭正在执行的 uv/uvx 命令后再清理缓存")
     if not root.is_dir():
