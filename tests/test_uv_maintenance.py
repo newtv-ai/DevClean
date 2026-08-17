@@ -71,7 +71,7 @@ def test_uv_prune_uses_vendor_command_for_exact_audited_cache(
         old.unlink()
         return subprocess.CompletedProcess(command, 0, stdout="pruned", stderr="")
 
-    monkeypatch.setattr(uv_maintenance.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
 
     result = prune_uv_cache(cache, env)
 
@@ -111,9 +111,9 @@ def test_uv_prune_surfaces_vendor_failure(
     monkeypatch.setattr(uv_maintenance, "uv_process_running", lambda: False)
 
     def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(args, 2, stdout="", stderr="cache locked")
+        return subprocess.CompletedProcess(["uv"], 2, stdout="", stderr="cache locked")
 
-    monkeypatch.setattr(uv_maintenance.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
 
     with pytest.raises(RuntimeError, match="cache locked"):
         prune_uv_cache(cache, env)
