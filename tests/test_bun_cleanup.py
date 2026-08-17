@@ -188,7 +188,7 @@ def test_bun_whole_tree_authority_is_exact_and_catalogued(tmp_path: Path) -> Non
 
     assert home_item.policy is CleanupPolicy.REPORT_ONLY
     assert not home_item.delete_root_itself
-    assert cache_item.category is CleanupCategory.NPM_CACHE
+    assert cache_item.category is CleanupCategory.BUN_CACHE
     assert cache_item.policy is CleanupPolicy.VENDOR_MANAGED
     assert cache_item.delete_root_itself
     assert cache_item.application_rule is not None
