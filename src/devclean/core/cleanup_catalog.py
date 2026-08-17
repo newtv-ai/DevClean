@@ -24,6 +24,7 @@ from devclean.core.go_cleanup import match_go_rule
 from devclean.core.huggingface_cleanup import match_huggingface_rule
 from devclean.core.maven_cleanup import match_maven_rule
 from devclean.core.nuget_cleanup import match_nuget_rule
+from devclean.core.ollama_cleanup import match_ollama_rule
 from devclean.core.rule_schema import CleanupCategory, CleanupPolicy, SourceDomain
 from devclean.core.user_rules import (
     RuleConfigError,
@@ -164,6 +165,10 @@ def _report_only_root_metadata(
     root: os.PathLike[str],
     environment: dict[str, str],
 ) -> tuple[CleanupCategory, str]:
+    ollama_rule = match_ollama_rule(root, environment)
+    if ollama_rule is not None and ollama_rule.rule_id == "ollama-model-store":
+        return CleanupCategory.OLLAMA_MODELS, ollama_rule.label
+
     huggingface_rule = match_huggingface_rule(root, environment)
     if huggingface_rule is not None and huggingface_rule.rule_id in {
         "huggingface-hub-cache-vendor-managed",
@@ -258,6 +263,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.MAVEN_REPOSITORY
     if lower.startswith("huggingface-"):
         return CleanupCategory.HUGGINGFACE_CACHE
+    if lower.startswith("ollama-"):
+        return CleanupCategory.OLLAMA_MODELS
     if lower.startswith("yarn-"):
         return CleanupCategory.YARN_CACHE
     if lower.startswith("bun-"):
