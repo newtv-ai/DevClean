@@ -74,6 +74,16 @@ from devclean.core.bun_cleanup import (
     match_bun_rule,
     whole_tree_bun_rule,
 )
+from devclean.core.cargo_cleanup import (
+    CARGO_RULES,
+    cargo_audited_tool_roots,
+    cargo_process_running,
+    cargo_scan_roots,
+    clear_cargo_process_cache,
+    evaluate_cargo_path,
+    match_cargo_rule,
+    whole_tree_cargo_rule,
+)
 from devclean.core.chrome_cleanup import (
     CHROME_RULES,
     chrome_audited_tool_roots,
@@ -325,6 +335,7 @@ def application_scan_roots(
                 *conda_scan_roots(environment),
                 *nuget_scan_roots(environment),
                 *go_scan_roots(environment),
+                *cargo_scan_roots(environment),
                 *chrome_scan_roots(environment),
                 *edge_scan_roots(environment),
                 *brave_scan_roots(environment),
@@ -360,6 +371,7 @@ def audited_dynamic_tool_roots(
         *conda_audited_tool_roots(environment),
         *nuget_audited_tool_roots(environment),
         *go_audited_tool_roots(environment),
+        *cargo_audited_tool_roots(environment),
         *chrome_audited_tool_roots(environment),
         *edge_audited_tool_roots(environment),
         *brave_audited_tool_roots(environment),
@@ -431,6 +443,9 @@ def match_application_rule(
     claude = match_claude_rule(path, environment)
     if claude is not None:
         return claude
+    cargo = match_cargo_rule(path, environment)
+    if cargo is not None:
+        return cargo
     go_rule = match_go_rule(path, environment)
     if go_rule is not None:
         return go_rule
@@ -631,6 +646,15 @@ def evaluate_application_path(
             environment=environment,
         )
     if decision is None:
+        decision = evaluate_cargo_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
+    if decision is None:
         decision = evaluate_go_path(
             path,
             logical_size=logical_size,
@@ -750,6 +774,8 @@ def application_process_running(app_id: str) -> bool:
         return edge_process_running()
     if app_id == "chrome":
         return chrome_process_running()
+    if app_id == "cargo":
+        return cargo_process_running()
     if app_id == "go":
         return go_process_running()
     if app_id == "nuget":
@@ -797,6 +823,7 @@ def clear_process_cache() -> None:
     clear_conda_process_cache()
     clear_nuget_process_cache()
     clear_go_process_cache()
+    clear_cargo_process_cache()
     clear_chrome_process_cache()
     clear_edge_process_cache()
     clear_brave_process_cache()
@@ -865,6 +892,9 @@ def whole_tree_application_rule(
     dynamic = whole_tree_chrome_rule(path, environment)
     if dynamic is not None:
         return dynamic
+    dynamic = whole_tree_cargo_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_go_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -929,6 +959,7 @@ def application_display_name(app_id: str) -> str:
         "android_studio": "Android Studio",
         "brave": "Brave",
         "bun": "Bun",
+        "cargo": "Cargo / Rust",
         "chrome": "Chrome / Chromium",
         "conda": "Conda / Miniconda / Anaconda",
         "edge": "Microsoft Edge",
@@ -959,6 +990,7 @@ __all__ = [
     "ANDROID_STUDIO_RULES",
     "BRAVE_RULES",
     "BUN_RULES",
+    "CARGO_RULES",
     "CHROME_RULES",
     "CLAUDE_RULES",
     "CODEX_RULES",
