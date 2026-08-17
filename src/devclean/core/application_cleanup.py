@@ -162,6 +162,16 @@ from devclean.core.npm_cleanup import (
     npm_scan_roots,
     whole_tree_npm_rule,
 )
+from devclean.core.nuget_cleanup import (
+    NUGET_RULES,
+    clear_nuget_process_cache,
+    evaluate_nuget_path,
+    match_nuget_rule,
+    nuget_audited_tool_roots,
+    nuget_process_running,
+    nuget_scan_roots,
+    whole_tree_nuget_rule,
+)
 from devclean.core.opera_cleanup import (
     OPERA_RULES,
     clear_opera_process_cache,
@@ -303,6 +313,7 @@ def application_scan_roots(
                 *pip_scan_roots(environment),
                 *uv_scan_roots(environment),
                 *conda_scan_roots(environment),
+                *nuget_scan_roots(environment),
                 *chrome_scan_roots(environment),
                 *edge_scan_roots(environment),
                 *brave_scan_roots(environment),
@@ -336,6 +347,7 @@ def audited_dynamic_tool_roots(
         *pip_audited_tool_roots(environment),
         *uv_audited_tool_roots(environment),
         *conda_audited_tool_roots(environment),
+        *nuget_audited_tool_roots(environment),
         *chrome_audited_tool_roots(environment),
         *edge_audited_tool_roots(environment),
         *brave_audited_tool_roots(environment),
@@ -407,6 +419,9 @@ def match_application_rule(
     claude = match_claude_rule(path, environment)
     if claude is not None:
         return claude
+    nuget = match_nuget_rule(path, environment)
+    if nuget is not None:
+        return nuget
     conda = match_conda_rule(path, environment)
     if conda is not None:
         return conda
@@ -601,6 +616,15 @@ def evaluate_application_path(
             environment=environment,
         )
     if decision is None:
+        decision = evaluate_nuget_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
+    if decision is None:
         decision = evaluate_conda_path(
             path,
             logical_size=logical_size,
@@ -702,6 +726,8 @@ def application_process_running(app_id: str) -> bool:
         return edge_process_running()
     if app_id == "chrome":
         return chrome_process_running()
+    if app_id == "nuget":
+        return nuget_process_running()
     if app_id == "conda":
         return conda_process_running()
     if app_id == "uv":
@@ -743,6 +769,7 @@ def clear_process_cache() -> None:
     clear_pip_process_cache()
     clear_uv_process_cache()
     clear_conda_process_cache()
+    clear_nuget_process_cache()
     clear_chrome_process_cache()
     clear_edge_process_cache()
     clear_brave_process_cache()
@@ -811,6 +838,9 @@ def whole_tree_application_rule(
     dynamic = whole_tree_chrome_rule(path, environment)
     if dynamic is not None:
         return dynamic
+    dynamic = whole_tree_nuget_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_conda_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -875,6 +905,7 @@ def application_display_name(app_id: str) -> str:
         "firefox": "Mozilla Firefox",
         "jetbrains": "JetBrains IDE",
         "toolbox": "JetBrains Toolbox",
+        "nuget": "NuGet",
         "opera": "Opera / Opera GX",
         "vivaldi": "Vivaldi",
         "codex": "Codex",
@@ -907,6 +938,7 @@ __all__ = [
     "GRADLE_RULES",
     "JETBRAINS_RULES",
     "NPM_RULES",
+    "NUGET_RULES",
     "OPERA_RULES",
     "PIP_RULES",
     "PNPM_RULES",

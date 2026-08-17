@@ -19,6 +19,7 @@ from devclean.core.application_cleanup import (
     audited_dynamic_tool_roots,
 )
 from devclean.core.conda_cleanup import match_conda_rule
+from devclean.core.nuget_cleanup import match_nuget_rule
 from devclean.core.rule_schema import CleanupCategory, CleanupPolicy, SourceDomain
 from devclean.core.user_rules import (
     RuleConfigError,
@@ -159,6 +160,10 @@ def _report_only_root_metadata(
     root: os.PathLike[str],
     environment: dict[str, str],
 ) -> tuple[CleanupCategory, str]:
+    nuget_rule = match_nuget_rule(root, environment)
+    if nuget_rule is not None and nuget_rule.rule_id.startswith("nuget-"):
+        return CleanupCategory.NUGET_CACHE, nuget_rule.label
+
     conda_rule = match_conda_rule(root, environment)
     if (
         conda_rule is not None
@@ -210,6 +215,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.UV_CACHE
     if lower.startswith("conda-"):
         return CleanupCategory.CONDA_CACHE
+    if lower.startswith("nuget-"):
+        return CleanupCategory.NUGET_CACHE
     if lower.startswith("yarn-"):
         return CleanupCategory.YARN_CACHE
     if lower.startswith("bun-"):
