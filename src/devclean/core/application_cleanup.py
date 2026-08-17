@@ -122,6 +122,16 @@ from devclean.core.cursor_cleanup import (
     evaluate_cursor_path,
     match_cursor_rule,
 )
+from devclean.core.docker_cleanup import (
+    DOCKER_RULES,
+    clear_docker_process_cache,
+    docker_audited_tool_roots,
+    docker_process_running,
+    docker_scan_roots,
+    evaluate_docker_path,
+    match_docker_rule,
+    whole_tree_docker_rule,
+)
 from devclean.core.edge_cleanup import (
     EDGE_RULES,
     clear_edge_process_cache,
@@ -369,6 +379,7 @@ def application_scan_roots(
                 *maven_scan_roots(environment),
                 *huggingface_scan_roots(environment),
                 *ollama_scan_roots(environment),
+                *docker_scan_roots(environment),
                 *chrome_scan_roots(environment),
                 *edge_scan_roots(environment),
                 *brave_scan_roots(environment),
@@ -408,6 +419,7 @@ def audited_dynamic_tool_roots(
         *maven_audited_tool_roots(environment),
         *huggingface_audited_tool_roots(environment),
         *ollama_audited_tool_roots(environment),
+        *docker_audited_tool_roots(environment),
         *chrome_audited_tool_roots(environment),
         *edge_audited_tool_roots(environment),
         *brave_audited_tool_roots(environment),
@@ -479,6 +491,9 @@ def match_application_rule(
     claude = match_claude_rule(path, environment)
     if claude is not None:
         return claude
+    docker = match_docker_rule(path, environment)
+    if docker is not None:
+        return docker
     ollama = match_ollama_rule(path, environment)
     if ollama is not None:
         return ollama
@@ -691,6 +706,15 @@ def evaluate_application_path(
             environment=environment,
         )
     if decision is None:
+        decision = evaluate_docker_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
+    if decision is None:
         decision = evaluate_ollama_path(
             path,
             logical_size=logical_size,
@@ -846,6 +870,8 @@ def application_process_running(app_id: str) -> bool:
         return edge_process_running()
     if app_id == "chrome":
         return chrome_process_running()
+    if app_id == "docker":
+        return docker_process_running()
     if app_id == "ollama":
         return ollama_process_running()
     if app_id == "huggingface":
@@ -905,6 +931,7 @@ def clear_process_cache() -> None:
     clear_maven_process_cache()
     clear_huggingface_process_cache()
     clear_ollama_process_cache()
+    clear_docker_process_cache()
     clear_chrome_process_cache()
     clear_edge_process_cache()
     clear_brave_process_cache()
@@ -971,6 +998,9 @@ def whole_tree_application_rule(
     if dynamic is not None:
         return dynamic
     dynamic = whole_tree_chrome_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
+    dynamic = whole_tree_docker_rule(path, environment)
     if dynamic is not None:
         return dynamic
     dynamic = whole_tree_ollama_rule(path, environment)
@@ -1052,6 +1082,7 @@ def application_display_name(app_id: str) -> str:
         "cargo": "Cargo / Rust",
         "chrome": "Chrome / Chromium",
         "conda": "Conda / Miniconda / Anaconda",
+        "docker": "Docker Desktop",
         "edge": "Microsoft Edge",
         "firefox": "Mozilla Firefox",
         "go": "Go",
@@ -1089,6 +1120,7 @@ __all__ = [
     "CODEX_RULES",
     "CONDA_RULES",
     "CURSOR_RULES",
+    "DOCKER_RULES",
     "EDGE_RULES",
     "FIREFOX_RULES",
     "GO_RULES",
