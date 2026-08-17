@@ -21,6 +21,7 @@ from devclean.core.application_cleanup import (
 from devclean.core.cargo_cleanup import match_cargo_rule
 from devclean.core.conda_cleanup import match_conda_rule
 from devclean.core.go_cleanup import match_go_rule
+from devclean.core.maven_cleanup import match_maven_rule
 from devclean.core.nuget_cleanup import match_nuget_rule
 from devclean.core.rule_schema import CleanupCategory, CleanupPolicy, SourceDomain
 from devclean.core.user_rules import (
@@ -162,6 +163,13 @@ def _report_only_root_metadata(
     root: os.PathLike[str],
     environment: dict[str, str],
 ) -> tuple[CleanupCategory, str]:
+    maven_rule = match_maven_rule(root, environment)
+    if (
+        maven_rule is not None
+        and maven_rule.rule_id == "maven-local-repository-mixed"
+    ):
+        return CleanupCategory.MAVEN_REPOSITORY, maven_rule.label
+
     cargo_rule = match_cargo_rule(root, environment)
     if cargo_rule is not None and cargo_rule.rule_id in {
         "cargo-registry-cache-vendor-managed",
@@ -237,6 +245,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.GO_MODULE_CACHE
     if lower.startswith("cargo-"):
         return CleanupCategory.CARGO_REGISTRY
+    if lower.startswith("maven-"):
+        return CleanupCategory.MAVEN_REPOSITORY
     if lower.startswith("yarn-"):
         return CleanupCategory.YARN_CACHE
     if lower.startswith("bun-"):
