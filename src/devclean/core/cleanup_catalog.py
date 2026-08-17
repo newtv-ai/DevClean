@@ -18,6 +18,7 @@ from devclean.core.application_cleanup import (
     application_scan_roots,
     audited_dynamic_tool_roots,
 )
+from devclean.core.cargo_cleanup import match_cargo_rule
 from devclean.core.conda_cleanup import match_conda_rule
 from devclean.core.go_cleanup import match_go_rule
 from devclean.core.nuget_cleanup import match_nuget_rule
@@ -161,6 +162,13 @@ def _report_only_root_metadata(
     root: os.PathLike[str],
     environment: dict[str, str],
 ) -> tuple[CleanupCategory, str]:
+    cargo_rule = match_cargo_rule(root, environment)
+    if cargo_rule is not None and cargo_rule.rule_id in {
+        "cargo-registry-cache-vendor-managed",
+        "cargo-git-cache-vendor-managed",
+    }:
+        return CleanupCategory.CARGO_REGISTRY, cargo_rule.label
+
     go_rule = match_go_rule(root, environment)
     if go_rule is not None and go_rule.rule_id in {
         "go-build-cache-vendor-managed",
@@ -227,6 +235,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.NUGET_CACHE
     if lower.startswith("go-"):
         return CleanupCategory.GO_MODULE_CACHE
+    if lower.startswith("cargo-"):
+        return CleanupCategory.CARGO_REGISTRY
     if lower.startswith("yarn-"):
         return CleanupCategory.YARN_CACHE
     if lower.startswith("bun-"):
