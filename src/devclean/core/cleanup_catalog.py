@@ -26,6 +26,7 @@ from devclean.core.huggingface_cleanup import match_huggingface_rule
 from devclean.core.maven_cleanup import match_maven_rule
 from devclean.core.nuget_cleanup import match_nuget_rule
 from devclean.core.ollama_cleanup import match_ollama_rule
+from devclean.core.playwright_cleanup import match_playwright_rule
 from devclean.core.rule_schema import CleanupCategory, CleanupPolicy, SourceDomain
 from devclean.core.user_rules import (
     RuleConfigError,
@@ -166,6 +167,13 @@ def _report_only_root_metadata(
     root: os.PathLike[str],
     environment: dict[str, str],
 ) -> tuple[CleanupCategory, str]:
+    playwright_rule = match_playwright_rule(root, environment)
+    if (
+        playwright_rule is not None
+        and playwright_rule.rule_id == "playwright-browser-registry-vendor-managed"
+    ):
+        return CleanupCategory.TEST_BROWSER_BINARIES, playwright_rule.label
+
     docker_rule = match_docker_rule(root, environment)
     if (
         docker_rule is not None
@@ -275,6 +283,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.OLLAMA_MODELS
     if lower.startswith("docker-"):
         return CleanupCategory.CONTAINER_STORAGE
+    if lower.startswith("playwright-"):
+        return CleanupCategory.TEST_BROWSER_BINARIES
     if lower.startswith("yarn-"):
         return CleanupCategory.YARN_CACHE
     if lower.startswith("bun-"):
