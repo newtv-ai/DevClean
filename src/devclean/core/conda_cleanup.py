@@ -95,7 +95,6 @@ _CONDA_CONFIG_RULE = _rule(
     owner=DecisionOwner.KEEP,
     label="Conda runtime configuration",
     rebuild_cost=RebuildCost.HIGH,
-    match_kind=MatchKind.EXACT,
 )
 _CONDA_ENV_METADATA_RULE = _rule(
     "conda-environment-metadata",
@@ -152,10 +151,9 @@ def conda_roots(environment: Mapping[str, str] | None = None) -> CondaRootSet:
         _append_absolute(package_caches, value)
     for value in _info_path_list(info, "envs_dirs"):
         _append_absolute(environment_roots, value)
-    for key in ("root_prefix",):
-        value = info.get(key)
-        if isinstance(value, str):
-            _append_absolute(root_prefixes, value)
+    root_prefix_value = info.get("root_prefix")
+    if isinstance(root_prefix_value, str):
+        _append_absolute(root_prefixes, root_prefix_value)
 
     if not root_prefixes:
         inferred_root = _root_from_conda_executable(env)
@@ -199,7 +197,7 @@ def match_conda_rule(
         (roots.environment_roots, _CONDA_ENVIRONMENTS_RULE, MatchKind.PREFIX),
         (roots.root_prefixes, _CONDA_ROOT_PREFIX_RULE, MatchKind.PREFIX),
         (roots.state_roots, _CONDA_STATE_RULE, MatchKind.PREFIX),
-        (roots.config_paths, _CONDA_CONFIG_RULE, MatchKind.EXACT),
+        (roots.config_paths, _CONDA_CONFIG_RULE, MatchKind.PREFIX),
     )
     for candidates, rule, match_kind in groups:
         for root in candidates:
@@ -324,7 +322,7 @@ def clear_conda_process_cache() -> None:
 
 
 def _root_from_conda_executable(env: Mapping[str, str]) -> PureWindowsPath | None:
-    value = env.get("conda_exe")
+    value = env.get("devclean_conda_exe") or env.get("conda_exe")
     if not value:
         return None
     candidate = PureWindowsPath(value)
