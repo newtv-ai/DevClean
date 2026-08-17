@@ -186,13 +186,13 @@ def test_yarn_whole_tree_authority_is_exact_and_catalogued(tmp_path: Path) -> No
     global_item = by_path[os.path.normcase(str(global_folder))]
     cache_item = by_path[os.path.normcase(str(global_cache))]
 
-    assert classic_item.category is CleanupCategory.NPM_CACHE
+    assert classic_item.category is CleanupCategory.YARN_CACHE
     assert classic_item.policy is CleanupPolicy.VENDOR_MANAGED
     assert classic_item.delete_root_itself
     assert classic_item.application_rule is not None
     assert global_item.policy is CleanupPolicy.REPORT_ONLY
     assert not global_item.delete_root_itself
-    assert cache_item.category is CleanupCategory.NPM_CACHE
+    assert cache_item.category is CleanupCategory.YARN_CACHE
     assert cache_item.policy is CleanupPolicy.VENDOR_MANAGED
     assert cache_item.delete_root_itself
 
