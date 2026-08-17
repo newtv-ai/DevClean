@@ -20,6 +20,7 @@ from devclean.core.application_cleanup import (
 )
 from devclean.core.cargo_cleanup import match_cargo_rule
 from devclean.core.conda_cleanup import match_conda_rule
+from devclean.core.cypress_cleanup import match_cypress_rule
 from devclean.core.docker_cleanup import match_docker_rule
 from devclean.core.go_cleanup import match_go_rule
 from devclean.core.huggingface_cleanup import match_huggingface_rule
@@ -168,6 +169,13 @@ def _report_only_root_metadata(
     root: os.PathLike[str],
     environment: dict[str, str],
 ) -> tuple[CleanupCategory, str]:
+    cypress_rule = match_cypress_rule(root, environment)
+    if (
+        cypress_rule is not None
+        and cypress_rule.rule_id == "cypress-binary-cache-vendor-managed"
+    ):
+        return CleanupCategory.TEST_BROWSER_BINARIES, cypress_rule.label
+
     puppeteer_rule = match_puppeteer_rule(root, environment)
     if (
         puppeteer_rule is not None
@@ -291,7 +299,7 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.OLLAMA_MODELS
     if lower.startswith("docker-"):
         return CleanupCategory.CONTAINER_STORAGE
-    if lower.startswith(("playwright-", "puppeteer-")):
+    if lower.startswith(("cypress-", "playwright-", "puppeteer-")):
         return CleanupCategory.TEST_BROWSER_BINARIES
     if lower.startswith("yarn-"):
         return CleanupCategory.YARN_CACHE

@@ -122,6 +122,16 @@ from devclean.core.cursor_cleanup import (
     evaluate_cursor_path,
     match_cursor_rule,
 )
+from devclean.core.cypress_cleanup import (
+    CYPRESS_RULES,
+    clear_cypress_process_cache,
+    cypress_audited_tool_roots,
+    cypress_process_running,
+    cypress_scan_roots,
+    evaluate_cypress_path,
+    match_cypress_rule,
+    whole_tree_cypress_rule,
+)
 from devclean.core.docker_cleanup import (
     DOCKER_RULES,
     clear_docker_process_cache,
@@ -402,6 +412,7 @@ def application_scan_roots(
                 *docker_scan_roots(environment),
                 *playwright_scan_roots(environment),
                 *puppeteer_scan_roots(environment),
+                *cypress_scan_roots(environment),
                 *chrome_scan_roots(environment),
                 *edge_scan_roots(environment),
                 *brave_scan_roots(environment),
@@ -444,6 +455,7 @@ def audited_dynamic_tool_roots(
         *docker_audited_tool_roots(environment),
         *playwright_audited_tool_roots(environment),
         *puppeteer_audited_tool_roots(environment),
+        *cypress_audited_tool_roots(environment),
         *chrome_audited_tool_roots(environment),
         *edge_audited_tool_roots(environment),
         *brave_audited_tool_roots(environment),
@@ -515,6 +527,9 @@ def match_application_rule(
     claude = match_claude_rule(path, environment)
     if claude is not None:
         return claude
+    cypress = match_cypress_rule(path, environment)
+    if cypress is not None:
+        return cypress
     puppeteer = match_puppeteer_rule(path, environment)
     if puppeteer is not None:
         return puppeteer
@@ -736,6 +751,15 @@ def evaluate_application_path(
             environment=environment,
         )
     if decision is None:
+        decision = evaluate_cypress_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
+    if decision is None:
         decision = evaluate_puppeteer_path(
             path,
             logical_size=logical_size,
@@ -918,6 +942,8 @@ def application_process_running(app_id: str) -> bool:
         return edge_process_running()
     if app_id == "chrome":
         return chrome_process_running()
+    if app_id == "cypress":
+        return cypress_process_running()
     if app_id == "puppeteer":
         return puppeteer_process_running()
     if app_id == "playwright":
@@ -986,6 +1012,7 @@ def clear_process_cache() -> None:
     clear_docker_process_cache()
     clear_playwright_process_cache()
     clear_puppeteer_process_cache()
+    clear_cypress_process_cache()
     clear_chrome_process_cache()
     clear_edge_process_cache()
     clear_brave_process_cache()
@@ -1052,6 +1079,9 @@ def whole_tree_application_rule(
     if dynamic is not None:
         return dynamic
     dynamic = whole_tree_chrome_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
+    dynamic = whole_tree_cypress_rule(path, environment)
     if dynamic is not None:
         return dynamic
     dynamic = whole_tree_puppeteer_rule(path, environment)
@@ -1142,6 +1172,7 @@ def application_display_name(app_id: str) -> str:
         "cargo": "Cargo / Rust",
         "chrome": "Chrome / Chromium",
         "conda": "Conda / Miniconda / Anaconda",
+        "cypress": "Cypress",
         "docker": "Docker Desktop",
         "edge": "Microsoft Edge",
         "firefox": "Mozilla Firefox",
@@ -1182,6 +1213,7 @@ __all__ = [
     "CODEX_RULES",
     "CONDA_RULES",
     "CURSOR_RULES",
+    "CYPRESS_RULES",
     "DOCKER_RULES",
     "EDGE_RULES",
     "FIREFOX_RULES",
