@@ -156,7 +156,7 @@ def _append_application_roots(
 
 
 def _report_only_root_metadata(
-    root: object,
+    root: os.PathLike[str],
     environment: dict[str, str],
 ) -> tuple[CleanupCategory, str]:
     conda_rule = match_conda_rule(root, environment)
