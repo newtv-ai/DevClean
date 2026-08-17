@@ -22,6 +22,7 @@ from devclean.core.cargo_cleanup import match_cargo_rule
 from devclean.core.conda_cleanup import match_conda_rule
 from devclean.core.cypress_cleanup import match_cypress_rule
 from devclean.core.docker_cleanup import match_docker_rule
+from devclean.core.electron_cleanup import match_electron_rule
 from devclean.core.go_cleanup import match_go_rule
 from devclean.core.huggingface_cleanup import match_huggingface_rule
 from devclean.core.maven_cleanup import match_maven_rule
@@ -169,6 +170,13 @@ def _report_only_root_metadata(
     root: os.PathLike[str],
     environment: dict[str, str],
 ) -> tuple[CleanupCategory, str]:
+    electron_rule = match_electron_rule(root, environment)
+    if electron_rule is not None and electron_rule.rule_id in {
+        "electron-download-cache-mixed",
+        "electron-legacy-cache-mixed",
+    }:
+        return CleanupCategory.INSTALLERS_DOWNLOADS, electron_rule.label
+
     cypress_rule = match_cypress_rule(root, environment)
     if (
         cypress_rule is not None
@@ -299,6 +307,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.OLLAMA_MODELS
     if lower.startswith("docker-"):
         return CleanupCategory.CONTAINER_STORAGE
+    if lower.startswith("electron-"):
+        return CleanupCategory.INSTALLERS_DOWNLOADS
     if lower.startswith(("cypress-", "playwright-", "puppeteer-")):
         return CleanupCategory.TEST_BROWSER_BINARIES
     if lower.startswith("yarn-"):
