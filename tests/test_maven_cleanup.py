@@ -66,7 +66,14 @@ def test_maven_settings_local_repository_override_is_discovered(tmp_path: Path) 
 
     roots = maven_roots(env)
 
-    expected = PureWindowsPath(str(Path(env["USERPROFILE"]) / ".." / "cache-drive" / "maven-repository"))
+    expected = PureWindowsPath(
+        str(
+            Path(env["USERPROFILE"])
+            / ".."
+            / "cache-drive"
+            / "maven-repository"
+        )
+    )
     assert roots.local_repository_roots == (expected,)
     assert PureWindowsPath(str(default_repo)) not in roots.local_repository_roots
 
