@@ -53,7 +53,7 @@ def test_docker_inventory_uses_read_only_system_df(
             ),
         )
 
-    monkeypatch.setattr(docker_maintenance.subprocess, "run", fake_run)
+    monkeypatch.setattr("devclean.core.docker_maintenance.subprocess.run", fake_run)
 
     inventory = inventory_docker_storage({"DEVCLEAN_DOCKER_EXE": "docker-test"})
 
@@ -82,7 +82,7 @@ def test_docker_build_prune_targets_only_old_build_cache(
         seen.append(list(command))
         return _completed(command, stdout="Total reclaimed space: 4.2GB\n")
 
-    monkeypatch.setattr(docker_maintenance.subprocess, "run", fake_run)
+    monkeypatch.setattr("devclean.core.docker_maintenance.subprocess.run", fake_run)
 
     result = prune_docker_build_cache(
         {"DEVCLEAN_DOCKER_EXE": "docker-test"},
@@ -137,7 +137,7 @@ def test_docker_cli_failure_is_fail_closed(monkeypatch: pytest.MonkeyPatch) -> N
         del check, capture_output, text, timeout, env
         return _completed(command, stderr="daemon unavailable", returncode=1)
 
-    monkeypatch.setattr(docker_maintenance.subprocess, "run", fake_run)
+    monkeypatch.setattr("devclean.core.docker_maintenance.subprocess.run", fake_run)
 
     with pytest.raises(RuntimeError, match="daemon unavailable"):
         inventory_docker_storage({"DEVCLEAN_DOCKER_EXE": "docker-test"})
@@ -158,7 +158,7 @@ def test_docker_inventory_rejects_malformed_json(
         del check, capture_output, text, timeout, env
         return _completed(command, stdout="not-json\n")
 
-    monkeypatch.setattr(docker_maintenance.subprocess, "run", fake_run)
+    monkeypatch.setattr("devclean.core.docker_maintenance.subprocess.run", fake_run)
 
     with pytest.raises(RuntimeError, match="JSON"):
         inventory_docker_storage({"DEVCLEAN_DOCKER_EXE": "docker-test"})
