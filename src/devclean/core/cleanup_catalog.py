@@ -25,6 +25,7 @@ from devclean.core.user_rules import (
     expand_braces,
     expand_path,
 )
+from devclean.core.uv_cleanup import match_uv_rule
 from devclean.platform.windows.volumes import is_local_fixed_path
 
 
@@ -106,13 +107,15 @@ def _append_application_roots(
     environment: dict[str, str],
 ) -> None:
     for root in application_scan_roots(environment):
+        uv_rule = match_uv_rule(root, environment)
+        is_uv_cache = uv_rule is not None and uv_rule.rule_id == "uv-cache-vendor-managed"
         _append_root(
             accepted,
             seen,
             Path(str(root)),
-            category=CleanupCategory.IDE_CACHE,
+            category=(CleanupCategory.UV_CACHE if is_uv_cache else CleanupCategory.IDE_CACHE),
             policy=CleanupPolicy.REPORT_ONLY,
-            label="已审计的应用存储根目录",
+            label=(uv_rule.label if is_uv_cache and uv_rule is not None else "已审计的应用存储根目录"),
             delete_root_itself=False,
             replace_existing=True,
         )
@@ -185,6 +188,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.BROWSER_CACHE
     if lower.startswith("pip-"):
         return CleanupCategory.PIP_CACHE
+    if lower.startswith("uv-cache"):
+        return CleanupCategory.UV_CACHE
     if lower.startswith("yarn-"):
         return CleanupCategory.YARN_CACHE
     if lower.startswith("bun-"):
