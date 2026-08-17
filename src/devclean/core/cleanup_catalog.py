@@ -114,6 +114,7 @@ def _append_application_roots(
             policy=CleanupPolicy.REPORT_ONLY,
             label="已审计的应用存储根目录",
             delete_root_itself=False,
+            replace_existing=True,
         )
 
     root_map = {root.key: root.path for root in application_roots(environment)}
@@ -182,6 +183,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         ("brave-", "chrome-", "edge-", "firefox-", "opera-", "vivaldi-")
     ):
         return CleanupCategory.BROWSER_CACHE
+    if lower.startswith("pip-"):
+        return CleanupCategory.PIP_CACHE
     if lower.startswith(("bun-", "npm-", "pnpm-", "yarn-")):
         return CleanupCategory.NPM_CACHE
     if "temp" in lower or "shell" in lower:
@@ -202,6 +205,7 @@ def _append_root(
     allow_inside_system_anchor: bool = False,
     delete_root_itself: bool = False,
     application_rule: ApplicationCleanupRule | None = None,
+    replace_existing: bool = False,
 ) -> None:
     try:
         if not path.is_absolute() or not path.is_dir():
@@ -221,7 +225,7 @@ def _append_root(
         application_rule=application_rule,
     )
     if key in seen:
-        if delete_root_itself:
+        if replace_existing or delete_root_itself:
             for index, existing in enumerate(accepted):
                 existing_key = os.path.normcase(os.path.normpath(str(existing.path)))
                 if existing_key == key:
