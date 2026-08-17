@@ -10,6 +10,7 @@ import devclean.core.application_cleanup as application_cleanup
 from devclean.core.application_cleanup import (
     DecisionOwner,
     PolicyAction,
+    RebuildCost,
     application_scan_roots,
     evaluate_application_path,
     match_application_rule,
