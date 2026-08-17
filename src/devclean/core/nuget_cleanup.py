@@ -332,7 +332,10 @@ def _effective_nuget_locals() -> dict[str, str]:
 
 def dotnet_executable(environment: Mapping[str, str] | None = None) -> str:
     env = _casefold_env(environment)
-    return env.get("devclean_dotnet_exe") or "dotnet.exe" if os.name == "nt" else "dotnet"
+    configured = env.get("devclean_dotnet_exe")
+    if configured:
+        return configured
+    return "dotnet.exe" if os.name == "nt" else "dotnet"
 
 
 def clear_nuget_process_cache() -> None:
