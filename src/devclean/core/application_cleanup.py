@@ -64,6 +64,16 @@ from devclean.core.brave_cleanup import (
     match_brave_rule,
     whole_tree_brave_rule,
 )
+from devclean.core.bun_cleanup import (
+    BUN_RULES,
+    bun_audited_tool_roots,
+    bun_process_running,
+    bun_scan_roots,
+    clear_bun_process_cache,
+    evaluate_bun_path,
+    match_bun_rule,
+    whole_tree_bun_rule,
+)
 from devclean.core.chrome_cleanup import (
     CHROME_RULES,
     chrome_audited_tool_roots,
@@ -259,6 +269,7 @@ def application_scan_roots(
                 *npm_scan_roots(environment),
                 *pnpm_scan_roots(environment),
                 *yarn_scan_roots(environment),
+                *bun_scan_roots(environment),
                 *chrome_scan_roots(environment),
                 *edge_scan_roots(environment),
                 *brave_scan_roots(environment),
@@ -288,6 +299,7 @@ def audited_dynamic_tool_roots(
         *npm_audited_tool_roots(environment),
         *pnpm_audited_tool_roots(environment),
         *yarn_audited_tool_roots(environment),
+        *bun_audited_tool_roots(environment),
         *chrome_audited_tool_roots(environment),
         *edge_audited_tool_roots(environment),
         *brave_audited_tool_roots(environment),
@@ -359,6 +371,9 @@ def match_application_rule(
     claude = match_claude_rule(path, environment)
     if claude is not None:
         return claude
+    bun = match_bun_rule(path, environment)
+    if bun is not None:
+        return bun
     yarn = match_yarn_rule(path, environment)
     if yarn is not None:
         return yarn
@@ -541,6 +556,15 @@ def evaluate_application_path(
             environment=environment,
         )
     if decision is None:
+        decision = evaluate_bun_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
+    if decision is None:
         decision = evaluate_yarn_path(
             path,
             logical_size=logical_size,
@@ -606,6 +630,8 @@ def application_process_running(app_id: str) -> bool:
         return edge_process_running()
     if app_id == "chrome":
         return chrome_process_running()
+    if app_id == "bun":
+        return bun_process_running()
     if app_id == "yarn":
         return yarn_process_running()
     if app_id == "pnpm":
@@ -635,6 +661,7 @@ def clear_process_cache() -> None:
     clear_npm_process_cache()
     clear_pnpm_process_cache()
     clear_yarn_process_cache()
+    clear_bun_process_cache()
     clear_chrome_process_cache()
     clear_edge_process_cache()
     clear_brave_process_cache()
@@ -703,6 +730,9 @@ def whole_tree_application_rule(
     dynamic = whole_tree_chrome_rule(path, environment)
     if dynamic is not None:
         return dynamic
+    dynamic = whole_tree_bun_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_yarn_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -748,6 +778,7 @@ def application_display_name(app_id: str) -> str:
         "gradle": "Gradle",
         "android_studio": "Android Studio",
         "brave": "Brave",
+        "bun": "Bun",
         "chrome": "Chrome / Chromium",
         "edge": "Microsoft Edge",
         "firefox": "Mozilla Firefox",
@@ -772,6 +803,7 @@ __all__ = [
     "ANDROID_SDK_RULES",
     "ANDROID_STUDIO_RULES",
     "BRAVE_RULES",
+    "BUN_RULES",
     "CHROME_RULES",
     "CLAUDE_RULES",
     "CODEX_RULES",
