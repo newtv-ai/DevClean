@@ -93,6 +93,16 @@ from devclean.core.claude_cleanup import (
     evaluate_claude_path,
     match_claude_rule,
 )
+from devclean.core.conda_cleanup import (
+    CONDA_RULES,
+    clear_conda_process_cache,
+    conda_audited_tool_roots,
+    conda_process_running,
+    conda_scan_roots,
+    evaluate_conda_path,
+    match_conda_rule,
+    whole_tree_conda_rule,
+)
 from devclean.core.cursor_cleanup import (
     CURSOR_RULES,
     clear_cursor_process_cache,
@@ -292,6 +302,7 @@ def application_scan_roots(
                 *bun_scan_roots(environment),
                 *pip_scan_roots(environment),
                 *uv_scan_roots(environment),
+                *conda_scan_roots(environment),
                 *chrome_scan_roots(environment),
                 *edge_scan_roots(environment),
                 *brave_scan_roots(environment),
@@ -324,6 +335,7 @@ def audited_dynamic_tool_roots(
         *bun_audited_tool_roots(environment),
         *pip_audited_tool_roots(environment),
         *uv_audited_tool_roots(environment),
+        *conda_audited_tool_roots(environment),
         *chrome_audited_tool_roots(environment),
         *edge_audited_tool_roots(environment),
         *brave_audited_tool_roots(environment),
@@ -395,6 +407,9 @@ def match_application_rule(
     claude = match_claude_rule(path, environment)
     if claude is not None:
         return claude
+    conda = match_conda_rule(path, environment)
+    if conda is not None:
+        return conda
     uv = match_uv_rule(path, environment)
     if uv is not None:
         return uv
@@ -586,6 +601,15 @@ def evaluate_application_path(
             environment=environment,
         )
     if decision is None:
+        decision = evaluate_conda_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
+    if decision is None:
         decision = evaluate_uv_path(
             path,
             logical_size=logical_size,
@@ -678,6 +702,8 @@ def application_process_running(app_id: str) -> bool:
         return edge_process_running()
     if app_id == "chrome":
         return chrome_process_running()
+    if app_id == "conda":
+        return conda_process_running()
     if app_id == "uv":
         return uv_process_running()
     if app_id == "pip":
@@ -716,6 +742,7 @@ def clear_process_cache() -> None:
     clear_bun_process_cache()
     clear_pip_process_cache()
     clear_uv_process_cache()
+    clear_conda_process_cache()
     clear_chrome_process_cache()
     clear_edge_process_cache()
     clear_brave_process_cache()
@@ -784,6 +811,9 @@ def whole_tree_application_rule(
     dynamic = whole_tree_chrome_rule(path, environment)
     if dynamic is not None:
         return dynamic
+    dynamic = whole_tree_conda_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_uv_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -840,6 +870,7 @@ def application_display_name(app_id: str) -> str:
         "brave": "Brave",
         "bun": "Bun",
         "chrome": "Chrome / Chromium",
+        "conda": "Conda / Miniconda / Anaconda",
         "edge": "Microsoft Edge",
         "firefox": "Mozilla Firefox",
         "jetbrains": "JetBrains IDE",
@@ -869,6 +900,7 @@ __all__ = [
     "CHROME_RULES",
     "CLAUDE_RULES",
     "CODEX_RULES",
+    "CONDA_RULES",
     "CURSOR_RULES",
     "EDGE_RULES",
     "FIREFOX_RULES",
