@@ -246,7 +246,8 @@ def huggingface_process_running() -> bool:
         "$p=Get-CimInstance Win32_Process | Where-Object { "
         "$_.Name -match '(?i)^hf\\.exe$' -or "
         "(($_.Name -match '(?i)^python(?:w)?\\.exe$') -and "
-        "$_.CommandLine -match '(?i)(?:huggingface|transformers|diffusers|sentence[_-]transformers)') "
+        "$_.CommandLine -match '(?i)(?:huggingface|transformers|diffusers|"
+        "sentence[_-]transformers)') "
         "}; if ($p) { 'RUNNING' }"
     )
     try:
