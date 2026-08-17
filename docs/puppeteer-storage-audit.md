@@ -8,6 +8,7 @@ Source-audited boundaries:
 - Current installation/troubleshooting documentation confirms that Puppeteer downloads browser runtimes into `~/.cache/puppeteer` by default starting with v19.
 - An absolute `PUPPETEER_CACHE_DIR` is honored by DevClean; a relative override is not resolved against an invented working directory and therefore fails closed.
 - Project configuration files can relocate `cacheDirectory`; DevClean does not crawl arbitrary projects looking for `.puppeteerrc.*` or `puppeteer.config.*`, because those locations are project-defined and not globally authoritative.
+- A single effective cache can be shared by multiple projects or Puppeteer package versions, so directory age and browser-version folder names are not authoritative liveness signals.
 - `trimCache()` removes non-current Chrome/Firefox binaries according to the calling Puppeteer installation, and the official API explicitly warns that it does not check whether another Puppeteer version sharing the same cache still requires those binaries.
 - `@puppeteer/browsers clear` clears all installed browsers in its target cache, which is too broad for generic cleanup.
 - Therefore the discovered shared browser cache remains KEEP / `TEST_BROWSER_BINARIES` / REPORT_ONLY regardless of age or size, and DevClean grants no raw file or whole-tree deletion authority.
