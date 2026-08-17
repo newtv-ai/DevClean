@@ -20,6 +20,7 @@ from devclean.core.application_cleanup import (
 )
 from devclean.core.cargo_cleanup import match_cargo_rule
 from devclean.core.conda_cleanup import match_conda_rule
+from devclean.core.docker_cleanup import match_docker_rule
 from devclean.core.go_cleanup import match_go_rule
 from devclean.core.huggingface_cleanup import match_huggingface_rule
 from devclean.core.maven_cleanup import match_maven_rule
@@ -165,6 +166,13 @@ def _report_only_root_metadata(
     root: os.PathLike[str],
     environment: dict[str, str],
 ) -> tuple[CleanupCategory, str]:
+    docker_rule = match_docker_rule(root, environment)
+    if (
+        docker_rule is not None
+        and docker_rule.rule_id == "docker-desktop-data-mixed"
+    ):
+        return CleanupCategory.CONTAINER_STORAGE, docker_rule.label
+
     ollama_rule = match_ollama_rule(root, environment)
     if ollama_rule is not None and ollama_rule.rule_id == "ollama-model-store":
         return CleanupCategory.OLLAMA_MODELS, ollama_rule.label
@@ -265,6 +273,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.HUGGINGFACE_CACHE
     if lower.startswith("ollama-"):
         return CleanupCategory.OLLAMA_MODELS
+    if lower.startswith("docker-"):
+        return CleanupCategory.CONTAINER_STORAGE
     if lower.startswith("yarn-"):
         return CleanupCategory.YARN_CACHE
     if lower.startswith("bun-"):
