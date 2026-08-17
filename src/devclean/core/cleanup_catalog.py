@@ -185,7 +185,11 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.BROWSER_CACHE
     if lower.startswith("pip-"):
         return CleanupCategory.PIP_CACHE
-    if lower.startswith(("bun-", "npm-", "pnpm-", "yarn-")):
+    if lower.startswith("yarn-"):
+        return CleanupCategory.YARN_CACHE
+    if lower.startswith("bun-"):
+        return CleanupCategory.BUN_CACHE
+    if lower.startswith(("npm-", "pnpm-")):
         return CleanupCategory.NPM_CACHE
     if "temp" in lower or "shell" in lower:
         return CleanupCategory.USER_TEMP
