@@ -7,7 +7,7 @@ import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 
 from devclean.core import _application_cleanup_impl as _impl
 from devclean.core.huggingface_cleanup import (
