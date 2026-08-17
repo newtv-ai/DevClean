@@ -19,6 +19,7 @@ from devclean.core.application_cleanup import (
     audited_dynamic_tool_roots,
 )
 from devclean.core.conda_cleanup import match_conda_rule
+from devclean.core.go_cleanup import match_go_rule
 from devclean.core.nuget_cleanup import match_nuget_rule
 from devclean.core.rule_schema import CleanupCategory, CleanupPolicy, SourceDomain
 from devclean.core.user_rules import (
@@ -160,6 +161,13 @@ def _report_only_root_metadata(
     root: os.PathLike[str],
     environment: dict[str, str],
 ) -> tuple[CleanupCategory, str]:
+    go_rule = match_go_rule(root, environment)
+    if go_rule is not None and go_rule.rule_id in {
+        "go-build-cache-vendor-managed",
+        "go-module-cache-vendor-managed",
+    }:
+        return CleanupCategory.GO_MODULE_CACHE, go_rule.label
+
     nuget_rule = match_nuget_rule(root, environment)
     if nuget_rule is not None and nuget_rule.rule_id.startswith("nuget-"):
         return CleanupCategory.NUGET_CACHE, nuget_rule.label
@@ -217,6 +225,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.CONDA_CACHE
     if lower.startswith("nuget-"):
         return CleanupCategory.NUGET_CACHE
+    if lower.startswith("go-"):
+        return CleanupCategory.GO_MODULE_CACHE
     if lower.startswith("yarn-"):
         return CleanupCategory.YARN_CACHE
     if lower.startswith("bun-"):
