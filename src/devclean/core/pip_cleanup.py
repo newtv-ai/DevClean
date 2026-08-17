@@ -1,4 +1,4 @@
-"""Audited pip cache semantics for Windows cleanup.
+r"""Audited pip cache semantics for Windows cleanup.
 
 pip documents its default Windows cache as ``%LocalAppData%\pip\Cache`` and
 provides ``pip cache dir`` / ``pip cache purge`` as the supported cache
