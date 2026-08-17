@@ -21,6 +21,7 @@ from devclean.core.application_cleanup import (
 from devclean.core.cargo_cleanup import match_cargo_rule
 from devclean.core.conda_cleanup import match_conda_rule
 from devclean.core.go_cleanup import match_go_rule
+from devclean.core.huggingface_cleanup import match_huggingface_rule
 from devclean.core.maven_cleanup import match_maven_rule
 from devclean.core.nuget_cleanup import match_nuget_rule
 from devclean.core.rule_schema import CleanupCategory, CleanupPolicy, SourceDomain
@@ -163,6 +164,14 @@ def _report_only_root_metadata(
     root: os.PathLike[str],
     environment: dict[str, str],
 ) -> tuple[CleanupCategory, str]:
+    huggingface_rule = match_huggingface_rule(root, environment)
+    if huggingface_rule is not None and huggingface_rule.rule_id in {
+        "huggingface-hub-cache-vendor-managed",
+        "huggingface-xet-cache-vendor-managed",
+        "huggingface-assets-cache-vendor-managed",
+    }:
+        return CleanupCategory.HUGGINGFACE_CACHE, huggingface_rule.label
+
     maven_rule = match_maven_rule(root, environment)
     if (
         maven_rule is not None
@@ -247,6 +256,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.CARGO_REGISTRY
     if lower.startswith("maven-"):
         return CleanupCategory.MAVEN_REPOSITORY
+    if lower.startswith("huggingface-"):
+        return CleanupCategory.HUGGINGFACE_CACHE
     if lower.startswith("yarn-"):
         return CleanupCategory.YARN_CACHE
     if lower.startswith("bun-"):

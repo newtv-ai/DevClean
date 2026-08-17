@@ -162,6 +162,16 @@ from devclean.core.gradle_cleanup import (
     match_gradle_rule,
     whole_tree_gradle_rule,
 )
+from devclean.core.huggingface_cleanup import (
+    HUGGINGFACE_RULES,
+    clear_huggingface_process_cache,
+    evaluate_huggingface_path,
+    huggingface_audited_tool_roots,
+    huggingface_process_running,
+    huggingface_scan_roots,
+    match_huggingface_rule,
+    whole_tree_huggingface_rule,
+)
 from devclean.core.jetbrains_cleanup import (
     JETBRAINS_RULES,
     clear_jetbrains_process_cache,
@@ -347,6 +357,7 @@ def application_scan_roots(
                 *go_scan_roots(environment),
                 *cargo_scan_roots(environment),
                 *maven_scan_roots(environment),
+                *huggingface_scan_roots(environment),
                 *chrome_scan_roots(environment),
                 *edge_scan_roots(environment),
                 *brave_scan_roots(environment),
@@ -384,6 +395,7 @@ def audited_dynamic_tool_roots(
         *go_audited_tool_roots(environment),
         *cargo_audited_tool_roots(environment),
         *maven_audited_tool_roots(environment),
+        *huggingface_audited_tool_roots(environment),
         *chrome_audited_tool_roots(environment),
         *edge_audited_tool_roots(environment),
         *brave_audited_tool_roots(environment),
@@ -455,6 +467,9 @@ def match_application_rule(
     claude = match_claude_rule(path, environment)
     if claude is not None:
         return claude
+    huggingface = match_huggingface_rule(path, environment)
+    if huggingface is not None:
+        return huggingface
     maven = match_maven_rule(path, environment)
     if maven is not None:
         return maven
@@ -661,6 +676,15 @@ def evaluate_application_path(
             environment=environment,
         )
     if decision is None:
+        decision = evaluate_huggingface_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
+    if decision is None:
         decision = evaluate_maven_path(
             path,
             logical_size=logical_size,
@@ -798,6 +822,8 @@ def application_process_running(app_id: str) -> bool:
         return edge_process_running()
     if app_id == "chrome":
         return chrome_process_running()
+    if app_id == "huggingface":
+        return huggingface_process_running()
     if app_id == "maven":
         return maven_process_running()
     if app_id == "cargo":
@@ -851,6 +877,7 @@ def clear_process_cache() -> None:
     clear_go_process_cache()
     clear_cargo_process_cache()
     clear_maven_process_cache()
+    clear_huggingface_process_cache()
     clear_chrome_process_cache()
     clear_edge_process_cache()
     clear_brave_process_cache()
@@ -917,6 +944,9 @@ def whole_tree_application_rule(
     if dynamic is not None:
         return dynamic
     dynamic = whole_tree_chrome_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
+    dynamic = whole_tree_huggingface_rule(path, environment)
     if dynamic is not None:
         return dynamic
     dynamic = whole_tree_maven_rule(path, environment)
@@ -995,6 +1025,7 @@ def application_display_name(app_id: str) -> str:
         "edge": "Microsoft Edge",
         "firefox": "Mozilla Firefox",
         "go": "Go",
+        "huggingface": "Hugging Face Hub",
         "jetbrains": "JetBrains IDE",
         "maven": "Apache Maven",
         "toolbox": "JetBrains Toolbox",
@@ -1031,6 +1062,7 @@ __all__ = [
     "FIREFOX_RULES",
     "GO_RULES",
     "GRADLE_RULES",
+    "HUGGINGFACE_RULES",
     "JETBRAINS_RULES",
     "MAVEN_RULES",
     "NPM_RULES",
