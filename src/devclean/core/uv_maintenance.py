@@ -48,7 +48,7 @@ def inventory_uv_storage(
     seen: set[str] = set()
     for raw in uv_roots(environment).cache_roots:
         path = Path(str(raw))
-        key = os.path.normcase(os.path.normpath(str(path)))
+        key = _normalized(path)
         if key in seen:
             continue
         seen.add(key)
@@ -66,10 +66,16 @@ def inventory_uv_storage(
     return UvStorageInventory(tuple(entries))
 
 
-def prune_uv_cache(cache_path: Path) -> UvPruneResult:
-    """Run uv's own safe periodic prune operation for one selected cache root."""
+def prune_uv_cache(
+    cache_path: Path,
+    environment: Mapping[str, str] | None = None,
+) -> UvPruneResult:
+    """Run uv's own periodic prune operation for an exact audited cache root."""
 
     root = cache_path
+    audited = {_normalized(Path(str(path))) for path in uv_roots(environment).cache_roots}
+    if _normalized(root) not in audited:
+        raise ValueError(f"不是已审计的 uv cache 根目录: {root}")
     if uv_process_running():
         raise RuntimeError("uv 正在运行; 请关闭正在执行的 uv/uvx 命令后再清理缓存")
     if not root.is_dir():
@@ -78,6 +84,8 @@ def prune_uv_cache(cache_path: Path) -> UvPruneResult:
     before = _directory_bytes(root)
     executable = "uv.exe" if os.name == "nt" else "uv"
     env = dict(os.environ)
+    if environment is not None:
+        env.update(environment)
     env["UV_CACHE_DIR"] = str(root)
     try:
         result = subprocess.run(
@@ -102,6 +110,10 @@ def prune_uv_cache(cache_path: Path) -> UvPruneResult:
         after_bytes=after,
         stdout=result.stdout.strip(),
     )
+
+
+def _normalized(path: Path) -> str:
+    return os.path.normcase(os.path.normpath(str(path)))
 
 
 def _directory_bytes(root: Path) -> int:
