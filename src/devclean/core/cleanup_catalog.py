@@ -18,6 +18,7 @@ from devclean.core.application_cleanup import (
     application_scan_roots,
     audited_dynamic_tool_roots,
 )
+from devclean.core.conda_cleanup import match_conda_rule
 from devclean.core.rule_schema import CleanupCategory, CleanupPolicy, SourceDomain
 from devclean.core.user_rules import (
     RuleConfigError,
@@ -107,19 +108,14 @@ def _append_application_roots(
     environment: dict[str, str],
 ) -> None:
     for root in application_scan_roots(environment):
-        uv_rule = match_uv_rule(root, environment)
-        is_uv_cache = uv_rule is not None and uv_rule.rule_id == "uv-cache-vendor-managed"
+        category, label = _report_only_root_metadata(root, environment)
         _append_root(
             accepted,
             seen,
             Path(str(root)),
-            category=(CleanupCategory.UV_CACHE if is_uv_cache else CleanupCategory.IDE_CACHE),
+            category=category,
             policy=CleanupPolicy.REPORT_ONLY,
-            label=(
-                uv_rule.label
-                if is_uv_cache and uv_rule is not None
-                else "已审计的应用存储根目录"
-            ),
+            label=label,
             delete_root_itself=False,
             replace_existing=True,
         )
@@ -159,6 +155,24 @@ def _append_application_roots(
         )
 
 
+def _report_only_root_metadata(
+    root: object,
+    environment: dict[str, str],
+) -> tuple[CleanupCategory, str]:
+    conda_rule = match_conda_rule(root, environment)
+    if (
+        conda_rule is not None
+        and conda_rule.rule_id == "conda-package-cache-vendor-managed"
+    ):
+        return CleanupCategory.CONDA_CACHE, conda_rule.label
+
+    uv_rule = match_uv_rule(root, environment)
+    if uv_rule is not None and uv_rule.rule_id == "uv-cache-vendor-managed":
+        return CleanupCategory.UV_CACHE, uv_rule.label
+
+    return CleanupCategory.IDE_CACHE, "已审计的应用存储根目录"
+
+
 def _application_category(rule_id: str) -> CleanupCategory:
     lower = rule_id.casefold()
     if lower in {
@@ -194,6 +208,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.PIP_CACHE
     if lower.startswith("uv-cache"):
         return CleanupCategory.UV_CACHE
+    if lower.startswith("conda-"):
+        return CleanupCategory.CONDA_CACHE
     if lower.startswith("yarn-"):
         return CleanupCategory.YARN_CACHE
     if lower.startswith("bun-"):
