@@ -202,6 +202,16 @@ from devclean.core.trae_cleanup import (
     trae_scan_roots,
     whole_tree_trae_rule,
 )
+from devclean.core.uv_cleanup import (
+    UV_RULES,
+    clear_uv_process_cache,
+    evaluate_uv_path,
+    match_uv_rule,
+    uv_audited_tool_roots,
+    uv_process_running,
+    uv_scan_roots,
+    whole_tree_uv_rule,
+)
 from devclean.core.vivaldi_cleanup import (
     VIVALDI_RULES,
     clear_vivaldi_process_cache,
@@ -281,6 +291,7 @@ def application_scan_roots(
                 *yarn_scan_roots(environment),
                 *bun_scan_roots(environment),
                 *pip_scan_roots(environment),
+                *uv_scan_roots(environment),
                 *chrome_scan_roots(environment),
                 *edge_scan_roots(environment),
                 *brave_scan_roots(environment),
@@ -312,6 +323,7 @@ def audited_dynamic_tool_roots(
         *yarn_audited_tool_roots(environment),
         *bun_audited_tool_roots(environment),
         *pip_audited_tool_roots(environment),
+        *uv_audited_tool_roots(environment),
         *chrome_audited_tool_roots(environment),
         *edge_audited_tool_roots(environment),
         *brave_audited_tool_roots(environment),
@@ -383,6 +395,9 @@ def match_application_rule(
     claude = match_claude_rule(path, environment)
     if claude is not None:
         return claude
+    uv = match_uv_rule(path, environment)
+    if uv is not None:
+        return uv
     pip = match_pip_rule(path, environment)
     if pip is not None:
         return pip
@@ -571,6 +586,15 @@ def evaluate_application_path(
             environment=environment,
         )
     if decision is None:
+        decision = evaluate_uv_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
+    if decision is None:
         decision = evaluate_pip_path(
             path,
             logical_size=logical_size,
@@ -654,6 +678,8 @@ def application_process_running(app_id: str) -> bool:
         return edge_process_running()
     if app_id == "chrome":
         return chrome_process_running()
+    if app_id == "uv":
+        return uv_process_running()
     if app_id == "pip":
         return pip_process_running()
     if app_id == "bun":
@@ -689,6 +715,7 @@ def clear_process_cache() -> None:
     clear_yarn_process_cache()
     clear_bun_process_cache()
     clear_pip_process_cache()
+    clear_uv_process_cache()
     clear_chrome_process_cache()
     clear_edge_process_cache()
     clear_brave_process_cache()
@@ -757,6 +784,9 @@ def whole_tree_application_rule(
     dynamic = whole_tree_chrome_rule(path, environment)
     if dynamic is not None:
         return dynamic
+    dynamic = whole_tree_uv_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
     dynamic = whole_tree_pip_rule(path, environment)
     if dynamic is not None:
         return dynamic
@@ -822,6 +852,7 @@ def application_display_name(app_id: str) -> str:
         "npm": "npm",
         "pip": "pip",
         "pnpm": "pnpm",
+        "uv": "uv",
         "yarn": "Yarn",
         "vscode": "VS Code",
         "trae": "Trae",
@@ -849,6 +880,7 @@ __all__ = [
     "PNPM_RULES",
     "TOOLBOX_RULES",
     "TRAE_RULES",
+    "UV_RULES",
     "VIVALDI_RULES",
     "VSCODE_RULES",
     "WINDSURF_RULES",
