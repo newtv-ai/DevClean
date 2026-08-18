@@ -236,7 +236,7 @@ def _json_request(
         method=method,
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             raw = response.read()
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace").strip()
