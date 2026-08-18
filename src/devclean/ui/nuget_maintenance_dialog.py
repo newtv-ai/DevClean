@@ -151,15 +151,17 @@ class _NuGetMaintenanceDialog:
         if not selected:
             messagebox.showinfo("NuGet 缓存维护", "没有勾选需要清理的 NuGet 存储。")
             return
-        if any(entry.kind is NuGetLocalKind.GLOBAL_PACKAGES for entry in selected):
-            if not messagebox.askyesno(
-                "确认清理 global-packages",
-                "global-packages 是项目可能直接使用的已还原依赖。\n\n"
-                "清空后需要重新 restore 才能继续使用这些包；离线项目可能无法立即恢复。\n\n"
-                "仍然清理你主动勾选的 global-packages 吗？",
-                icon=messagebox.WARNING,
-            ):
-                return
+        has_global_packages = any(
+            entry.kind is NuGetLocalKind.GLOBAL_PACKAGES for entry in selected
+        )
+        if has_global_packages and not messagebox.askyesno(
+            "确认清理 global-packages",
+            "global-packages 是项目可能直接使用的已还原依赖。\n\n"
+            "清空后需要重新 restore 才能继续使用这些包；离线项目可能无法立即恢复。\n\n"
+            "仍然清理你主动勾选的 global-packages 吗？",
+            icon=messagebox.WARNING,
+        ):
+            return
 
         selected.sort(key=lambda entry: entry.kind is NuGetLocalKind.GLOBAL_PACKAGES)
         self._set_busy(True)
@@ -224,12 +226,11 @@ class _NuGetMaintenanceDialog:
             )
             choice = tk.BooleanVar(value=entry.recommended)
             self._choices[entry.kind] = choice
-
-            row = ttk.LabelFrame(
-                self._rows,
-                text=f"{lane_text} · {_kind_label(entry.kind)} · {_format_bytes(entry.logical_bytes)}",
-                padding=9,
+            title = (
+                f"{lane_text} · {_kind_label(entry.kind)} · "
+                f"{_format_bytes(entry.logical_bytes)}"
             )
+            row = ttk.LabelFrame(self._rows, text=title, padding=9)
             row.grid(row=row_index, column=0, sticky="ew", pady=(0, 7))
             self._rows.columnconfigure(0, weight=1)
             ttk.Checkbutton(row, text="清理", variable=choice).grid(
@@ -246,7 +247,9 @@ class _NuGetMaintenanceDialog:
         safe_count = sum(
             entry.lane is NuGetMaintenanceLane.DETERMINISTIC_CANDIDATE for entry in visible
         )
-        user_count = sum(entry.lane is NuGetMaintenanceLane.USER_REVIEW for entry in visible)
+        user_count = sum(
+            entry.lane is NuGetMaintenanceLane.USER_REVIEW for entry in visible
+        )
         self._status.set(
             f"已定位 {len(visible)} 处 NuGet 存储，共 {_format_bytes(inventory.total_local_bytes)}；"
             f"其中 {safe_count} 类可本地确定，{user_count} 类留给你决定。"
