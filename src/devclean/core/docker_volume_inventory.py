@@ -100,7 +100,10 @@ def inspect_docker_volumes(
         reason = (
             "volume 当前被 container 引用；属于持久数据，仅报告"
             if consumers
-            else "volume 当前未被已知 container 引用，但 Docker volume 仍可能包含唯一持久数据；仅报告"
+            else (
+                "volume 当前未被已知 container 引用，但 Docker volume 仍可能包含"
+                "唯一持久数据；仅报告"
+            )
         )
         entries.append(
             DockerVolumeEntry(
@@ -203,9 +206,7 @@ def _string_mapping(value: object, label: str) -> tuple[tuple[str, str], ...]:
         return ()
     if not isinstance(value, dict):
         raise RuntimeError(f"Docker volume inspect {label} 不是 object")
-    return tuple(
-        sorted((str(key), str(item)) for key, item in value.items())
-    )
+    return tuple(sorted((str(key), str(item)) for key, item in value.items()))
 
 
 def _optional_string(value: object) -> str:
