@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -14,13 +14,11 @@ from devclean.core.git_repository_maintenance import (
 )
 
 
-RunFake = Callable[
-    [str, Path, tuple[str, ...], Mapping[str, str] | None],
-    subprocess.CompletedProcess[str],
-]
-
-
-def _result(arguments: tuple[str, ...], code: int = 0, output: str = "") -> subprocess.CompletedProcess[str]:
+def _result(
+    arguments: tuple[str, ...],
+    code: int = 0,
+    output: str = "",
+) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(
         args=["git-test", *arguments],
         returncode=code,
