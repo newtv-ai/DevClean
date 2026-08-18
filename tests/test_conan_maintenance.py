@@ -73,6 +73,7 @@ def test_clean_conan_cache_delegates_only_to_vendor_noncritical_clean(
     package_file.write_bytes(b"p" * 17)
     calls: list[list[str]] = []
 
+    monkeypatch.setattr(conan_maintenance, "clear_conan_process_cache", lambda: None)
     monkeypatch.setattr(conan_maintenance, "conan_process_running", lambda: False)
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -121,6 +122,7 @@ def test_clean_refuses_path_that_conan_does_not_report(
         raise AssertionError("vendor clean must not run")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(conan_maintenance, "clear_conan_process_cache", lambda: None)
     monkeypatch.setattr(conan_maintenance, "conan_process_running", lambda: False)
 
     with pytest.raises(ValueError, match="不是当前 Conan 2 home"):
@@ -143,6 +145,7 @@ def test_clean_refuses_while_conan_is_running(
         raise AssertionError("vendor clean must not run")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(conan_maintenance, "clear_conan_process_cache", lambda: None)
     monkeypatch.setattr(conan_maintenance, "conan_process_running", lambda: True)
 
     with pytest.raises(RuntimeError, match="Conan 正在运行"):
