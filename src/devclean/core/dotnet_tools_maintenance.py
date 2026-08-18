@@ -14,10 +14,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from devclean.core.dotnet_maintenance import (
-    clear_dotnet_process_cache,
-    dotnet_sdk_process_running,
-)
+from devclean.core.dotnet_maintenance import clear_dotnet_process_cache, dotnet_sdk_process_running
 from devclean.core.nuget_cleanup import dotnet_executable
 
 
