@@ -19,9 +19,13 @@
   "review_sample_per_category": 500,
   "additional_paths": [],
   "excluded_paths": [],
-  "delete_root_ids": ["windows-old"],
+  "delete_root_ids": [],
   "skip_directory_groups": {
-    "version_control": [".git", ".hg", ".svn"],
+    "version_control": [
+      ".git",
+      ".hg",
+      ".svn"
+    ],
     "user_content": [
       "documents",
       "desktop",
@@ -36,7 +40,13 @@
       "saved games",
       "3d objects"
     ],
-    "credentials": [".ssh", ".aws", ".azure", ".gnupg", ".kube"],
+    "credentials": [
+      ".ssh",
+      ".aws",
+      ".azure",
+      ".gnupg",
+      ".kube"
+    ],
     "installed_payload": [
       "program files",
       "program files (x86)",
@@ -66,7 +76,9 @@
       "group": "windows_temporary_files",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%TEMP%"],
+      "patterns": [
+        "%TEMP%"
+      ],
       "category": "USER_TEMP",
       "policy": "AGE_BASED_REVIEW",
       "label": "当前用户临时文件"
@@ -76,7 +88,10 @@
       "group": "windows_temporary_files",
       "enabled": true,
       "allow_inside_system_anchor": true,
-      "patterns": ["%SYSTEMROOT%\\Temp", "%SYSTEMROOT%\\SystemTemp"],
+      "patterns": [
+        "%SYSTEMROOT%\\Temp",
+        "%SYSTEMROOT%\\SystemTemp"
+      ],
       "category": "USER_TEMP",
       "policy": "AGE_BASED_REVIEW",
       "label": "Windows 临时文件"
@@ -86,7 +101,9 @@
       "group": "windows_diagnostics",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%LOCALAPPDATA%\\CrashDumps"],
+      "patterns": [
+        "%LOCALAPPDATA%\\CrashDumps"
+      ],
       "category": "CRASH_DUMPS",
       "policy": "AGE_BASED_REVIEW",
       "label": "当前用户崩溃转储"
@@ -104,7 +121,7 @@
         "%LOCALAPPDATA%\\Microsoft\\Windows\\WER"
       ],
       "category": "CRASH_DUMPS",
-      "policy": "VENDOR_MANAGED",
+      "policy": "MANUAL_REVIEW",
       "label": "Windows 错误报告和崩溃转储"
     },
     {
@@ -118,7 +135,7 @@
         "%SYSTEMROOT%\\CbsTemp"
       ],
       "category": "SYSTEM_LOGS",
-      "policy": "VENDOR_MANAGED",
+      "policy": "MANUAL_REVIEW",
       "label": "Windows 可重建维护数据"
     },
     {
@@ -126,9 +143,11 @@
       "group": "windows_update",
       "enabled": true,
       "allow_inside_system_anchor": true,
-      "patterns": ["%SYSTEMROOT%\\SoftwareDistribution\\Download"],
+      "patterns": [
+        "%SYSTEMROOT%\\SoftwareDistribution\\Download"
+      ],
       "category": "WINDOWS_UPDATE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "MANUAL_REVIEW",
       "label": "Windows 更新下载"
     },
     {
@@ -136,9 +155,11 @@
       "group": "windows_update",
       "enabled": true,
       "allow_inside_system_anchor": true,
-      "patterns": ["%SYSTEMDRIVE%\\Windows.old"],
+      "patterns": [
+        "%SYSTEMDRIVE%\\Windows.old"
+      ],
       "category": "WINDOWS_UPDATE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "MANUAL_REVIEW",
       "label": "Windows 旧系统目录"
     },
     {
@@ -146,7 +167,9 @@
       "group": "windows_application_cache",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%LOCALAPPDATA%\\Microsoft\\Windows\\INetCache"],
+      "patterns": [
+        "%LOCALAPPDATA%\\Microsoft\\Windows\\INetCache"
+      ],
       "category": "BROWSER_CACHE",
       "policy": "VENDOR_MANAGED",
       "label": "Windows Internet 临时文件"
@@ -156,7 +179,9 @@
       "group": "windows_application_cache",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer"],
+      "patterns": [
+        "%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer"
+      ],
       "category": "THUMBNAIL_CACHE",
       "policy": "MANUAL_REVIEW",
       "label": "Windows 缩略图与图标缓存"
@@ -181,7 +206,10 @@
       "group": "package_manager_cache",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%UV_CACHE_DIR%", "%LOCALAPPDATA%\\uv\\cache"],
+      "patterns": [
+        "%UV_CACHE_DIR%",
+        "%LOCALAPPDATA%\\uv\\cache"
+      ],
       "category": "UV_CACHE",
       "policy": "VENDOR_MANAGED",
       "label": "uv 包缓存"
@@ -205,7 +233,10 @@
       "group": "package_manager_cache",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%PNPM_HOME%\\store", "%LOCALAPPDATA%\\pnpm\\store"],
+      "patterns": [
+        "%PNPM_HOME%\\store",
+        "%LOCALAPPDATA%\\pnpm\\store"
+      ],
       "category": "PNPM_STORE",
       "policy": "VENDOR_MANAGED",
       "label": "pnpm 包存储"
@@ -256,7 +287,9 @@
       "group": "package_manager_cache",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%LOCALAPPDATA%\\Yarn\\Cache"],
+      "patterns": [
+        "%LOCALAPPDATA%\\Yarn\\Cache"
+      ],
       "category": "YARN_CACHE",
       "policy": "VENDOR_MANAGED",
       "label": "Yarn 包缓存"
@@ -266,7 +299,9 @@
       "group": "package_manager_cache",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%USERPROFILE%\\.bun\\install\\cache"],
+      "patterns": [
+        "%USERPROFILE%\\.bun\\install\\cache"
+      ],
       "category": "BUN_CACHE",
       "policy": "VENDOR_MANAGED",
       "label": "Bun 安装缓存"
@@ -289,7 +324,9 @@
       "group": "package_manager_cache",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%USERPROFILE%\\.nuget\\packages"],
+      "patterns": [
+        "%USERPROFILE%\\.nuget\\packages"
+      ],
       "category": "NUGET_CACHE",
       "policy": "VENDOR_MANAGED",
       "label": "NuGet 包缓存"
@@ -313,7 +350,9 @@
       "group": "package_manager_cache",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%USERPROFILE%\\.cargo\\registry"],
+      "patterns": [
+        "%USERPROFILE%\\.cargo\\registry"
+      ],
       "category": "CARGO_REGISTRY",
       "policy": "VENDOR_MANAGED",
       "label": "Cargo registry 缓存"
@@ -336,7 +375,9 @@
       "group": "developer_tool_downloads",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%LOCALAPPDATA%\\Android\\Sdk\\system-images"],
+      "patterns": [
+        "%LOCALAPPDATA%\\Android\\Sdk\\system-images"
+      ],
       "category": "ANDROID_SDK_PAYLOAD",
       "policy": "VENDOR_MANAGED",
       "label": "Android SDK 系统镜像"
@@ -346,7 +387,9 @@
       "group": "ai_model_storage",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%USERPROFILE%\\.ollama\\models"],
+      "patterns": [
+        "%USERPROFILE%\\.ollama\\models"
+      ],
       "category": "OLLAMA_MODELS",
       "policy": "VENDOR_MANAGED",
       "label": "Ollama 模型存储"
@@ -356,7 +399,9 @@
       "group": "installer_downloads",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%LOCALAPPDATA%\\Ollama\\updates_v2"],
+      "patterns": [
+        "%LOCALAPPDATA%\\Ollama\\updates_v2"
+      ],
       "category": "INSTALLERS_DOWNLOADS",
       "policy": "VENDOR_MANAGED",
       "label": "Ollama 更新安装包"
@@ -366,9 +411,11 @@
       "group": "ai_model_storage",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%USERPROFILE%\\.lmstudio\\models"],
+      "patterns": [
+        "%USERPROFILE%\\.lmstudio\\models"
+      ],
       "category": "LOCAL_MODEL_STORE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "MANUAL_REVIEW",
       "label": "LM Studio 模型存储"
     },
     {
@@ -388,7 +435,9 @@
       "group": "application_cache",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%LOCALAPPDATA%\\JetBrains"],
+      "patterns": [
+        "%LOCALAPPDATA%\\JetBrains"
+      ],
       "category": "IDE_CACHE",
       "policy": "MANUAL_REVIEW",
       "label": "JetBrains IDE 缓存"
@@ -419,7 +468,7 @@
         "%LOCALAPPDATA%\\.dartServer"
       ],
       "category": "IDE_CACHE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "MANUAL_REVIEW",
       "label": "开发工具可重建缓存"
     },
     {
@@ -427,7 +476,9 @@
       "group": "application_cache",
       "enabled": true,
       "allow_inside_system_anchor": false,
-      "patterns": ["%USERPROFILE%\\.claude\\plugins\\cache"],
+      "patterns": [
+        "%USERPROFILE%\\.claude\\plugins\\cache"
+      ],
       "category": "VSCODE_CACHE",
       "policy": "VENDOR_MANAGED",
       "label": "Claude 插件缓存"
@@ -445,7 +496,7 @@
         "%LOCALAPPDATA%\\NVIDIA\\GLCache"
       ],
       "category": "OTHER",
-      "policy": "VENDOR_MANAGED",
+      "policy": "MANUAL_REVIEW",
       "label": "工具可重建缓存"
     }
   ]
