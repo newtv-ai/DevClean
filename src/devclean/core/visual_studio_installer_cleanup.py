@@ -3,12 +3,14 @@ r"""Audited Visual Studio Installer package-cache semantics for Windows cleanup.
 The Visual Studio Installer package cache is not a generic download directory.
 It contains package manifests and, depending on installer policy, retained
 payloads used for later modify/repair operations. DevClean inventories the
-source-audited default cache without granting raw deletion authority.
+effective source-audited cache without granting raw deletion authority.
 """
 
 from __future__ import annotations
 
 import os
+import re
+import winreg
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,6 +26,7 @@ from devclean.core._application_cleanup_impl import (
     PolicyAction,
     RebuildCost,
 )
+from devclean.platform.windows.registry import first_hklm_string_value
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +34,13 @@ class VisualStudioInstallerRootSet:
     package_cache_roots: tuple[PureWindowsPath, ...]
     instance_metadata_roots: tuple[PureWindowsPath, ...]
 
+
+_VISUAL_STUDIO_SETUP_POLICY_KEYS = (
+    r"SOFTWARE\Policies\Microsoft\VisualStudio\Setup",
+    r"SOFTWARE\Microsoft\VisualStudio\Setup",
+    r"SOFTWARE\WOW6432Node\Microsoft\VisualStudio\Setup",
+)
+_ENVIRONMENT_VARIABLE = re.compile(r"%([^%]+)%")
 
 _VISUAL_STUDIO_INSTALLER_CACHE_RULE = ApplicationCleanupRule(
     rule_id="visual-studio-installer-package-cache-mixed",
@@ -65,11 +75,10 @@ def visual_studio_installer_roots(
     environment: Mapping[str, str] | None = None,
 ) -> VisualStudioInstallerRootSet:
     env = _casefold_env(environment)
-    program_data = env.get("programdata")
-    if not program_data:
+    cache = _effective_package_cache(env)
+    if cache is None:
         return VisualStudioInstallerRootSet((), ())
 
-    cache = PureWindowsPath(program_data) / "Microsoft" / "VisualStudio" / "Packages"
     metadata = cache / "_Instances"
     return VisualStudioInstallerRootSet((cache,), (metadata,))
 
@@ -157,6 +166,48 @@ def visual_studio_installer_process_running() -> bool:
 
 def clear_visual_studio_installer_process_cache() -> None:
     return None
+
+
+def _effective_package_cache(environment: Mapping[str, str]) -> PureWindowsPath | None:
+    lookup = first_hklm_string_value(_VISUAL_STUDIO_SETUP_POLICY_KEYS, "CachePath")
+    if not lookup.conclusive:
+        return None
+
+    if lookup.value is None:
+        program_data = environment.get("programdata")
+        if not program_data:
+            return None
+        return PureWindowsPath(program_data) / "Microsoft" / "VisualStudio" / "Packages"
+
+    raw_path = lookup.value.value
+    if lookup.value.value_type == winreg.REG_EXPAND_SZ:
+        expanded = _expand_windows_environment(raw_path, environment)
+        if expanded is None:
+            return None
+        raw_path = expanded
+
+    candidate = PureWindowsPath(raw_path)
+    if not candidate.is_absolute():
+        return None
+    return candidate
+
+
+def _expand_windows_environment(
+    value: str,
+    environment: Mapping[str, str],
+) -> str | None:
+    missing = False
+
+    def replace(match: re.Match[str]) -> str:
+        nonlocal missing
+        replacement = environment.get(match.group(1).casefold())
+        if replacement is None:
+            missing = True
+            return match.group(0)
+        return replacement
+
+    expanded = _ENVIRONMENT_VARIABLE.sub(replace, value)
+    return None if missing else expanded
 
 
 def _casefold_env(environment: Mapping[str, str] | None) -> dict[str, str]:
