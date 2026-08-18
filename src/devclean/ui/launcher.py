@@ -21,6 +21,7 @@ from devclean.ui.unity_asset_store_maintenance_dialog import (
     open_unity_asset_store_maintenance_dialog,
 )
 from devclean.ui.unity_project_maintenance_dialog import open_unity_project_maintenance_dialog
+from devclean.ui.unity_upm_maintenance_dialog import open_unity_upm_maintenance_dialog
 from devclean.ui.unreal_maintenance_dialog import open_unreal_maintenance_dialog
 from devclean.ui.uv_maintenance_dialog import open_uv_maintenance_dialog
 from devclean.ui.vscode_maintenance_dialog import open_vscode_maintenance_dialog
@@ -89,6 +90,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Unity Asset Store 缓存维护…",
         command=lambda: open_unity_asset_store_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="Unity UPM 全局缓存维护…",
+        command=lambda: open_unity_upm_maintenance_dialog(root),
     )
     menu.add_cascade(label="工具", menu=tools)
     root.configure(menu=menu)
