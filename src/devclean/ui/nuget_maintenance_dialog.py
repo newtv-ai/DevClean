@@ -250,8 +250,9 @@ class _NuGetMaintenanceDialog:
         user_count = sum(
             entry.lane is NuGetMaintenanceLane.USER_REVIEW for entry in visible
         )
+        total_text = _format_bytes(inventory.total_local_bytes)
         self._status.set(
-            f"已定位 {len(visible)} 处 NuGet 存储，共 {_format_bytes(inventory.total_local_bytes)}；"
+            f"已定位 {len(visible)} 处 NuGet 存储，共 {total_text}；"
             f"其中 {safe_count} 类可本地确定，{user_count} 类留给你决定。"
         )
 
