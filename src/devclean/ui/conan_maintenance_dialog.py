@@ -149,8 +149,9 @@ class _ConanMaintenanceDialog:
             return
         self._set_busy(True)
         self._status.set("正在执行 conan cache clean, 期间不会进行 raw delete...")
+        home = inventory.home
 
-        def work(home=inventory.home) -> None:  # type: ignore[no-untyped-def]
+        def work() -> None:
             try:
                 result = clean_conan_cache(home)
             except Exception as error:
