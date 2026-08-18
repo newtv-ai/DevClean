@@ -16,6 +16,7 @@ from devclean.ui.conda_maintenance_dialog import open_conda_maintenance_dialog
 from devclean.ui.cursor_maintenance_dialog import open_cursor_maintenance_dialog
 from devclean.ui.go_maintenance_dialog import open_go_maintenance_dialog
 from devclean.ui.nuget_maintenance_dialog import open_nuget_maintenance_dialog
+from devclean.ui.ollama_model_maintenance_dialog import open_ollama_model_maintenance_dialog
 from devclean.ui.pip_maintenance_dialog import open_pip_maintenance_dialog
 from devclean.ui.pnpm_maintenance_dialog import open_pnpm_maintenance_dialog
 from devclean.ui.unity_asset_store_maintenance_dialog import (
@@ -75,6 +76,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Conan 2 安全缓存维护…",
         command=lambda: open_conan_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="Ollama 本机模型维护…",
+        command=lambda: open_ollama_model_maintenance_dialog(root),
     )
     tools.add_command(
         label="Unreal DDC 安全维护…",
