@@ -6,6 +6,7 @@ import queue
 import threading
 import tkinter as tk
 from dataclasses import dataclass
+from pathlib import Path
 from tkinter import messagebox, ttk
 
 from devclean.core.unreal_maintenance import (
@@ -148,7 +149,7 @@ class _UnrealMaintenanceDialog:
 
         def work() -> None:
             try:
-                result = run_unreal_ddc_cleanup(_path(selected))
+                result = run_unreal_ddc_cleanup(Path(selected))
             except Exception as error:
                 self._events.put(_CleanupEvent(None, str(error)))
             else:
@@ -244,12 +245,6 @@ class _UnrealMaintenanceDialog:
 
 def open_unreal_maintenance_dialog(parent: tk.Tk | tk.Toplevel) -> None:
     _UnrealMaintenanceDialog(parent).show()
-
-
-def _path(value: str):  # type: ignore[no-untyped-def]
-    from pathlib import Path
-
-    return Path(value)
 
 
 def _format_bytes(value: int) -> str:
