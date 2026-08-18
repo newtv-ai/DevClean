@@ -38,6 +38,7 @@ from devclean.core.user_rules import (
     expand_path,
 )
 from devclean.core.uv_cleanup import match_uv_rule
+from devclean.core.visual_studio_cleanup import match_visual_studio_rule
 from devclean.core.visual_studio_installer_cleanup import (
     match_visual_studio_installer_rule,
 )
@@ -180,6 +181,14 @@ def _report_only_root_metadata(
         == "visual-studio-installer-package-cache-mixed"
     ):
         return CleanupCategory.INSTALLERS_DOWNLOADS, visual_studio_installer_rule.label
+
+    visual_studio_rule = match_visual_studio_rule(root, environment)
+    if (
+        visual_studio_rule is not None
+        and visual_studio_rule.rule_id
+        == "visual-studio-local-packages-servicing-state"
+    ):
+        return CleanupCategory.INSTALLERS_DOWNLOADS, visual_studio_rule.label
 
     electron_rule = match_electron_rule(root, environment)
     if electron_rule is not None and electron_rule.rule_id in {

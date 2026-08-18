@@ -1,10 +1,9 @@
-r"""Audited Visual Studio IDE cache semantics for Windows cleanup.
+r"""Audited Visual Studio IDE cache and servicing semantics for Windows cleanup.
 
 Visual Studio keeps per-instance MEF composition state under ComponentModelCache
 and a shared Roslyn analyzer cache under the local VisualStudio tree. Those exact
-source-backed caches are delegated. Per-instance WebTools storage is inventoried
-separately but stays protected because no authoritative vendor contract narrows
-that mixed web/language-service state to disposable cache data.
+source-backed caches are delegated. Per-instance WebTools storage and the per-user
+setup Packages tree are inventoried separately but remain protected mixed state.
 """
 
 from __future__ import annotations
@@ -39,6 +38,7 @@ class VisualStudioRootSet:
     component_model_cache_roots: tuple[PureWindowsPath, ...]
     roslyn_cache_roots: tuple[PureWindowsPath, ...]
     web_tools_roots: tuple[PureWindowsPath, ...]
+    local_package_roots: tuple[PureWindowsPath, ...]
 
 
 _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE = ApplicationCleanupRule(
@@ -82,11 +82,23 @@ _VISUAL_STUDIO_WEBTOOLS_RULE = ApplicationCleanupRule(
     rebuild_cost=RebuildCost.HIGH,
     label="Visual Studio WebTools mixed web/language-service state",
 )
+_VISUAL_STUDIO_LOCAL_PACKAGES_RULE = ApplicationCleanupRule(
+    rule_id="visual-studio-local-packages-servicing-state",
+    app_id="visual_studio",
+    root_key="VISUAL_STUDIO_LOCAL_PACKAGES",
+    relative_pattern="",
+    match_kind=MatchKind.PREFIX,
+    owner=DecisionOwner.KEEP,
+    last_use=LastUseStrategy.DIRECTORY_MTIME,
+    rebuild_cost=RebuildCost.HIGH,
+    label="Visual Studio per-user setup channel/package servicing state",
+)
 
 VISUAL_STUDIO_RULES: tuple[ApplicationCleanupRule, ...] = (
     _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE,
     _VISUAL_STUDIO_ROSLYN_CACHE_RULE,
     _VISUAL_STUDIO_WEBTOOLS_RULE,
+    _VISUAL_STUDIO_LOCAL_PACKAGES_RULE,
 )
 
 
@@ -96,7 +108,7 @@ def visual_studio_roots(
     env = _casefold_env(environment)
     local = env.get("localappdata")
     if not local:
-        return VisualStudioRootSet((), (), ())
+        return VisualStudioRootSet((), (), (), ())
 
     parent = PureWindowsPath(local) / "Microsoft" / "VisualStudio"
     component_caches: list[PureWindowsPath] = []
@@ -117,10 +129,12 @@ def visual_studio_roots(
         web_tools.append(instance / "WebTools")
 
     roslyn_cache = parent / "Roslyn" / "Cache"
+    local_packages = parent / "Packages"
     return VisualStudioRootSet(
         tuple(component_caches),
         (roslyn_cache,),
         tuple(web_tools),
+        (local_packages,),
     )
 
 
@@ -134,6 +148,7 @@ def visual_studio_scan_roots(
                 *roots.component_model_cache_roots,
                 *roots.roslyn_cache_roots,
                 *roots.web_tools_roots,
+                *roots.local_package_roots,
             )
         )
     )
@@ -150,6 +165,7 @@ def match_visual_studio_rule(
         (roots.component_model_cache_roots, _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE),
         (roots.roslyn_cache_roots, _VISUAL_STUDIO_ROSLYN_CACHE_RULE),
         (roots.web_tools_roots, _VISUAL_STUDIO_WEBTOOLS_RULE),
+        (roots.local_package_roots, _VISUAL_STUDIO_LOCAL_PACKAGES_RULE),
     ):
         for root in candidates:
             normalized_root = _impl._normalize(root)
@@ -219,7 +235,10 @@ def visual_studio_audited_tool_roots(
             (root, _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE)
             for root in roots.component_model_cache_roots
         ),
-        *tuple((root, _VISUAL_STUDIO_ROSLYN_CACHE_RULE) for root in roots.roslyn_cache_roots),
+        *tuple(
+            (root, _VISUAL_STUDIO_ROSLYN_CACHE_RULE)
+            for root in roots.roslyn_cache_roots
+        ),
     )
 
 
