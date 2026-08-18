@@ -90,6 +90,20 @@ def test_explicit_docker_host_is_classified_without_context_lookup() -> None:
     assert not target.local
 
 
+def test_process_docker_host_is_not_masked_by_partial_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("DOCKER_CONTEXT", raising=False)
+    monkeypatch.setenv("DOCKER_HOST", "ssh://inherited@example.invalid")
+
+    target = inspect_docker_daemon_target({"DEVCLEAN_DOCKER_EXE": "docker-test"})
+
+    assert target.context_name is None
+    assert target.endpoint == "ssh://inherited@example.invalid"
+    assert target.source == "DOCKER_HOST"
+    assert not target.local
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows named-pipe boundary")
 def test_docker_context_resolves_local_named_pipe(
     monkeypatch: pytest.MonkeyPatch,
