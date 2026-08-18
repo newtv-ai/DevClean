@@ -185,16 +185,20 @@ def inventory_unity_upm_storage(
             )
 
         packages = root.path / "packages"
+        packages_local = is_local_fixed_path(root.path) and is_local_fixed_path(packages)
         add(
             UnityUpmStorageKind.LEGACY_PACKAGES,
             packages,
             cache_root=root.path,
             active=False,
             lane=UnityUpmLane.USER_REVIEW,
-            deletable=True,
+            deletable=packages_local,
             reason=(
                 "Unity 6 已不再使用这个旧版 packages 子目录；只有确认不再用旧版 Editor "
                 "维护相关项目时才适合删除"
+                if packages_local
+                else "旧版 packages 位于共享、远程、可移动或 reparse 重定向边界；"
+                "DevClean 只报告，不向可能影响其他用户的位置授予删除权限"
             ),
         )
 
