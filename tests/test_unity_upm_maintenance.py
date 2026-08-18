@@ -197,6 +197,7 @@ def test_delete_legacy_packages_uses_exact_tree_purge_and_preserves_siblings(
     seen: dict[str, object] = {}
 
     monkeypatch.setattr(upm, "unity_package_manager_running", lambda: False)
+    monkeypatch.setattr(upm, "is_local_fixed_path", lambda path: True)
     monkeypatch.setattr(upm, "_exact_root_boundary", lambda path: boundary)
     monkeypatch.setattr(
         upm,
@@ -256,6 +257,24 @@ def test_delete_refuses_arbitrary_packages_directory(tmp_path: Path) -> None:
     assert (arbitrary / "packages" / "data.bin").exists()
 
 
+def test_delete_refuses_non_local_or_reparsed_cache_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    local = tmp_path / "Local"
+    root = local / "Unity" / "cache" / "upm"
+    package = _write(root / "packages" / "legacy" / "data.bin", 5)
+    monkeypatch.setattr(upm, "is_local_fixed_path", lambda path: False)
+
+    with pytest.raises(ValueError, match="本地固定磁盘"):
+        delete_unity_upm_legacy_packages(
+            root,
+            {"LOCALAPPDATA": str(local)},
+        )
+
+    assert package.exists()
+
+
 def test_delete_refuses_while_unity_package_manager_is_running(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -263,6 +282,7 @@ def test_delete_refuses_while_unity_package_manager_is_running(
     local = tmp_path / "Local"
     root = local / "Unity" / "cache" / "upm"
     _write(root / "packages" / "legacy" / "data.bin", 5)
+    monkeypatch.setattr(upm, "is_local_fixed_path", lambda path: True)
     monkeypatch.setattr(upm, "unity_package_manager_running", lambda: True)
 
     with pytest.raises(RuntimeError, match="正在运行"):
