@@ -78,10 +78,14 @@ def run_dotnet_workload_clean(
     )
 
 
-@lru_cache(maxsize=1)
 def dotnet_sdk_process_running() -> bool:
     """Fail closed while common .NET/Visual Studio build owners are active."""
 
+    return _dotnet_sdk_process_running_cached()
+
+
+@lru_cache(maxsize=1)
+def _dotnet_sdk_process_running_cached() -> bool:
     if os.name != "nt":
         return False
     script = (
@@ -103,7 +107,7 @@ def dotnet_sdk_process_running() -> bool:
 
 
 def clear_dotnet_process_cache() -> None:
-    dotnet_sdk_process_running.cache_clear()
+    _dotnet_sdk_process_running_cached.cache_clear()
 
 
 def _combined_output(stdout: str | None, stderr: str | None) -> str:
