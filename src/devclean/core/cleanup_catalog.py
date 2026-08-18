@@ -38,6 +38,9 @@ from devclean.core.user_rules import (
     expand_path,
 )
 from devclean.core.uv_cleanup import match_uv_rule
+from devclean.core.visual_studio_installer_cleanup import (
+    match_visual_studio_installer_rule,
+)
 from devclean.platform.windows.volumes import is_local_fixed_path
 
 
@@ -170,6 +173,14 @@ def _report_only_root_metadata(
     root: os.PathLike[str],
     environment: dict[str, str],
 ) -> tuple[CleanupCategory, str]:
+    visual_studio_installer_rule = match_visual_studio_installer_rule(root, environment)
+    if (
+        visual_studio_installer_rule is not None
+        and visual_studio_installer_rule.rule_id
+        == "visual-studio-installer-package-cache-mixed"
+    ):
+        return CleanupCategory.INSTALLERS_DOWNLOADS, visual_studio_installer_rule.label
+
     electron_rule = match_electron_rule(root, environment)
     if electron_rule is not None and electron_rule.rule_id in {
         "electron-download-cache-mixed",
@@ -307,6 +318,8 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.OLLAMA_MODELS
     if lower.startswith("docker-"):
         return CleanupCategory.CONTAINER_STORAGE
+    if lower.startswith("visual-studio-installer-"):
+        return CleanupCategory.INSTALLERS_DOWNLOADS
     if lower.startswith("electron-"):
         return CleanupCategory.INSTALLERS_DOWNLOADS
     if lower.startswith(("cypress-", "playwright-", "puppeteer-")):
