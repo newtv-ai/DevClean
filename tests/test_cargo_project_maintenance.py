@@ -270,5 +270,5 @@ def test_missing_cargo_manifest_is_refused(tmp_path: Path) -> None:
     root = tmp_path / "not-cargo"
     root.mkdir()
 
-    with pytest.raises(ValueError, match="Cargo.toml"):
+    with pytest.raises(ValueError, match=r"Cargo\.toml"):
         inspect_cargo_workspace(root)
