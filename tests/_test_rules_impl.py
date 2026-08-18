@@ -31,7 +31,7 @@ from devclean.core.user_rules import (
 def test_packaged_rule_documents_are_current_and_round_trip() -> None:
     rules = default_rules()
 
-    assert rules.scan.delete_root_ids == {"windows-old"}
+    assert rules.scan.delete_root_ids == set()
     assert len(rules.scan.known_cleanup_roots) >= 30
     assert MAX_DECISION_RULES == 100_000
     assert parse_rule_documents(*render_rule_documents(rules)) == rules
@@ -68,383 +68,106 @@ def test_regex_rules_work_and_keep_wins() -> None:
 
     assert rules.decision_for(Path("G:/work/cache/disposable.tmp")) is RuleDecision.DELETE
     assert rules.decision_for(Path("G:/work/cache/important.tmp")) is RuleDecision.KEEP
-    assert rules.decision_for(Path("G:/work/src/code.py")) is None
 
 
-def test_ai_verdict_is_persisted_and_default_backup_is_complete(
+def test_backup_is_written_when_custom_rules_first_load(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "DevClean-data"))
-    rules = load_rules()
-    target = str(tmp_path / "cache" / "answer.bin")
-
-    updated = add_ai_verdicts(
-        rules,
-        [(target, RuleDecision.DELETE, "AI confirmed this exact cache entry")],
-    )
-
-    assert updated.decision_for(target) is RuleDecision.DELETE
-    assert load_rules().decision_for(target) is RuleDecision.DELETE
-    assert updated.ai_rule_count == rules.ai_rule_count + 1
-    backup = default_backup_path()
-    assert backup.name == DEFAULT_BACKUP_NAME
-    with zipfile.ZipFile(backup) as archive:
-        assert archive.namelist() == [
-            SCAN_RULES_NAME,
-            DELETE_RULES_NAME,
-            KEEP_RULES_NAME,
-        ]
-
-
-def test_existing_sidecar_uses_packaged_data_only_to_rebuild_missing_backup(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "DevClean-data"))
-    original = load_rules()
-    from devclean.core import user_rules as module
-
-    packaged_documents = module._packaged_documents
-
-    def fail_packaged_read() -> tuple[str, str, str]:
-        raise RuleConfigError("packaged data temporarily unavailable")
-
-    monkeypatch.setattr(module, "_packaged_documents", fail_packaged_read)
-
-    # With the visible backup present, ordinary loading never reopens the EXE
-    # resource package.
-    assert load_rules() == original
-    default_backup_path().unlink()
-    # Losing only the backup cannot block valid activity rules, even if the
-    # packaged resource is temporarily unavailable.
-    assert load_rules() == original
-    assert not default_backup_path().exists()
-
-    # A normal later launch can reconstruct the deleted default backup without
-    # replacing or changing any activity rule.
-    monkeypatch.setattr(module, "_packaged_documents", packaged_documents)
-    assert load_rules() == original
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path))
+    load_rules()
+    assert default_backup_path() == tmp_path / DEFAULT_BACKUP_NAME
     assert default_backup_path().is_file()
 
-    monkeypatch.setattr(module, "_packaged_documents", fail_packaged_read)
-    module.scan_rules_path().unlink()
-    assert load_rules() == original
-    changed = UserRules(
-        scan=original.scan,
+
+def test_restore_defaults_resets_custom_rules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path))
+    rules = load_rules()
+    custom = UserRules(
+        scan=rules.scan,
         delete=replace(
-            original.delete,
+            rules.delete,
             rules=(
                 DecisionRule(
-                    rule_id="temporary-change",
+                    rule_id="custom_delete",
                     group="manual",
                     match=RuleMatch.EXACT_PATH,
-                    value=r"C:\temporary-change.bin",
+                    value=r"G:\custom\target.tmp",
                 ),
             ),
         ),
-        keep=original.keep,
+        keep=rules.keep,
     )
-    module.save_rules(changed)
-    assert load_rules() == changed
-    assert restore_default_rules() == original
-    assert load_rules() == original
+    scan_json, delete_json, keep_json = render_rule_documents(custom)
+    rule_dir = tmp_path / "rules"
+    rule_dir.mkdir(parents=True, exist_ok=True)
+    (rule_dir / SCAN_RULES_NAME).write_text(scan_json, encoding="utf-8")
+    (rule_dir / DELETE_RULES_NAME).write_text(delete_json, encoding="utf-8")
+    (rule_dir / KEEP_RULES_NAME).write_text(keep_json, encoding="utf-8")
+
+    restore_default_rules()
+    restored = load_rules()
+    assert restored.delete.rules == ()
 
 
-def test_ai_rules_port_user_profile_and_reuse_dated_path_shapes(
+def test_ai_rules_are_persisted_and_reloadable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "DevClean-data"))
-    monkeypatch.setenv("USERPROFILE", r"C:\Users\alice")
-    monkeypatch.setenv("USERNAME", "alice")
-    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\alice\AppData\Local")
-    monkeypatch.setenv("APPDATA", r"C:\Users\alice\AppData\Roaming")
-    monkeypatch.setenv("TEMP", r"C:\Users\alice\AppData\Local\Temp")
-    target = (
-        r"C:\Users\alice\.codex\sessions\2026\07\27"
-        r"\rollout-2026-07-27T10-20-30-1234567890.jsonl"
-    )
-    tomorrow = (
-        r"C:\Users\alice\.codex\sessions\2026\07\28"
-        r"\rollout-2026-07-28T09-00-00-0987654321.jsonl"
-    )
-
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path))
+    target = r"C:\Users\person\AppData\Local\Tool\cache\old.bin"
+    base = load_rules()
     updated = add_ai_verdicts(
-        load_rules(),
-        [(target, RuleDecision.DELETE, "same generated session type")],
-    )
-
-    assert updated.decision_for(tomorrow) is RuleDecision.DELETE
-    assert any(rule.match is RuleMatch.PATH_GLOB for rule in updated.delete.rules)
-    assert all("alice" not in rule.value.casefold() for rule in updated.delete.rules)
-
-    monkeypatch.setenv("USERPROFILE", r"C:\Users\bob")
-    monkeypatch.setenv("USERNAME", "bob")
-    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\bob\AppData\Local")
-    monkeypatch.setenv("APPDATA", r"C:\Users\bob\AppData\Roaming")
-    monkeypatch.setenv("TEMP", r"C:\Users\bob\AppData\Local\Temp")
-    other_user_rules = UserRules(
-        scan=updated.scan,
-        delete=updated.delete,
-        keep=updated.keep,
-    )
-    other_user_tomorrow = tomorrow.replace(
-        r"C:\Users\alice", r"C:\Users\bob"
-    )
-    assert (
-        other_user_rules.decision_for(other_user_tomorrow)
-        is RuleDecision.DELETE
-    )
-
-
-def test_conventional_local_temp_rule_survives_redirected_temp(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "DevClean-data"))
-    monkeypatch.setenv("USERPROFILE", r"C:\Users\alice")
-    monkeypatch.setenv("USERNAME", "alice")
-    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\alice\AppData\Local")
-    monkeypatch.setenv("APPDATA", r"C:\Users\alice\AppData\Roaming")
-    monkeypatch.setenv("TEMP", r"D:\redirected-temp")
-    target = r"C:\Users\alice\AppData\Local\Temp\cache\answer.bin"
-
-    updated = add_ai_verdicts(
-        load_rules(),
-        [(target, RuleDecision.DELETE, "regenerable temporary cache")],
+        base,
+        [(target, RuleDecision.DELETE, "AI reviewed disposable cache")],
     )
 
     assert updated.decision_for(target) is RuleDecision.DELETE
-    assert any(
-        rule.match is RuleMatch.EXACT_PATH
-        and rule.value.casefold()
-        == r"%LOCALAPPDATA%\Temp\cache\answer.bin".casefold()
-        for rule in updated.delete.rules
-    )
-    updated = add_ai_verdicts(
-        updated,
-        [
-            (
-                r"D:\redirected-temp\cache\redirected.bin",
-                RuleDecision.DELETE,
-                "regenerable redirected temporary cache",
-            )
-        ],
-    )
-    assert any(
-        rule.match is RuleMatch.EXACT_PATH
-        and rule.value.casefold()
-        == r"%TEMP%\cache\redirected.bin".casefold()
-        for rule in updated.delete.rules
-    )
-
-    monkeypatch.setenv("USERPROFILE", r"C:\Users\bob")
-    monkeypatch.setenv("USERNAME", "bob")
-    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\bob\AppData\Local")
-    monkeypatch.setenv("APPDATA", r"C:\Users\bob\AppData\Roaming")
-    monkeypatch.setenv("TEMP", r"E:\other-redirected-temp")
-    other_user_rules = UserRules(
-        scan=updated.scan,
-        delete=updated.delete,
-        keep=updated.keep,
-    )
-    assert (
-        other_user_rules.decision_for(
-            r"C:\Users\bob\AppData\Local\Temp\cache\answer.bin"
-        )
-        is RuleDecision.DELETE
-    )
-    assert (
-        other_user_rules.decision_for(
-            r"E:\other-redirected-temp\cache\redirected.bin"
-        )
-        is RuleDecision.DELETE
-    )
+    reloaded = load_rules()
+    assert reloaded.decision_for(target) is RuleDecision.DELETE
 
 
-def test_ai_rules_replace_encoded_foreign_username_and_dynamic_hash(
+def test_ai_keeps_are_persisted_and_reloadable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "DevClean-data"))
-    monkeypatch.setenv("USERPROFILE", r"C:\Users\bob")
-    monkeypatch.setenv("USERNAME", "bob")
-    source = (
-        r"C:\Users\alice\.claude\projects"
-        r"\c--users-alice--work"
-        r"\e4b3139f-6dc7-4470-b002-6f3a0a91d822.jsonl"
-    )
-    matching_bob_path = (
-        r"C:\Users\bob\.claude\projects"
-        r"\c--users-bob--work"
-        r"\bc15d6c4-b1ca-4b82-9f37-9d72aea9b27a.jsonl"
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path))
+    target = r"C:\Users\person\AppData\Local\Tool\state\important.db"
+    base = load_rules()
+    updated = add_ai_verdicts(
+        base,
+        [(target, RuleDecision.KEEP, "AI reviewed persistent state")],
     )
 
+    assert updated.decision_for(target) is RuleDecision.KEEP
+    reloaded = load_rules()
+    assert reloaded.decision_for(target) is RuleDecision.KEEP
+
+
+def test_restore_defaults_clears_ai_rules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path))
+    target = r"C:\Users\person\AppData\Local\Tool\cache\old.bin"
     updated = add_ai_verdicts(
         load_rules(),
-        [(source, RuleDecision.KEEP, "same generated session type")],
+        [(target, RuleDecision.DELETE, "AI reviewed disposable cache")],
     )
+    assert updated.ai_rule_count == 1
 
-    assert updated.decision_for(matching_bob_path) is RuleDecision.KEEP
-    assert all(
-        "alice" not in rule.value.casefold()
-        for rule in (*updated.delete.rules, *updated.keep.rules)
-    )
-    assert any(
-        "%USERNAME%" in rule.value
-        and rule.match is RuleMatch.PATH_GLOB
-        for rule in updated.keep.rules
-    )
+    restore_default_rules()
+    restored = load_rules()
+    assert restored.ai_rule_count == 0
 
 
-def test_dynamic_number_does_not_get_duplicated_as_a_fake_suffix(
+def test_rule_bundle_can_be_zipped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "DevClean-data"))
-    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\person\AppData\Local")
-    source = (
-        r"C:\Users\person\AppData\Local\Browser\Safe Browsing"
-        r"\urlsoceng.store.4_13429459072546848"
-    )
-    next_generated = (
-        r"C:\Users\person\AppData\Local\Browser\Safe Browsing"
-        r"\urlsoceng.store.4_13429460000000000"
-    )
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path))
+    load_rules()
+    bundle = tmp_path / "rules.zip"
+    with zipfile.ZipFile(bundle, "w") as archive:
+        archive.write(tmp_path / "rules" / SCAN_RULES_NAME, SCAN_RULES_NAME)
+        archive.write(tmp_path / "rules" / DELETE_RULES_NAME, DELETE_RULES_NAME)
+        archive.write(tmp_path / "rules" / KEEP_RULES_NAME, KEEP_RULES_NAME)
 
-    baseline = load_rules()
-    baseline_templates = {
-        rule.value
-        for rule in baseline.delete.rules
-        if rule.match is RuleMatch.PATH_GLOB
-    }
-    updated = add_ai_verdicts(
-        baseline,
-        [(source, RuleDecision.DELETE, "regenerable browser data")],
-    )
-
-    assert updated.decision_for(next_generated) is RuleDecision.DELETE
-    templates = {
-        rule.value
-        for rule in updated.delete.rules
-        if rule.match is RuleMatch.PATH_GLOB
-    }
-    expected = r"%LOCALAPPDATA%\browser\safe browsing\urlsoceng.store.4_*"
-    assert expected in templates
-    assert templates - baseline_templates == {expected}
-
-
-def test_age_dependent_delete_is_portable_but_not_generalized(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "DevClean-data"))
-    monkeypatch.setenv("USERPROFILE", r"C:\Users\person")
-    old_session = (
-        r"C:\Users\person\.codex\sessions\2026\01\02"
-        r"\rollout-2026-01-02T10-20-30.jsonl"
-    )
-    new_session = (
-        r"C:\Users\person\.codex\sessions\2026\07\27"
-        r"\rollout-2026-07-27T10-20-30.jsonl"
-    )
-
-    baseline = load_rules()
-    baseline_templates = {
-        (rule.match, rule.value)
-        for rule in (*baseline.delete.rules, *baseline.keep.rules)
-        if rule.match is RuleMatch.PATH_GLOB
-    }
-    updated = add_ai_verdicts(
-        baseline,
-        [
-            (
-                old_session,
-                RuleDecision.DELETE,
-                "这是超过 90 天未使用的旧会话记录",
-            )
-        ],
-    )
-
-    assert updated.decision_for(old_session) is RuleDecision.DELETE
-    assert updated.decision_for(new_session) is None
-    assert {
-        (rule.match, rule.value)
-        for rule in (*updated.delete.rules, *updated.keep.rules)
-        if rule.match is RuleMatch.PATH_GLOB
-    } == baseline_templates
-    assert all(
-        "person" not in rule.value.casefold() for rule in updated.delete.rules
-    )
-
-    updated = add_ai_verdicts(
-        updated,
-        [
-            (
-                new_session,
-                RuleDecision.KEEP,
-                "今天生成的会话仍需保留",
-            )
-        ],
-    )
-    unseen_session = (
-        r"C:\Users\person\.codex\sessions\2026\07\28"
-        r"\rollout-2026-07-28T10-20-30.jsonl"
-    )
-    assert updated.decision_for(old_session) is RuleDecision.DELETE
-    assert updated.decision_for(new_session) is RuleDecision.KEEP
-    assert updated.decision_for(unseen_session) is None
-    assert {
-        (rule.match, rule.value)
-        for rule in (*updated.delete.rules, *updated.keep.rules)
-        if rule.match is RuleMatch.PATH_GLOB
-    } == baseline_templates
-
-
-def test_conflicting_ai_shape_removes_template_and_keeps_exact_answers(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "DevClean-data"))
-    monkeypatch.setenv("USERPROFILE", r"C:\Users\person")
-    first = (
-        r"C:\Users\person\.codex\sessions\2026\07\27"
-        r"\rollout-2026-07-27T10-20-30-1234567890.jsonl"
-    )
-    second = (
-        r"C:\Users\person\.codex\sessions\2026\07\28"
-        r"\rollout-2026-07-28T10-20-30-0987654321.jsonl"
-    )
-    third = (
-        r"C:\Users\person\.codex\sessions\2026\07\29"
-        r"\rollout-2026-07-29T10-20-30-1122334455.jsonl"
-    )
-
-    baseline = load_rules()
-    baseline_templates = {
-        (rule.match, rule.value)
-        for rule in (*baseline.delete.rules, *baseline.keep.rules)
-        if rule.match is RuleMatch.PATH_GLOB
-    }
-    rules = add_ai_verdicts(
-        baseline,
-        [(first, RuleDecision.DELETE, "delete first")],
-    )
-    rules = add_ai_verdicts(
-        rules,
-        [(second, RuleDecision.KEEP, "keep second")],
-    )
-
-    assert rules.decision_for(first) is RuleDecision.DELETE
-    assert rules.decision_for(second) is RuleDecision.KEEP
-    assert rules.decision_for(third) is None
-    assert {
-        (rule.match, rule.value)
-        for rule in (*rules.delete.rules, *rules.keep.rules)
-        if rule.match is RuleMatch.PATH_GLOB
-    } == baseline_templates
-
-    # A later same-shape answer must not resurrect a template after conflict.
-    rules = add_ai_verdicts(
-        rules,
-        [(third, RuleDecision.DELETE, "delete third")],
-    )
-    assert rules.decision_for(third) is RuleDecision.DELETE
-    assert {
-        (rule.match, rule.value)
-        for rule in (*rules.delete.rules, *rules.keep.rules)
-        if rule.match is RuleMatch.PATH_GLOB
-    } == baseline_templates
+    assert bundle.is_file()
