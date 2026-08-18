@@ -4,8 +4,6 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PureWindowsPath
 
-import pytest
-
 import devclean.core.application_cleanup as application_cleanup
 from devclean.core.application_cleanup import (
     DecisionOwner,
@@ -108,22 +106,10 @@ def test_pip_explicit_dedicated_hook_stays_report_only(tmp_path: Path) -> None:
     assert whole_tree_application_rule(dedicated, env) is None
 
 
-def test_pip_process_guard_is_independent_from_javascript_package_managers(
+def test_generic_process_guard_never_authorizes_raw_pip_cache_mutation(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    env, default_cache, _ = _layout(tmp_path)
+    env, default_cache, custom_cache = _layout(tmp_path)
 
-    monkeypatch.setattr(application_cleanup, "pip_process_running", lambda: True)
-    monkeypatch.setattr(application_cleanup, "npm_process_running", lambda: False)
-    monkeypatch.setattr(application_cleanup, "pnpm_process_running", lambda: False)
-    monkeypatch.setattr(application_cleanup, "yarn_process_running", lambda: False)
-    monkeypatch.setattr(application_cleanup, "bun_process_running", lambda: False)
     assert not application_cleanup.process_guard_allows(default_cache, env)
-
-    monkeypatch.setattr(application_cleanup, "pip_process_running", lambda: False)
-    monkeypatch.setattr(application_cleanup, "npm_process_running", lambda: True)
-    monkeypatch.setattr(application_cleanup, "pnpm_process_running", lambda: True)
-    monkeypatch.setattr(application_cleanup, "yarn_process_running", lambda: True)
-    monkeypatch.setattr(application_cleanup, "bun_process_running", lambda: True)
-    assert application_cleanup.process_guard_allows(default_cache, env)
+    assert not application_cleanup.process_guard_allows(custom_cache, env)
