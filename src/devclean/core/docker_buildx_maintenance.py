@@ -434,8 +434,8 @@ def _is_local_endpoint(endpoint: str) -> bool:
     if os.name == "nt":
         if not normalized.startswith("npipe://"):
             return False
-        remainder = normalized.removeprefix("npipe://")
-        return remainder.startswith("///./pipe/") or remainder.startswith("./pipe/")
+        remainder = normalized.removeprefix("npipe://").lstrip("/")
+        return remainder.startswith("./pipe/")
     return normalized.startswith("unix:///")
 
 
