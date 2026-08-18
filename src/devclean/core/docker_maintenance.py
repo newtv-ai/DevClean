@@ -1,5 +1,7 @@
 """Read-only Docker daemon inventory plus vendor-managed build-cache pruning."""
 
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import json
