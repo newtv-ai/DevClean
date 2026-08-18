@@ -284,7 +284,9 @@ def _parse_system_df(output: str) -> tuple[DockerUsageRow, ...]:
 
 
 def _casefold_env(environment: Mapping[str, str] | None) -> dict[str, str]:
-    source = os.environ if environment is None else environment
+    source = dict(os.environ)
+    if environment is not None:
+        source.update(environment)
     return {str(key).casefold(): str(value) for key, value in source.items() if value}
 
 
