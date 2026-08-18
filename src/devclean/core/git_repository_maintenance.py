@@ -453,9 +453,9 @@ def _inspect_lfs(
     elif storage_dir is None:
         supported = False
         reason = "Git LFS 未返回可验证的 LocalMediaDir; 当前仅报告"
-    elif _normalized(storage_dir) != _normalized(common_dir / "lfs"):
+    elif _normalized(storage_dir) != _normalized(common_dir / "lfs" / "objects"):
         supported = False
-        reason = "Git LFS LocalMediaDir 不是仓库默认本地存储; 当前仅报告"
+        reason = "Git LFS LocalMediaDir 不是仓库默认本地对象存储; 当前仅报告"
     elif not is_local_fixed_path(storage_dir):
         supported = False
         reason = "Git LFS 本地存储不在本机固定磁盘; 当前仅报告"
