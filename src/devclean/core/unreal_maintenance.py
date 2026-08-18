@@ -238,14 +238,14 @@ def _discover_engines(
             continue
         if not editor.is_absolute() or not editor.is_file():
             continue
-        root = _engine_root_for_editor(editor)
-        if root is None:
+        engine_root = _engine_root_for_editor(editor)
+        if engine_root is None:
             continue
         key = _normalized(editor)
         if key in seen:
             continue
         seen.add(key)
-        found.append(UnrealEngineInstall(editor_cmd=editor, engine_root=root))
+        found.append(UnrealEngineInstall(editor_cmd=editor, engine_root=engine_root))
     return tuple(sorted(found, key=lambda item: str(item.editor_cmd).casefold()))
 
 
