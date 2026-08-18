@@ -39,7 +39,7 @@ def _install_fake_git(
 ) -> None:
     git_dir = root / ".git"
     objects = git_dir / "objects"
-    lfs = git_dir / "lfs"
+    lfs_objects = git_dir / "lfs" / "objects"
 
     def fake(
         executable: str,
@@ -86,7 +86,7 @@ def _install_fake_git(
             media = (
                 Path(custom_lfs_storage)
                 if custom_lfs_storage is not None
-                else lfs
+                else lfs_objects
             )
             return _result(arguments, output=f"LocalMediaDir={media}\n")
         if arguments == ("lfs", "ls-files", "--name-only"):
@@ -159,6 +159,7 @@ def test_inspect_exposes_vendor_maintenance_and_default_lfs(
     assert inventory.maintenance_executable
     assert inventory.lfs.available
     assert inventory.lfs.used
+    assert inventory.lfs.storage_dir == root / ".git" / "lfs" / "objects"
     assert inventory.lfs.logical_bytes == 29
     assert not inventory.lfs.custom_storage
     assert inventory.lfs.prune_supported
@@ -236,6 +237,7 @@ def test_lfs_preview_uses_verified_vendor_dry_run(
     assert "--verify-unreachable" in preview.command
     assert "--when-unverified=halt" in preview.command
     assert "--force" not in preview.command
+    assert preview.storage_dir == root / ".git" / "lfs" / "objects"
     assert preview.before_bytes == 29
 
 
@@ -258,6 +260,7 @@ def test_lfs_prune_never_uses_force_and_requires_remote_verification(
     assert "--verify-unreachable" in result.command
     assert "--when-unverified=halt" in result.command
     assert "--force" not in result.command
+    assert result.storage_dir == root / ".git" / "lfs" / "objects"
     assert result.before_bytes == 29
     assert result.after_bytes == 29
 
