@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -12,7 +13,7 @@ from devclean.core.ollama_model_maintenance import (
 )
 
 
-def _tags(*, digest: str = "sha256:abc") -> dict[str, object]:
+def _tags(*, digest: str = "sha256:abc") -> dict[str, Any]:
     return {
         "models": [
             {
