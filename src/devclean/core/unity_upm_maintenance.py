@@ -19,6 +19,7 @@ from devclean.platform.windows.exact_cleanup import (
     purge_exact_directory_tree,
 )
 from devclean.platform.windows.filesystem import read_file_metadata
+from devclean.platform.windows.volumes import is_local_fixed_path
 
 _DEFAULT_DB_MAX_BYTES = 10_000_000_000
 
@@ -262,6 +263,7 @@ def delete_unity_upm_legacy_packages(
 
     packages = root / "packages"
     _require_plain_directory(packages, "Unity UPM 旧版 packages")
+    _require_local_fixed_boundary(root, packages)
     if unity_package_manager_running():
         raise RuntimeError(
             "Unity Editor、Unity Hub 或 Unity Package Manager 正在运行；"
@@ -276,6 +278,7 @@ def delete_unity_upm_legacy_packages(
         raise ValueError("Unity UPM 缓存配置已变化；请重新统计后再操作")
     _require_plain_directory(root, "Unity UPM 缓存根")
     _require_plain_directory(packages, "Unity UPM 旧版 packages")
+    _require_local_fixed_boundary(root, packages)
 
     boundary = _exact_root_boundary(root)
     expected = _exact_directory_snapshot(packages, "Unity UPM 旧版 packages")
@@ -509,6 +512,14 @@ def _require_plain_directory(path: Path, label: str) -> None:
         raise FileNotFoundError(f"{label}不存在: {path}")
     if path.is_symlink() or path.is_junction():
         raise ValueError(f"拒绝把链接或 junction 作为{label}删除边界: {path}")
+
+
+def _require_local_fixed_boundary(root: Path, packages: Path) -> None:
+    if not is_local_fixed_path(root) or not is_local_fixed_path(packages):
+        raise ValueError(
+            "旧版 UPM packages 只允许在本地固定磁盘上删除；共享、远程、可移动或"
+            "经过 reparse 重定向的缓存只报告，不获得删除权限"
+        )
 
 
 def _exact_directory_snapshot(path: Path, label: str) -> ExactDirectorySnapshot:
