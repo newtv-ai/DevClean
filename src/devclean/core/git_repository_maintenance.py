@@ -428,7 +428,11 @@ def _inspect_lfs(
         environment,
         timeout=60,
     )
-    storage_dir = _lfs_media_dir(env_result.stdout, workspace) if env_result.returncode == 0 else None
+    storage_dir = (
+        _lfs_media_dir(env_result.stdout, workspace)
+        if env_result.returncode == 0
+        else None
+    )
     logical_bytes = (
         _directory_bytes(storage_dir)
         if storage_dir is not None and _is_directory(storage_dir)
