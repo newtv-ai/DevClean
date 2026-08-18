@@ -31,7 +31,7 @@ from devclean.core.user_rules import (
 def test_packaged_rule_documents_are_current_and_round_trip() -> None:
     rules = default_rules()
 
-    assert rules.scan.delete_root_ids == {"windows-old"}
+    assert rules.scan.delete_root_ids == set()
     assert len(rules.scan.known_cleanup_roots) >= 30
     assert MAX_DECISION_RULES == 100_000
     assert parse_rule_documents(*render_rule_documents(rules)) == rules
