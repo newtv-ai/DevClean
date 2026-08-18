@@ -1,9 +1,10 @@
-r"""Audited Visual Studio IDE cache and servicing semantics for Windows cleanup.
+r"""Audited Visual Studio IDE cache, servicing, and log semantics for Windows.
 
-Visual Studio keeps per-instance MEF composition state under ComponentModelCache
-and a shared Roslyn analyzer cache under the local VisualStudio tree. Those exact
-source-backed caches are delegated. Per-instance WebTools storage and the per-user
-setup Packages tree are inventoried separately but remain protected mixed state.
+Exact source-backed regenerable roots receive TOOL ownership. Mixed WebTools and
+per-user setup package state remain protected. Microsoft troubleshooting guidance
+explicitly instructs deleting ``%TEMP%\servicehub\logs`` before reproducing an
+out-of-process issue, which provides an exact supported cleanup boundary for
+ServiceHub diagnostic logs.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ class VisualStudioRootSet:
     roslyn_cache_roots: tuple[PureWindowsPath, ...]
     web_tools_roots: tuple[PureWindowsPath, ...]
     local_package_roots: tuple[PureWindowsPath, ...]
+    servicehub_log_roots: tuple[PureWindowsPath, ...]
 
 
 _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE = ApplicationCleanupRule(
@@ -93,12 +95,28 @@ _VISUAL_STUDIO_LOCAL_PACKAGES_RULE = ApplicationCleanupRule(
     rebuild_cost=RebuildCost.HIGH,
     label="Visual Studio per-user setup channel/package servicing state",
 )
+_VISUAL_STUDIO_SERVICEHUB_LOG_RULE = ApplicationCleanupRule(
+    rule_id="visual-studio-servicehub-logs",
+    app_id="visual_studio",
+    root_key="VISUAL_STUDIO_SERVICEHUB_LOGS",
+    relative_pattern="",
+    match_kind=MatchKind.PREFIX,
+    owner=DecisionOwner.TOOL,
+    last_use=LastUseStrategy.DIRECTORY_MTIME,
+    rebuild_cost=RebuildCost.NONE,
+    idle_days=14,
+    min_reclaim_bytes=16 * _MIB,
+    requires_process_closed=True,
+    allow_whole_tree=True,
+    label="Visual Studio ServiceHub diagnostic logs",
+)
 
 VISUAL_STUDIO_RULES: tuple[ApplicationCleanupRule, ...] = (
     _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE,
     _VISUAL_STUDIO_ROSLYN_CACHE_RULE,
     _VISUAL_STUDIO_WEBTOOLS_RULE,
     _VISUAL_STUDIO_LOCAL_PACKAGES_RULE,
+    _VISUAL_STUDIO_SERVICEHUB_LOG_RULE,
 )
 
 
@@ -107,34 +125,40 @@ def visual_studio_roots(
 ) -> VisualStudioRootSet:
     env = _casefold_env(environment)
     local = env.get("localappdata")
-    if not local:
-        return VisualStudioRootSet((), (), (), ())
+    temp = env.get("temp") or env.get("tmp")
 
-    parent = PureWindowsPath(local) / "Microsoft" / "VisualStudio"
     component_caches: list[PureWindowsPath] = []
     web_tools: list[PureWindowsPath] = []
-    try:
-        children = tuple(Path(str(parent)).iterdir())
-    except OSError:
-        children = ()
-    for child in sorted(children, key=lambda item: item.name.casefold()):
+    roslyn_caches: tuple[PureWindowsPath, ...] = ()
+    local_packages: tuple[PureWindowsPath, ...] = ()
+    if local:
+        parent = PureWindowsPath(local) / "Microsoft" / "VisualStudio"
         try:
-            is_directory = child.is_dir()
+            children = tuple(Path(str(parent)).iterdir())
         except OSError:
-            continue
-        if not is_directory or not _INSTANCE_SELECTOR.fullmatch(child.name):
-            continue
-        instance = PureWindowsPath(str(child))
-        component_caches.append(instance / "ComponentModelCache")
-        web_tools.append(instance / "WebTools")
+            children = ()
+        for child in sorted(children, key=lambda item: item.name.casefold()):
+            try:
+                is_directory = child.is_dir()
+            except OSError:
+                continue
+            if not is_directory or not _INSTANCE_SELECTOR.fullmatch(child.name):
+                continue
+            instance = PureWindowsPath(str(child))
+            component_caches.append(instance / "ComponentModelCache")
+            web_tools.append(instance / "WebTools")
+        roslyn_caches = (parent / "Roslyn" / "Cache",)
+        local_packages = (parent / "Packages",)
 
-    roslyn_cache = parent / "Roslyn" / "Cache"
-    local_packages = parent / "Packages"
+    servicehub_logs = (
+        (PureWindowsPath(temp) / "servicehub" / "logs",) if temp else ()
+    )
     return VisualStudioRootSet(
         tuple(component_caches),
-        (roslyn_cache,),
+        roslyn_caches,
         tuple(web_tools),
-        (local_packages,),
+        local_packages,
+        servicehub_logs,
     )
 
 
@@ -149,6 +173,7 @@ def visual_studio_scan_roots(
                 *roots.roslyn_cache_roots,
                 *roots.web_tools_roots,
                 *roots.local_package_roots,
+                *roots.servicehub_log_roots,
             )
         )
     )
@@ -166,6 +191,7 @@ def match_visual_studio_rule(
         (roots.roslyn_cache_roots, _VISUAL_STUDIO_ROSLYN_CACHE_RULE),
         (roots.web_tools_roots, _VISUAL_STUDIO_WEBTOOLS_RULE),
         (roots.local_package_roots, _VISUAL_STUDIO_LOCAL_PACKAGES_RULE),
+        (roots.servicehub_log_roots, _VISUAL_STUDIO_SERVICEHUB_LOG_RULE),
     ):
         for root in candidates:
             normalized_root = _impl._normalize(root)
@@ -239,6 +265,10 @@ def visual_studio_audited_tool_roots(
             (root, _VISUAL_STUDIO_ROSLYN_CACHE_RULE)
             for root in roots.roslyn_cache_roots
         ),
+        *tuple(
+            (root, _VISUAL_STUDIO_SERVICEHUB_LOG_RULE)
+            for root in roots.servicehub_log_roots
+        ),
     )
 
 
@@ -251,6 +281,7 @@ def whole_tree_visual_studio_rule(
     for candidates, rule in (
         (roots.component_model_cache_roots, _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE),
         (roots.roslyn_cache_roots, _VISUAL_STUDIO_ROSLYN_CACHE_RULE),
+        (roots.servicehub_log_roots, _VISUAL_STUDIO_SERVICEHUB_LOG_RULE),
     ):
         for root in candidates:
             if normalized == _impl._normalize(root):
@@ -260,10 +291,13 @@ def whole_tree_visual_studio_rule(
 
 @lru_cache(maxsize=1)
 def visual_studio_process_running() -> bool:
+    """Fail closed while Visual Studio or one of its ServiceHub satellites runs."""
+
     if os.name != "nt":
         return False
     script = (
-        "$p=Get-Process -Name devenv -ErrorAction SilentlyContinue; "
+        "$p=Get-Process -ErrorAction SilentlyContinue | Where-Object { "
+        "$_.ProcessName -eq 'devenv' -or $_.ProcessName -like 'ServiceHub*' }; "
         "if ($p) { 'RUNNING' }"
     )
     try:
