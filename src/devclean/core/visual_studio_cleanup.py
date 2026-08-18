@@ -1,9 +1,9 @@
-r"""Audited Visual Studio IDE component-cache semantics for Windows cleanup.
+r"""Audited Visual Studio IDE cache semantics for Windows cleanup.
 
-Visual Studio keeps per-instance MEF composition state under ComponentModelCache.
-Microsoft troubleshooting guidance explicitly rebuilds that cache by removing it
-while Visual Studio is closed. DevClean delegates only that exact subtree; the
-surrounding per-instance state remains outside generic deletion authority.
+Visual Studio keeps per-instance MEF composition state under ComponentModelCache
+and a shared Roslyn analyzer cache under the local VisualStudio tree. Microsoft
+support guidance describes both as regenerable. DevClean delegates only those
+exact source-backed subtrees; surrounding IDE and project state stays protected.
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ _INSTANCE_SELECTOR = re.compile(r"^(?:16|17|18)\.0(?:_[0-9a-f]{4,})?$", re.IGNOR
 @dataclass(frozen=True, slots=True)
 class VisualStudioRootSet:
     component_model_cache_roots: tuple[PureWindowsPath, ...]
+    roslyn_cache_roots: tuple[PureWindowsPath, ...]
 
 
 _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE = ApplicationCleanupRule(
@@ -53,9 +54,25 @@ _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE = ApplicationCleanupRule(
     allow_whole_tree=True,
     label="Visual Studio MEF component model cache",
 )
+_VISUAL_STUDIO_ROSLYN_CACHE_RULE = ApplicationCleanupRule(
+    rule_id="visual-studio-roslyn-analyzer-cache",
+    app_id="visual_studio",
+    root_key="VISUAL_STUDIO_ROSLYN_CACHE",
+    relative_pattern="",
+    match_kind=MatchKind.PREFIX,
+    owner=DecisionOwner.TOOL,
+    last_use=LastUseStrategy.DIRECTORY_MTIME,
+    rebuild_cost=RebuildCost.MEDIUM,
+    idle_days=30,
+    min_reclaim_bytes=128 * _MIB,
+    requires_process_closed=True,
+    allow_whole_tree=True,
+    label="Visual Studio Roslyn analyzer cache",
+)
 
 VISUAL_STUDIO_RULES: tuple[ApplicationCleanupRule, ...] = (
     _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE,
+    _VISUAL_STUDIO_ROSLYN_CACHE_RULE,
 )
 
 
@@ -65,29 +82,34 @@ def visual_studio_roots(
     env = _casefold_env(environment)
     local = env.get("localappdata")
     if not local:
-        return VisualStudioRootSet(())
+        return VisualStudioRootSet((), ())
 
     parent = PureWindowsPath(local) / "Microsoft" / "VisualStudio"
-    caches: list[PureWindowsPath] = []
+    component_caches: list[PureWindowsPath] = []
     try:
         children = tuple(Path(str(parent)).iterdir())
     except OSError:
         children = ()
-    for child in children:
+    for child in sorted(children, key=lambda item: item.name.casefold()):
         try:
             is_directory = child.is_dir()
         except OSError:
             continue
         if not is_directory or not _INSTANCE_SELECTOR.fullmatch(child.name):
             continue
-        caches.append(PureWindowsPath(str(child)) / "ComponentModelCache")
-    return VisualStudioRootSet(tuple(caches))
+        component_caches.append(PureWindowsPath(str(child)) / "ComponentModelCache")
+
+    roslyn_cache = parent / "Roslyn" / "Cache"
+    return VisualStudioRootSet(tuple(component_caches), (roslyn_cache,))
 
 
 def visual_studio_scan_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[PureWindowsPath, ...]:
-    return visual_studio_roots(environment).component_model_cache_roots
+    roots = visual_studio_roots(environment)
+    return tuple(
+        dict.fromkeys((*roots.component_model_cache_roots, *roots.roslyn_cache_roots))
+    )
 
 
 def match_visual_studio_rule(
@@ -95,14 +117,19 @@ def match_visual_studio_rule(
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationCleanupRule | None:
     normalized = _impl._normalize(path)
-    matches: list[int] = []
-    for root in visual_studio_roots(environment).component_model_cache_roots:
-        normalized_root = _impl._normalize(root)
-        if _impl._matches(normalized, normalized_root, MatchKind.PREFIX):
-            matches.append(len(normalized_root))
+    roots = visual_studio_roots(environment)
+    matches: list[tuple[int, ApplicationCleanupRule]] = []
+    for candidates, rule in (
+        (roots.component_model_cache_roots, _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE),
+        (roots.roslyn_cache_roots, _VISUAL_STUDIO_ROSLYN_CACHE_RULE),
+    ):
+        for root in candidates:
+            normalized_root = _impl._normalize(root)
+            if _impl._matches(normalized, normalized_root, MatchKind.PREFIX):
+                matches.append((len(normalized_root), rule))
     if not matches:
         return None
-    return _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE
+    return max(matches, key=lambda item: item[0])[1]
 
 
 def evaluate_visual_studio_path(
@@ -148,9 +175,13 @@ def evaluate_visual_studio_path(
 def visual_studio_audited_tool_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
-    return tuple(
-        (root, _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE)
-        for root in visual_studio_roots(environment).component_model_cache_roots
+    roots = visual_studio_roots(environment)
+    return (
+        *tuple(
+            (root, _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE)
+            for root in roots.component_model_cache_roots
+        ),
+        *tuple((root, _VISUAL_STUDIO_ROSLYN_CACHE_RULE) for root in roots.roslyn_cache_roots),
     )
 
 
@@ -159,9 +190,14 @@ def whole_tree_visual_studio_rule(
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationCleanupRule | None:
     normalized = _impl._normalize(path)
-    for root in visual_studio_roots(environment).component_model_cache_roots:
-        if normalized == _impl._normalize(root):
-            return _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE
+    roots = visual_studio_roots(environment)
+    for candidates, rule in (
+        (roots.component_model_cache_roots, _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE),
+        (roots.roslyn_cache_roots, _VISUAL_STUDIO_ROSLYN_CACHE_RULE),
+    ):
+        for root in candidates:
+            if normalized == _impl._normalize(root):
+                return rule
     return None
 
 
