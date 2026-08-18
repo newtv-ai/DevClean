@@ -28,6 +28,7 @@ from devclean.core.huggingface_cleanup import match_huggingface_rule
 from devclean.core.maven_cleanup import match_maven_rule
 from devclean.core.nuget_cleanup import match_nuget_rule
 from devclean.core.ollama_cleanup import match_ollama_rule
+from devclean.core.pip_cleanup import match_pip_rule
 from devclean.core.playwright_cleanup import match_playwright_rule
 from devclean.core.puppeteer_cleanup import match_puppeteer_rule
 from devclean.core.rule_schema import CleanupCategory, CleanupPolicy, SourceDomain
@@ -272,6 +273,10 @@ def _report_only_root_metadata(
     uv_rule = match_uv_rule(root, environment)
     if uv_rule is not None and uv_rule.rule_id == "uv-cache-vendor-managed":
         return CleanupCategory.UV_CACHE, uv_rule.label
+
+    pip_rule = match_pip_rule(root, environment)
+    if pip_rule is not None and pip_rule.rule_id.startswith("pip-"):
+        return CleanupCategory.PIP_CACHE, pip_rule.label
 
     return CleanupCategory.IDE_CACHE, "已审计的应用存储根目录"
 
