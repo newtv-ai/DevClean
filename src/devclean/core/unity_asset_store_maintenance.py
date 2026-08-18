@@ -14,6 +14,7 @@ from devclean.platform.windows.exact_cleanup import (
     purge_exact_file,
 )
 from devclean.platform.windows.filesystem import read_file_metadata
+from devclean.platform.windows.volumes import is_local_fixed_path
 
 _ASSET_STORE_DIR = "Asset Store-5.x"
 
@@ -103,6 +104,7 @@ def delete_unity_asset_store_package(
 
     root = _validated_cache_root(cache_root)
     package = _validated_package(root, package_path)
+    _require_local_fixed_boundary(root, package)
     boundary = _exact_root_boundary(root)
     expected = _exact_file_snapshot(package)
     result = purge_exact_file(package, expected, boundary)
@@ -240,6 +242,14 @@ def _validated_package(cache_root: Path, package_path: Path) -> Path:
     if package.is_symlink():
         raise ValueError(f"拒绝删除链接形式的 Unity Asset Store 资源包: {package}")
     return package
+
+
+def _require_local_fixed_boundary(root: Path, package: Path) -> None:
+    if not is_local_fixed_path(root) or not is_local_fixed_path(package):
+        raise ValueError(
+            "Unity Asset Store 缓存包只允许在本地固定磁盘上删除; "
+            "共享、远程、可移动或经过 reparse 重定向的缓存只允许检查"
+        )
 
 
 def _exact_root_boundary(path: Path) -> ExactRootBoundary:
