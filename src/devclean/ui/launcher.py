@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from devclean.ui.app import DevCleanWindow
 from devclean.ui.claude_maintenance_dialog import open_claude_maintenance_dialog
 from devclean.ui.codex_history_dialog import open_codex_history_dialog
+from devclean.ui.conda_maintenance_dialog import open_conda_maintenance_dialog
 from devclean.ui.cursor_maintenance_dialog import open_cursor_maintenance_dialog
 from devclean.ui.go_maintenance_dialog import open_go_maintenance_dialog
 from devclean.ui.nuget_maintenance_dialog import open_nuget_maintenance_dialog
@@ -57,6 +58,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Go 缓存维护…",
         command=lambda: open_go_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="Conda 安全缓存维护…",
+        command=lambda: open_conda_maintenance_dialog(root),
     )
     menu.add_cascade(label="工具", menu=tools)
     root.configure(menu=menu)
