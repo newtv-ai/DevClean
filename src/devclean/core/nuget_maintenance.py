@@ -207,14 +207,12 @@ def _recommended(kind: NuGetLocalKind, logical_bytes: int) -> bool:
 
 def _decision_reason(kind: NuGetLocalKind) -> str:
     if kind is NuGetLocalKind.GLOBAL_PACKAGES:
-        return (
-            "项目可直接使用这里的已还原依赖；清空后需要重新 restore，是否释放由你决定"
-        )
+        return "项目可直接使用这里的已还原依赖; 清空后需要重新 restore, 是否释放由你决定"
     if kind is NuGetLocalKind.HTTP_CACHE:
-        return "NuGet 官方 HTTP 请求缓存；可通过 dotnet nuget locals 安全清空"
+        return "NuGet 官方 HTTP 请求缓存; 可通过 dotnet nuget locals 安全清空"
     if kind is NuGetLocalKind.TEMP:
-        return "NuGet 官方临时缓存；关闭还原/构建进程后可通过官方命令清空"
-    return "NuGet 官方插件操作声明缓存；可通过 dotnet nuget locals 安全清空"
+        return "NuGet 官方临时缓存; 关闭还原/构建进程后可通过官方命令清空"
+    return "NuGet 官方插件操作声明缓存; 可通过 dotnet nuget locals 安全清空"
 
 
 def _roots_for_kind(
