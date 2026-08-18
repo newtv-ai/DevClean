@@ -1,5 +1,7 @@
 """Unity Package Manager global-cache inventory and legacy-cache cleanup."""
 
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import os
@@ -262,7 +264,7 @@ def delete_unity_upm_legacy_packages(
     _require_plain_directory(packages, "Unity UPM 旧版 packages")
     if unity_package_manager_running():
         raise RuntimeError(
-            "Unity Editor、Unity Hub 或 Unity Package Manager 正在运行; "
+            "Unity Editor、Unity Hub 或 Unity Package Manager 正在运行；"
             "请全部关闭后再删除旧版 packages 缓存"
         )
 
@@ -271,7 +273,7 @@ def delete_unity_upm_legacy_packages(
     # named ``packages`` into deletion authority.
     layout = _discover_layout(environment)
     if not any(_normalized(root) == _normalized(item.path) for item in layout.roots):
-        raise ValueError("Unity UPM 缓存配置已变化; 请重新统计后再操作")
+        raise ValueError("Unity UPM 缓存配置已变化；请重新统计后再操作")
     _require_plain_directory(root, "Unity UPM 缓存根")
     _require_plain_directory(packages, "Unity UPM 旧版 packages")
 
