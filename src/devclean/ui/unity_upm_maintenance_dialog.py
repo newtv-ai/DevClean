@@ -8,7 +8,6 @@ import queue
 import threading
 import tkinter as tk
 from dataclasses import dataclass
-from pathlib import Path
 from tkinter import messagebox, ttk
 
 from devclean.core.unity_upm_maintenance import (
