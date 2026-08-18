@@ -26,6 +26,7 @@ from devclean.ui.unity_project_maintenance_dialog import open_unity_project_main
 from devclean.ui.unity_upm_maintenance_dialog import open_unity_upm_maintenance_dialog
 from devclean.ui.unreal_maintenance_dialog import open_unreal_maintenance_dialog
 from devclean.ui.uv_maintenance_dialog import open_uv_maintenance_dialog
+from devclean.ui.vcpkg_maintenance_dialog import open_vcpkg_maintenance_dialog
 from devclean.ui.vscode_maintenance_dialog import open_vscode_maintenance_dialog
 
 
@@ -76,6 +77,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Conan 2 安全缓存维护…",
         command=lambda: open_conan_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="vcpkg 存储维护…",
+        command=lambda: open_vcpkg_maintenance_dialog(root),
     )
     tools.add_command(
         label="Ollama 本机模型维护…",
