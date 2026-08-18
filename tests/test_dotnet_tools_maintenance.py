@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from devclean.core import dotnet_maintenance, dotnet_tools_maintenance as maintenance
+import devclean.core.dotnet_maintenance as dotnet_maintenance
+import devclean.core.dotnet_tools_maintenance as maintenance
 
 
 class SequenceRunner:
