@@ -36,9 +36,20 @@ def _layout(tmp_path: Path) -> tuple[dict[str, str], Path, Path, Path]:
     cache2026 = vs2026 / "ComponentModelCache"
     cache2022.mkdir(parents=True)
     cache2026.mkdir(parents=True)
+    (parent / "Roslyn" / "Cache").mkdir(parents=True)
     (vs2022 / "ImageLibrary").mkdir()
     env = {"LOCALAPPDATA": str(local)}
     return env, cache2022, cache2026, vs2022
+
+
+def _roslyn_cache(environment: dict[str, str]) -> Path:
+    return (
+        Path(environment["LOCALAPPDATA"])
+        / "Microsoft"
+        / "VisualStudio"
+        / "Roslyn"
+        / "Cache"
+    )
 
 
 def test_visual_studio_component_caches_are_discovered(tmp_path: Path) -> None:
@@ -55,6 +66,16 @@ def test_visual_studio_component_caches_are_discovered(tmp_path: Path) -> None:
     assert PureWindowsPath(str(cache2026)) in scan
 
 
+def test_visual_studio_roslyn_cache_is_discovered(tmp_path: Path) -> None:
+    env, _, _, _ = _layout(tmp_path)
+    roslyn = _roslyn_cache(env)
+
+    roots = visual_studio_roots(env)
+
+    assert roots.roslyn_cache_roots == (PureWindowsPath(str(roslyn)),)
+    assert PureWindowsPath(str(roslyn)) in application_scan_roots(env)
+
+
 def test_visual_studio_only_claims_component_model_cache(tmp_path: Path) -> None:
     env, cache2022, _, instance = _layout(tmp_path)
 
@@ -67,11 +88,40 @@ def test_visual_studio_only_claims_component_model_cache(tmp_path: Path) -> None
     assert match_application_rule(instance / "privateregistry.bin", env) is None
 
 
+def test_visual_studio_only_claims_exact_roslyn_cache_subtree(tmp_path: Path) -> None:
+    env, _, _, _ = _layout(tmp_path)
+    roslyn = _roslyn_cache(env)
+
+    rule = match_application_rule(roslyn / "analyzer-cache.bin", env)
+
+    assert rule is not None
+    assert rule.rule_id == "visual-studio-roslyn-analyzer-cache"
+    assert rule.owner is DecisionOwner.TOOL
+    assert match_application_rule(roslyn.parent / "state.json", env) is None
+
+
 def test_visual_studio_old_large_component_cache_is_delegated(tmp_path: Path) -> None:
     env, cache2022, _, _ = _layout(tmp_path)
 
     decision = evaluate_application_path(
         cache2022,
+        logical_size=512 * 1024**2,
+        last_used=_NOW - timedelta(days=90),
+        now=_NOW,
+        process_running=False,
+        environment=env,
+    )
+
+    assert decision is not None
+    assert decision.action is PolicyAction.TOOL_DELETE
+
+
+def test_visual_studio_old_large_roslyn_cache_is_delegated(tmp_path: Path) -> None:
+    env, _, _, _ = _layout(tmp_path)
+    roslyn = _roslyn_cache(env)
+
+    decision = evaluate_application_path(
+        roslyn,
         logical_size=512 * 1024**2,
         last_used=_NOW - timedelta(days=90),
         now=_NOW,
@@ -101,6 +151,23 @@ def test_visual_studio_component_cache_stays_when_devenv_is_running(
     assert decision.action is PolicyAction.TOOL_KEEP_IN_USE
 
 
+def test_visual_studio_roslyn_cache_stays_when_devenv_is_running(tmp_path: Path) -> None:
+    env, _, _, _ = _layout(tmp_path)
+    roslyn = _roslyn_cache(env)
+
+    decision = evaluate_application_path(
+        roslyn,
+        logical_size=512 * 1024**2,
+        last_used=_NOW - timedelta(days=90),
+        now=_NOW,
+        process_running=True,
+        environment=env,
+    )
+
+    assert decision is not None
+    assert decision.action is PolicyAction.TOOL_KEEP_IN_USE
+
+
 def test_visual_studio_component_cache_has_exact_whole_tree_authority(
     tmp_path: Path,
 ) -> None:
@@ -112,6 +179,18 @@ def test_visual_studio_component_cache_has_exact_whole_tree_authority(
     assert rule is not None
     assert rule.rule_id == "visual-studio-component-model-cache"
     assert whole_tree_application_rule(instance, env) is None
+
+
+def test_visual_studio_roslyn_cache_has_exact_whole_tree_authority(tmp_path: Path) -> None:
+    env, _, _, _ = _layout(tmp_path)
+    roslyn = _roslyn_cache(env)
+
+    dynamic = dict(audited_dynamic_tool_roots(env))
+    assert PureWindowsPath(str(roslyn)) in dynamic
+    rule = whole_tree_application_rule(roslyn, env)
+    assert rule is not None
+    assert rule.rule_id == "visual-studio-roslyn-analyzer-cache"
+    assert whole_tree_application_rule(roslyn.parent, env) is None
 
 
 def test_visual_studio_component_cache_is_catalogued_vendor_managed(
@@ -128,6 +207,21 @@ def test_visual_studio_component_cache_is_catalogued_vendor_managed(
         assert item.delete_root_itself
         assert item.application_rule is not None
         assert item.application_rule.rule_id == "visual-studio-component-model-cache"
+
+
+def test_visual_studio_roslyn_cache_is_catalogued_vendor_managed(tmp_path: Path) -> None:
+    env, _, _, _ = _layout(tmp_path)
+    roslyn = _roslyn_cache(env)
+
+    discovered = discover_known_cleanup_roots(default_rules().scan, env)
+    by_path = {os.path.normcase(str(item.path)): item for item in discovered}
+    item = by_path[os.path.normcase(str(roslyn))]
+
+    assert item.category is CleanupCategory.IDE_CACHE
+    assert item.policy is CleanupPolicy.VENDOR_MANAGED
+    assert item.delete_root_itself
+    assert item.application_rule is not None
+    assert item.application_rule.rule_id == "visual-studio-roslyn-analyzer-cache"
 
 
 def test_visual_studio_does_not_claim_project_outputs(tmp_path: Path) -> None:
