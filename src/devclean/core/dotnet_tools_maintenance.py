@@ -14,7 +14,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from devclean.core import dotnet_maintenance, nuget_cleanup
+import devclean.core.dotnet_maintenance as dotnet_maintenance
+import devclean.core.nuget_cleanup as nuget_cleanup
 
 
 RunFactory = Callable[..., subprocess.CompletedProcess[str]]
