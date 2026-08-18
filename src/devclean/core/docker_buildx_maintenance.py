@@ -1,5 +1,7 @@
 """Docker Buildx cache inventory and vendor-owned maintenance."""
 
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import json
@@ -71,21 +73,7 @@ def list_buildx_builders(
     """List Buildx builders and classify only source-proven local nodes executable."""
 
     daemon = _require_local_daemon(environment)
-    executable = docker_executable(environment)
-    command = [
-        executable,
-        *_target_selector(daemon),
-        "buildx",
-        "ls",
-        "--format",
-        "{{.Name}}\t{{.DriverEndpoint}}\t{{.Status}}",
-    ]
-    result = _run_docker(command, environment, timeout=60)
-    raw = _parse_builder_rows(result.stdout)
-    return tuple(
-        _classify_builder(executable, daemon, builder, environment)
-        for builder in raw
-    )
+    return _list_buildx_builders_for_daemon(daemon, environment)
 
 
 def inspect_buildx_cache(
@@ -103,9 +91,7 @@ def inspect_buildx_cache(
         raise RuntimeError(builder.reason)
 
     records = _buildx_du_records(builder.name, daemon, environment, retention_hours)
-    reclaimable = sum(
-        record.size_bytes for record in records if record.reclaimable
-    )
+    reclaimable = sum(record.size_bytes for record in records if record.reclaimable)
     return BuildxCacheInventory(
         daemon=daemon,
         builder=builder,
@@ -191,6 +177,27 @@ class _DuRecord:
     reclaimable: bool
 
 
+def _list_buildx_builders_for_daemon(
+    daemon: DockerDaemonIdentity,
+    environment: Mapping[str, str] | None,
+) -> tuple[BuildxBuilder, ...]:
+    executable = docker_executable(environment)
+    command = [
+        executable,
+        *_target_selector(daemon),
+        "buildx",
+        "ls",
+        "--format",
+        "{{.Name}}\t{{.DriverEndpoint}}\t{{.Status}}",
+    ]
+    result = _run_docker(command, environment, timeout=60)
+    raw = _parse_builder_rows(result.stdout)
+    return tuple(
+        _classify_builder(executable, builder, environment)
+        for builder in raw
+    )
+
+
 def _parse_builder_rows(output: str) -> tuple[_RawBuilder, ...]:
     builders: list[_RawBuilder] = []
     current_name: str | None = None
@@ -201,9 +208,7 @@ def _parse_builder_rows(output: str) -> tuple[_RawBuilder, ...]:
         nonlocal current_name, current_driver, current_nodes
         if current_name is None or current_driver is None:
             return
-        builders.append(
-            _RawBuilder(current_name, current_driver, tuple(current_nodes))
-        )
+        builders.append(_RawBuilder(current_name, current_driver, tuple(current_nodes)))
         current_name = None
         current_driver = None
         current_nodes = []
@@ -233,7 +238,6 @@ def _parse_builder_rows(output: str) -> tuple[_RawBuilder, ...]:
 
 def _classify_builder(
     executable: str,
-    daemon: DockerDaemonIdentity,
     builder: _RawBuilder,
     environment: Mapping[str, str] | None,
 ) -> BuildxBuilder:
@@ -374,8 +378,11 @@ def _exact_builder(
     daemon: DockerDaemonIdentity,
     environment: Mapping[str, str] | None,
 ) -> BuildxBuilder:
-    del daemon
-    matches = [builder for builder in list_buildx_builders(environment) if builder.name == builder_name]
+    matches = [
+        builder
+        for builder in _list_buildx_builders_for_daemon(daemon, environment)
+        if builder.name == builder_name
+    ]
     if len(matches) != 1:
         raise RuntimeError(
             f"无法唯一确认 Buildx builder {builder_name!r}: found={len(matches)}"
@@ -410,7 +417,9 @@ def _daemon_key(target: DockerDaemonIdentity) -> tuple[str | None, str, str]:
     return target.context_name, target.endpoint, target.source
 
 
-def _builder_key(builder: BuildxBuilder) -> tuple[str, str, tuple[tuple[str, str, str], ...]]:
+def _builder_key(
+    builder: BuildxBuilder,
+) -> tuple[str, str, tuple[tuple[str, str, str], ...]]:
     return (
         builder.name,
         builder.driver,
