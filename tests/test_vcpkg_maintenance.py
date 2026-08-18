@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -17,9 +18,7 @@ def _root(tmp_path: Path) -> Path:
     root = tmp_path / "vcpkg"
     root.mkdir()
     (root / ".vcpkg-root").write_text("", encoding="utf-8")
-    executable = root / (
-        "vcpkg.exe" if vcpkg_maintenance.os.name == "nt" else "vcpkg"
-    )
+    executable = root / ("vcpkg.exe" if os.name == "nt" else "vcpkg")
     executable.write_text("stub", encoding="utf-8")
     return root
 
@@ -33,12 +32,17 @@ def _version_ok(*args: object, **kwargs: object) -> subprocess.CompletedProcess[
     )
 
 
+def _patch_version_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "devclean.core.vcpkg_maintenance.subprocess.run",
+        _version_ok,
+    )
+
+
 def test_inspect_requires_vcpkg_root_marker(tmp_path: Path) -> None:
     ordinary = tmp_path / "ordinary"
     ordinary.mkdir()
-    executable = ordinary / (
-        "vcpkg.exe" if vcpkg_maintenance.os.name == "nt" else "vcpkg"
-    )
+    executable = ordinary / ("vcpkg.exe" if os.name == "nt" else "vcpkg")
     executable.write_text("stub", encoding="utf-8")
 
     with pytest.raises(ValueError, match=r"\.vcpkg-root"):
@@ -62,7 +66,7 @@ def test_inspect_splits_root_storage_and_default_binary_cache(
     (archives / "cache.zip").write_bytes(b"z" * 19)
     monkeypatch.setenv("LOCALAPPDATA", str(local))
     monkeypatch.delenv("VCPKG_DEFAULT_BINARY_CACHE", raising=False)
-    monkeypatch.setattr(vcpkg_maintenance.subprocess, "run", _version_ok)
+    _patch_version_run(monkeypatch)
 
     inventory = inspect_vcpkg_root(root)
 
@@ -81,7 +85,7 @@ def test_buildtrees_reason_warns_about_editable_work(
 ) -> None:
     root = _root(tmp_path)
     (root / "buildtrees").mkdir()
-    monkeypatch.setattr(vcpkg_maintenance.subprocess, "run", _version_ok)
+    _patch_version_run(monkeypatch)
 
     inventory = inspect_vcpkg_root(root)
     entry = next(
@@ -109,7 +113,7 @@ def test_cleanup_refuses_active_build(
     target = root / "packages"
     target.mkdir()
     (target / "keep.bin").write_bytes(b"x")
-    monkeypatch.setattr(vcpkg_maintenance.subprocess, "run", _version_ok)
+    _patch_version_run(monkeypatch)
     monkeypatch.setattr(vcpkg_maintenance, "vcpkg_activity_running", lambda: True)
 
     with pytest.raises(RuntimeError, match="构建活动"):
@@ -126,7 +130,7 @@ def test_cleanup_uses_exact_tree_purge_and_reports_reclaimed_bytes(
     target = root / "downloads"
     target.mkdir()
     (target / "asset.zip").write_bytes(b"x" * 23)
-    monkeypatch.setattr(vcpkg_maintenance.subprocess, "run", _version_ok)
+    _patch_version_run(monkeypatch)
     monkeypatch.setattr(vcpkg_maintenance, "vcpkg_activity_running", lambda: False)
     monkeypatch.setattr(vcpkg_maintenance, "is_local_fixed_path", lambda path: True)
     monkeypatch.setattr(
@@ -163,7 +167,7 @@ def test_cleanup_refuses_non_local_storage(
     root = _root(tmp_path)
     target = root / "packages"
     target.mkdir()
-    monkeypatch.setattr(vcpkg_maintenance.subprocess, "run", _version_ok)
+    _patch_version_run(monkeypatch)
     monkeypatch.setattr(vcpkg_maintenance, "vcpkg_activity_running", lambda: False)
     monkeypatch.setattr(vcpkg_maintenance, "is_local_fixed_path", lambda path: False)
 
