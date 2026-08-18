@@ -87,12 +87,12 @@ def _install_inventory_fake(
         cmd = list(command)
         if seen is not None:
             seen.append(cmd)
-        if cmd[-5:] == ["image", "ls", "--no-trunc", "--quiet"]:
+        if cmd[-4:] == ["image", "ls", "--no-trunc", "--quiet"]:
             ids = [str(item["Id"]) for item in image_payloads]
             return _completed(command, stdout="\n".join(ids) + ("\n" if ids else ""))
         if "image" in cmd and "inspect" in cmd:
             return _completed(command, stdout=json.dumps(image_payloads))
-        if cmd[-6:] == ["container", "ls", "--all", "--no-trunc", "--quiet"]:
+        if cmd[-5:] == ["container", "ls", "--all", "--no-trunc", "--quiet"]:
             ids = [str(item["Id"]) for item in containers]
             return _completed(command, stdout="\n".join(ids) + ("\n" if ids else ""))
         if "container" in cmd and "inspect" in cmd:
