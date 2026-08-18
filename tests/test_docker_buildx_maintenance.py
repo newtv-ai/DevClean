@@ -92,7 +92,10 @@ def test_buildx_builder_inventory_only_executes_source_proven_local_nodes(
             )
         raise AssertionError(cmd)
 
-    monkeypatch.setattr(buildx_maintenance.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        "devclean.core.docker_buildx_maintenance.subprocess.run",
+        fake_run,
+    )
 
     builders = list_buildx_builders({"DEVCLEAN_DOCKER_EXE": "docker-test"})
     by_name = {builder.name: builder for builder in builders}
@@ -146,7 +149,10 @@ def test_buildx_cache_uses_vendor_age_filter_and_reclaimable_records(
             )
         raise AssertionError(cmd)
 
-    monkeypatch.setattr(buildx_maintenance.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        "devclean.core.docker_buildx_maintenance.subprocess.run",
+        fake_run,
+    )
 
     inventory = inspect_buildx_cache(
         "localbuilder",
@@ -194,7 +200,10 @@ def test_buildx_cache_rejects_remote_builder(
             )
         raise AssertionError(cmd)
 
-    monkeypatch.setattr(buildx_maintenance.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        "devclean.core.docker_buildx_maintenance.subprocess.run",
+        fake_run,
+    )
 
     with pytest.raises(RuntimeError, match="不是可确认的本机"):
         inspect_buildx_cache(
@@ -251,7 +260,10 @@ def test_buildx_prune_is_pinned_and_never_uses_all(
             return _completed(command, stdout="Total: 1.5kB\n")
         raise AssertionError(cmd)
 
-    monkeypatch.setattr(buildx_maintenance.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        "devclean.core.docker_buildx_maintenance.subprocess.run",
+        fake_run,
+    )
 
     result = prune_buildx_cache(
         "localbuilder",
