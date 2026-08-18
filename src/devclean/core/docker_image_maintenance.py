@@ -71,6 +71,7 @@ def inspect_docker_images(
                 *selector,
                 "image",
                 "ls",
+                "--all",
                 "--no-trunc",
                 "--quiet",
             ],
