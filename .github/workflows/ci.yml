@@ -47,7 +47,7 @@ jobs:
         run: uv pip check
 
       - name: Lint
-        run: uv run --frozen ruff check --fix --diff src/devclean/core/dotnet_tools_maintenance.py
+        run: uv run --frozen ruff check --output-format=github src scripts tests
 
       - name: Type check
         run: uv run --frozen python -m mypy
