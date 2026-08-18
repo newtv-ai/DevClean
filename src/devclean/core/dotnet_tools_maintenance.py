@@ -17,7 +17,6 @@ from pathlib import Path
 import devclean.core.dotnet_maintenance as dotnet_maintenance
 import devclean.core.nuget_cleanup as nuget_cleanup
 
-
 RunFactory = Callable[..., subprocess.CompletedProcess[str]]
 
 
