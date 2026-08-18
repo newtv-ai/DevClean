@@ -472,10 +472,15 @@ def _required_absolute_path(value: str, label: str) -> Path:
 def _positive_int(value: object, label: str) -> int:
     if isinstance(value, bool):
         raise ValueError(f"{label} 必须是正整数")
-    try:
-        parsed = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"{label} 必须是正整数") from error
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = int(value)
+        except ValueError as error:
+            raise ValueError(f"{label} 必须是正整数") from error
+    else:
+        raise ValueError(f"{label} 必须是正整数")
     if parsed <= 0:
         raise ValueError(f"{label} 必须是正整数")
     return parsed
