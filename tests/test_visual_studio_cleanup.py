@@ -36,6 +36,8 @@ def _layout(tmp_path: Path) -> tuple[dict[str, str], Path, Path, Path]:
     cache2026 = vs2026 / "ComponentModelCache"
     cache2022.mkdir(parents=True)
     cache2026.mkdir(parents=True)
+    (vs2022 / "WebTools").mkdir()
+    (vs2026 / "WebTools").mkdir()
     (parent / "Roslyn" / "Cache").mkdir(parents=True)
     (vs2022 / "ImageLibrary").mkdir()
     env = {"LOCALAPPDATA": str(local)}
@@ -49,6 +51,16 @@ def _roslyn_cache(environment: dict[str, str]) -> Path:
         / "VisualStudio"
         / "Roslyn"
         / "Cache"
+    )
+
+
+def _web_tools(environment: dict[str, str], selector: str = "17.0_deadbeef") -> Path:
+    return (
+        Path(environment["LOCALAPPDATA"])
+        / "Microsoft"
+        / "VisualStudio"
+        / selector
+        / "WebTools"
     )
 
 
@@ -76,6 +88,22 @@ def test_visual_studio_roslyn_cache_is_discovered(tmp_path: Path) -> None:
     assert PureWindowsPath(str(roslyn)) in application_scan_roots(env)
 
 
+def test_visual_studio_webtools_roots_are_discovered_report_only(tmp_path: Path) -> None:
+    env, _, _, _ = _layout(tmp_path)
+    web2022 = _web_tools(env)
+    web2026 = _web_tools(env, "18.0_cafebabe")
+
+    roots = visual_studio_roots(env)
+
+    assert roots.web_tools_roots == (
+        PureWindowsPath(str(web2022)),
+        PureWindowsPath(str(web2026)),
+    )
+    scan = application_scan_roots(env)
+    assert PureWindowsPath(str(web2022)) in scan
+    assert PureWindowsPath(str(web2026)) in scan
+
+
 def test_visual_studio_only_claims_component_model_cache(tmp_path: Path) -> None:
     env, cache2022, _, instance = _layout(tmp_path)
 
@@ -98,6 +126,17 @@ def test_visual_studio_only_claims_exact_roslyn_cache_subtree(tmp_path: Path) ->
     assert rule.rule_id == "visual-studio-roslyn-analyzer-cache"
     assert rule.owner is DecisionOwner.TOOL
     assert match_application_rule(roslyn.parent / "state.json", env) is None
+
+
+def test_visual_studio_webtools_is_explicitly_protected(tmp_path: Path) -> None:
+    env, _, _, _ = _layout(tmp_path)
+    web_tools = _web_tools(env)
+
+    rule = match_application_rule(web_tools / "LanguageService" / "state.db", env)
+
+    assert rule is not None
+    assert rule.rule_id == "visual-studio-webtools-mixed-state"
+    assert rule.owner is DecisionOwner.KEEP
 
 
 def test_visual_studio_old_large_component_cache_is_delegated(tmp_path: Path) -> None:
@@ -131,6 +170,24 @@ def test_visual_studio_old_large_roslyn_cache_is_delegated(tmp_path: Path) -> No
 
     assert decision is not None
     assert decision.action is PolicyAction.TOOL_DELETE
+
+
+def test_visual_studio_old_large_webtools_stays_protected(tmp_path: Path) -> None:
+    env, _, _, _ = _layout(tmp_path)
+    web_tools = _web_tools(env)
+
+    decision = evaluate_application_path(
+        web_tools,
+        logical_size=12 * 1024**3,
+        last_used=_NOW - timedelta(days=730),
+        now=_NOW,
+        process_running=False,
+        environment=env,
+    )
+
+    assert decision is not None
+    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert not application_cleanup.process_guard_allows(web_tools, env)
 
 
 def test_visual_studio_component_cache_stays_when_devenv_is_running(
@@ -193,6 +250,15 @@ def test_visual_studio_roslyn_cache_has_exact_whole_tree_authority(tmp_path: Pat
     assert whole_tree_application_rule(roslyn.parent, env) is None
 
 
+def test_visual_studio_webtools_never_gets_whole_tree_authority(tmp_path: Path) -> None:
+    env, _, _, _ = _layout(tmp_path)
+    web_tools = _web_tools(env)
+
+    dynamic = dict(audited_dynamic_tool_roots(env))
+    assert PureWindowsPath(str(web_tools)) not in dynamic
+    assert whole_tree_application_rule(web_tools, env) is None
+
+
 def test_visual_studio_component_cache_is_catalogued_vendor_managed(
     tmp_path: Path,
 ) -> None:
@@ -222,6 +288,20 @@ def test_visual_studio_roslyn_cache_is_catalogued_vendor_managed(tmp_path: Path)
     assert item.delete_root_itself
     assert item.application_rule is not None
     assert item.application_rule.rule_id == "visual-studio-roslyn-analyzer-cache"
+
+
+def test_visual_studio_webtools_is_catalogued_report_only(tmp_path: Path) -> None:
+    env, _, _, _ = _layout(tmp_path)
+    web_tools = _web_tools(env)
+
+    discovered = discover_known_cleanup_roots(default_rules().scan, env)
+    by_path = {os.path.normcase(str(item.path)): item for item in discovered}
+    item = by_path[os.path.normcase(str(web_tools))]
+
+    assert item.category is CleanupCategory.IDE_CACHE
+    assert item.policy is CleanupPolicy.REPORT_ONLY
+    assert not item.delete_root_itself
+    assert item.application_rule is None
 
 
 def test_visual_studio_does_not_claim_project_outputs(tmp_path: Path) -> None:
