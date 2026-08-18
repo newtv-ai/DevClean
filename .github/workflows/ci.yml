@@ -46,7 +46,10 @@ jobs:
 
       - name: Apply temporary review-lane patch
         if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/review-lanes-confidence-policy-2026-08'
-        run: uv run --frozen python .github/scripts/run_patch_review_lanes.py
+        shell: pwsh
+        run: |
+          uv run --frozen python .github/scripts/run_patch_review_lanes.py
+          uv run --frozen python .github/scripts/refine_review_lanes.py
 
       - name: Format temporary review-lane patch
         if: github.actor != 'github-actions[bot]' && github.head_ref == 'agent/review-lanes-confidence-policy-2026-08'
@@ -90,6 +93,7 @@ jobs:
           git checkout origin/main -- .github/workflows/ci.yml
           git rm .github/scripts/patch_review_lanes.py
           git rm .github/scripts/run_patch_review_lanes.py
+          git rm .github/scripts/refine_review_lanes.py
           git rm .github/workflows/patch-review-lanes-temp.yml
           git add src/devclean/core/triage.py src/devclean/ui/app.py tests/test_scan_and_triage.py docs/review-lane-policy.md .github/workflows/ci.yml
           git commit -m "separate deterministic user and AI review lanes"
