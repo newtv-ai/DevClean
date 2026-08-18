@@ -15,7 +15,11 @@ from devclean.core.application_cleanup import (
     match_application_rule,
     whole_tree_application_rule,
 )
-from devclean.core.cleanup_catalog import CleanupCategory, CleanupPolicy, discover_known_cleanup_roots
+from devclean.core.cleanup_catalog import (
+    CleanupCategory,
+    CleanupPolicy,
+    discover_known_cleanup_roots,
+)
 from devclean.core.pip_cleanup import pip_roots
 from devclean.core.user_rules import default_rules
 
