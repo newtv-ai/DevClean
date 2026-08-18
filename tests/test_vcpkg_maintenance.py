@@ -17,7 +17,9 @@ def _root(tmp_path: Path) -> Path:
     root = tmp_path / "vcpkg"
     root.mkdir()
     (root / ".vcpkg-root").write_text("", encoding="utf-8")
-    executable = root / ("vcpkg.exe" if vcpkg_maintenance.os.name == "nt" else "vcpkg")
+    executable = root / (
+        "vcpkg.exe" if vcpkg_maintenance.os.name == "nt" else "vcpkg"
+    )
     executable.write_text("stub", encoding="utf-8")
     return root
 
@@ -39,7 +41,7 @@ def test_inspect_requires_vcpkg_root_marker(tmp_path: Path) -> None:
     )
     executable.write_text("stub", encoding="utf-8")
 
-    with pytest.raises(ValueError, match=".vcpkg-root"):
+    with pytest.raises(ValueError, match=r"\.vcpkg-root"):
         inspect_vcpkg_root(ordinary)
 
 
