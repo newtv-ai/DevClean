@@ -332,16 +332,6 @@ from devclean.core.uv_cleanup import (
     uv_scan_roots,
     whole_tree_uv_rule,
 )
-from devclean.core.vivaldi_cleanup import (
-    VIVALDI_RULES,
-    clear_vivaldi_process_cache,
-    evaluate_vivaldi_path,
-    match_vivaldi_rule,
-    vivaldi_audited_tool_roots,
-    vivaldi_process_running,
-    vivaldi_scan_roots,
-    whole_tree_vivaldi_rule,
-)
 from devclean.core.visual_studio_installer_cleanup import (
     VISUAL_STUDIO_INSTALLER_RULES,
     clear_visual_studio_installer_process_cache,
@@ -351,6 +341,16 @@ from devclean.core.visual_studio_installer_cleanup import (
     visual_studio_installer_process_running,
     visual_studio_installer_scan_roots,
     whole_tree_visual_studio_installer_rule,
+)
+from devclean.core.vivaldi_cleanup import (
+    VIVALDI_RULES,
+    clear_vivaldi_process_cache,
+    evaluate_vivaldi_path,
+    match_vivaldi_rule,
+    vivaldi_audited_tool_roots,
+    vivaldi_process_running,
+    vivaldi_scan_roots,
+    whole_tree_vivaldi_rule,
 )
 from devclean.core.vscode_cleanup import (
     VSCODE_RULES,
@@ -1296,8 +1296,8 @@ __all__ = [
     "TOOLBOX_RULES",
     "TRAE_RULES",
     "UV_RULES",
-    "VIVALDI_RULES",
     "VISUAL_STUDIO_INSTALLER_RULES",
+    "VIVALDI_RULES",
     "VSCODE_RULES",
     "WINDSURF_RULES",
     "YARN_RULES",
