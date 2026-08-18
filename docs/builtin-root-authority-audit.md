@@ -8,7 +8,7 @@ This audit applies the DevClean review-lane rule to the stock `scan-rules.json`:
 
 | Root | Previous policy | Audited policy | Reason |
 | --- | --- | --- | --- |
-| Windows crash / WER roots | `VENDOR_MANAGED` | `AGE_BASED_REVIEW` | Crash dumps are disposable diagnostic artifacts, but recent evidence can still matter. Old entries can use the normal age threshold; recent entries stay with the user. |
+| Windows crash / WER roots | `VENDOR_MANAGED` | `MANUAL_REVIEW` | Crash dumps are diagnostic evidence. Age alone, especially the shared one-day temporary-file threshold, is not enough to claim that every user benefits from deleting them. |
 | `%SYSTEMROOT%\Prefetch`, `%SYSTEMROOT%\Logs`, `%SYSTEMROOT%\CbsTemp` | `VENDOR_MANAGED` | `MANUAL_REVIEW` | These mixed Windows maintenance locations do not have one source-backed raw-deletion contract that benefits every user. |
 | `%SYSTEMROOT%\SoftwareDistribution\Download` | `VENDOR_MANAGED` | `MANUAL_REVIEW` | Raw deletion can interact with Windows Update servicing state. DevClean should add a service-aware / OS-supported action before promoting it again. |
 | `%SYSTEMDRIVE%\Windows.old` | `VENDOR_MANAGED` + whole-root delete | `MANUAL_REVIEW`, no whole-root authority | Microsoft says removing the previous Windows version removes the ability to go back and cannot be undone. That is a user tradeoff, not universal cleanup. |
