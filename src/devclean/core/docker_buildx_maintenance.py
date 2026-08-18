@@ -362,9 +362,11 @@ def _buildx_du_records(
         if not record_id:
             raise RuntimeError("docker buildx du 记录缺少 ID")
         raw_size = payload.get("Size")
+        if raw_size is None:
+            raise RuntimeError("docker buildx du 记录缺少 Size")
         try:
-            size = int(raw_size)
-        except (TypeError, ValueError) as error:
+            size = int(str(raw_size))
+        except ValueError as error:
             raise RuntimeError("docker buildx du 记录含无效 Size") from error
         reclaimable = payload.get("Reclaimable")
         if not isinstance(reclaimable, bool):
