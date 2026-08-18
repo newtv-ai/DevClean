@@ -59,11 +59,13 @@ Before mutation DevClean:
 4. rejects a `Library` entry that is a file, symbolic link, or Windows junction;
 5. refuses while any Unity Editor process is running on Windows;
 6. revalidates the project boundary and exact `Library` entry immediately before mutation;
-7. removes only that exact `Library` directory;
-8. records before/after/reclaimed bytes;
-9. never searches for other folders named `Library` and never expands authority to neighboring project directories.
+7. captures stable Windows file identities for both the project boundary and `Library`, then uses DevClean's handle-bound exact-directory purge rather than pathname-based recursive deletion;
+8. keeps the verified boundary handle open during traversal and never descends through reparse points;
+9. requires a completed purge with the exact `Library` root absent before reporting success;
+10. records before/after/reclaimed bytes;
+11. never searches for other folders named `Library` and never expands authority to neighboring project directories.
 
-The all-Editor process guard is deliberately conservative. Unity only requires the target project to be closed, but DevClean does not try to infer a possibly incomplete project-path mapping from process command lines before a recursive delete.
+The all-Editor process guard is deliberately conservative. Unity only requires the target project to be closed, but DevClean does not try to infer a possibly incomplete project-path mapping from process command lines before a destructive operation.
 
 ## Explicit non-targets
 
