@@ -30,6 +30,23 @@ Docker's own documentation distinguishes several object classes with very differ
 
 Known Docker object semantics do not need AI. The distinction is between vendor-owned deterministic cache maintenance, explicit user intent and protected persistent state.
 
+## Local-daemon boundary
+
+Docker CLI commands do not necessarily target the local machine. Docker contexts, `DOCKER_CONTEXT`, `DOCKER_HOST`, `--context` and `--host` can redirect the same CLI to a remote Engine. Docker also allows Buildx builders to point at Docker contexts or remote/Kubernetes endpoints.
+
+That matters for DevClean: this product is a **local disk maintenance** tool, not remote Docker administration. A vendor command is not sufficient safety evidence if its target daemon can be on another machine.
+
+The existing `docker builder prune` lane therefore needs one additional guard before Docker is extended further:
+
+1. resolve the effective Docker context through Docker's own CLI;
+2. inspect the effective Docker endpoint instead of trusting a context name;
+3. allow local Windows named-pipe endpoints and equivalent local-only engine sockets;
+4. treat `tcp://`, `ssh://`, non-local contexts and ambiguous endpoints as REPORT_ONLY / non-executable;
+5. apply the same local-daemon check to the existing `docker builder prune` action and every new Docker mutation;
+6. never silently switch the user's context to make an operation executable.
+
+Docker's own context documentation shows local Windows Engine endpoints such as `npipe:////./pipe/docker_engine`, while remote contexts can target TCP or SSH endpoints. Source-backed context identity must therefore precede all destructive Docker maintenance.
+
 ## 1. Buildx cache
 
 Current Docker documentation describes `docker buildx prune` as the selected builder's build-cache cleanup command. It supports:
@@ -39,22 +56,26 @@ Current Docker documentation describes `docker buildx prune` as the selected bui
 - cache usage controls such as `--max-used-space`, `--min-free-space` and `--reserved-space`;
 - filters for cache record properties such as `inuse`, `shared`, `private` and cache type.
 
+`docker buildx du --format=json` provides newline-delimited vendor inventory for individual cache records, including ID, reclaimable state, shared state, size, type and last-used metadata. The same command accepts `--builder` for an exact builder target.
+
 Docker also documents periodic BuildKit garbage collection and says the default GC behavior is sufficient for most users. That means DevClean should not fight the builder's configured GC policy or blindly clear all records.
 
 ### Extension decision
 
 Add a separate **Buildx builder cache** lane that:
 
-1. enumerates builders through Buildx itself;
-2. identifies the selected/target builder by exact Buildx name rather than guessing Docker Desktop files;
-3. inventories that builder with `docker buildx du --builder <name>`;
-4. recommends vendor maintenance only when the builder reports material reclaimable cache;
-5. preserves a conservative age window of at least 24 hours;
-6. invokes only `docker buildx prune --builder <name> --filter until=<hours>h`;
-7. never adds `--all` automatically;
-8. never modifies BuildKit GC configuration;
-9. refuses while a Docker/BuildKit build is active;
-10. re-checks builder identity immediately before mutation.
+1. first confirms the Docker daemon/context is local;
+2. enumerates builders through Buildx itself;
+3. identifies the selected/target builder by exact Buildx name rather than guessing Docker Desktop files;
+4. inspects the builder's driver/nodes and refuses remote, Kubernetes or otherwise non-local builder endpoints;
+5. inventories that exact builder with `docker buildx du --builder <name> --format=json`;
+6. recommends vendor maintenance only when Buildx itself reports material reclaimable cache;
+7. preserves a conservative age window of at least 24 hours;
+8. invokes only `docker buildx prune --builder <name> --filter until=<hours>h`;
+9. never adds `--all` automatically;
+10. never modifies BuildKit GC configuration;
+11. refuses while a Docker/BuildKit build is active;
+12. re-checks daemon and builder identity immediately before mutation.
 
 This is deterministic because the object class is generated build cache and Docker itself owns the prune semantics. A size/age threshold remains only a benefit threshold.
 
@@ -75,12 +96,13 @@ Instead, a later executable lane may inventory exact images and expose only expl
 
 Requirements:
 
+- first confirm the effective Docker daemon is local;
 - image identity comes from Docker daemon output, not Docker Desktop files;
 - show repository/tags/digest/image ID/created time/logical size;
 - show whether any current container references the image;
 - never preselect an image merely because it is dangling or old;
 - never use `--force`;
-- refresh image/container references immediately before removal;
+- refresh daemon identity plus image/container references immediately before removal;
 - accept that shared layers mean the displayed logical image size is not equal to reclaimable physical bytes;
 - report actual daemon-wide storage change after the operation rather than promise the image's logical size will be reclaimed.
 
@@ -98,12 +120,13 @@ Do **not** expose blanket `docker container prune` as deterministic cleanup.
 
 A later executable lane can offer exact per-container **USER_REVIEW** using `docker container rm <ID>` with all of the following constraints:
 
+- first confirm the effective Docker daemon is local;
 - show name, ID, image, status, created time and writable-layer size where Docker reports it;
 - only stopped containers are selectable;
 - never preselect based on age/size alone;
 - never use `--force`;
 - never add `--volumes` / `-v`;
-- refresh status immediately before mutation and refuse if the container is now running;
+- refresh daemon identity and status immediately before mutation and refuse if the container is now running;
 - remove exactly the selected container ID;
 - leave named and anonymous volumes untouched;
 - measure before/after Docker storage rather than treating container logical size as guaranteed reclaimed space.
@@ -151,15 +174,20 @@ A broad system-prune action would erase the semantic separation that DevClean is
 
 ## Proposed implementation order
 
-1. **Buildx builder cache maintenance** — deterministic vendor lane, highest confidence and closest to the existing Docker build-cache implementation.
-2. **Exact image inventory/removal** — USER_REVIEW, no force, no blanket prune.
-3. **Exact stopped-container inventory/removal** — USER_REVIEW, no force and no volume removal.
-4. **Volume inventory only** — REPORT_ONLY.
+1. **Docker local-daemon guard + existing builder-prune hardening** — close the remote-context authority gap first.
+2. **Buildx builder cache maintenance** — deterministic vendor lane, highest-confidence extension.
+3. **Exact image inventory/removal** — USER_REVIEW, no force, no blanket prune.
+4. **Exact stopped-container inventory/removal** — USER_REVIEW, no force and no volume removal.
+5. **Volume inventory only** — REPORT_ONLY.
 
 Each executable operation must continue using Docker CLI/daemon identity rather than raw Docker Desktop storage paths.
 
 ## Primary sources
 
+- Docker Docs, **Docker contexts**
+- Docker CLI reference, **docker context show**
+- Docker CLI reference, **docker context inspect**
+- Docker CLI reference, **docker** (daemon socket / host schemes)
 - Docker Docs, **Prune unused Docker objects**
 - Docker CLI reference, **docker image prune**
 - Docker CLI reference, **docker image ls**
@@ -169,6 +197,8 @@ Each executable operation must continue using Docker CLI/daemon identity rather 
 - Docker Docs, **Volumes**
 - Docker CLI reference, **docker system prune**
 - Docker CLI reference, **docker builder prune**
+- Docker CLI reference, **docker buildx du**
+- Docker CLI reference, **docker buildx inspect**
 - Docker CLI reference, **docker buildx prune**
 - Docker CLI reference, **docker buildx**
 - Docker Docs, **Build garbage collection**
