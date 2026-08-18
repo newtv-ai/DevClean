@@ -14,8 +14,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from devclean.core.dotnet_maintenance import clear_dotnet_process_cache, dotnet_sdk_process_running
-from devclean.core.nuget_cleanup import dotnet_executable
+from devclean.core import dotnet_maintenance, nuget_cleanup
 
 
 RunFactory = Callable[..., subprocess.CompletedProcess[str]]
@@ -68,7 +67,7 @@ def inventory_dotnet_global_tools(
     """List installed user-global tools and total storage without mutation."""
 
     result = _run_dotnet(
-        (dotnet_executable(environment), "tool", "list", "--global"),
+        (nuget_cleanup.dotnet_executable(environment), "tool", "list", "--global"),
         environment,
         runner=runner,
         timeout=120,
@@ -110,15 +109,15 @@ def uninstall_dotnet_global_tool(
         raise ValueError(f"not an installed .NET global tool: {package_id}")
     tool = matches[0]
 
-    clear_dotnet_process_cache()
-    if dotnet_sdk_process_running():
+    dotnet_maintenance.clear_dotnet_process_cache()
+    if dotnet_maintenance.dotnet_sdk_process_running():
         raise RuntimeError(
             ".NET SDK, MSBuild, or Visual Studio is running; close it before uninstalling a tool"
         )
 
     before = _directory_bytes(inventory.storage_root)
     command = (
-        dotnet_executable(environment),
+        nuget_cleanup.dotnet_executable(environment),
         "tool",
         "uninstall",
         "--global",
