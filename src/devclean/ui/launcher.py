@@ -17,6 +17,9 @@ from devclean.ui.go_maintenance_dialog import open_go_maintenance_dialog
 from devclean.ui.nuget_maintenance_dialog import open_nuget_maintenance_dialog
 from devclean.ui.pip_maintenance_dialog import open_pip_maintenance_dialog
 from devclean.ui.pnpm_maintenance_dialog import open_pnpm_maintenance_dialog
+from devclean.ui.unity_asset_store_maintenance_dialog import (
+    open_unity_asset_store_maintenance_dialog,
+)
 from devclean.ui.unity_project_maintenance_dialog import open_unity_project_maintenance_dialog
 from devclean.ui.unreal_maintenance_dialog import open_unreal_maintenance_dialog
 from devclean.ui.uv_maintenance_dialog import open_uv_maintenance_dialog
@@ -82,6 +85,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Unity 项目 Library 维护…",
         command=lambda: open_unity_project_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="Unity Asset Store 缓存维护…",
+        command=lambda: open_unity_asset_store_maintenance_dialog(root),
     )
     menu.add_cascade(label="工具", menu=tools)
     root.configure(menu=menu)
