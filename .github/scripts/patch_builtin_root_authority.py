@@ -7,7 +7,7 @@ from pathlib import Path
 SCAN_RULES_PATH = Path("src/devclean/config/scan-rules.json")
 RULE_TEST_PATH = Path("tests/_test_rules_impl.py")
 POLICIES = {
-    "system-crash-dumps": "AGE_BASED_REVIEW",
+    "system-crash-dumps": "MANUAL_REVIEW",
     "windows-maintenance": "MANUAL_REVIEW",
     "windows-update-downloads": "MANUAL_REVIEW",
     "windows-old": "MANUAL_REVIEW",
