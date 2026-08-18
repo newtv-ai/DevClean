@@ -110,7 +110,9 @@ def test_uninstall_requires_currently_listed_package(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(maintenance, "dotnet_sdk_process_running", lambda: False)
+    monkeypatch.setattr(
+        maintenance.dotnet_maintenance, "dotnet_sdk_process_running", lambda: False
+    )
     runner = SequenceRunner(completed(tool_list("dotnetsay 1.0.0 dotnetsay")))
 
     with pytest.raises(ValueError, match="not an installed"):
@@ -126,7 +128,9 @@ def test_uninstall_delegates_exact_package_to_vendor_cli(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(maintenance, "dotnet_sdk_process_running", lambda: False)
+    monkeypatch.setattr(
+        maintenance.dotnet_maintenance, "dotnet_sdk_process_running", lambda: False
+    )
     root = tmp_path / ".dotnet" / "tools"
     store = root / ".store" / "dotnetsay" / "1.0.0"
     store.mkdir(parents=True)
@@ -180,7 +184,9 @@ def test_uninstall_refuses_while_dotnet_owner_is_running(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(maintenance, "dotnet_sdk_process_running", lambda: True)
+    monkeypatch.setattr(
+        maintenance.dotnet_maintenance, "dotnet_sdk_process_running", lambda: True
+    )
     runner = SequenceRunner(completed(tool_list("dotnetsay 1.0.0 dotnetsay")))
 
     with pytest.raises(RuntimeError, match="is running"):
@@ -196,7 +202,9 @@ def test_uninstall_surfaces_vendor_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(maintenance, "dotnet_sdk_process_running", lambda: False)
+    monkeypatch.setattr(
+        maintenance.dotnet_maintenance, "dotnet_sdk_process_running", lambda: False
+    )
     runner = SequenceRunner(
         completed(tool_list("dotnetsay 1.0.0 dotnetsay")),
         completed(stderr="uninstall failed", returncode=2),
