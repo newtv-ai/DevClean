@@ -87,7 +87,7 @@ def _install_inventory_fake(
         cmd = list(command)
         if seen is not None:
             seen.append(cmd)
-        if cmd[-4:] == ["image", "ls", "--no-trunc", "--quiet"]:
+        if cmd[-5:] == ["image", "ls", "--all", "--no-trunc", "--quiet"]:
             ids = [str(item["Id"]) for item in image_payloads]
             return _completed(command, stdout="\n".join(ids) + ("\n" if ids else ""))
         if "image" in cmd and "inspect" in cmd:
@@ -131,6 +131,8 @@ def test_inventory_uses_exact_image_and_container_ids(
     assert by_id[image_b].executable
     assert any("image" in command and "inspect" in command for command in seen)
     assert any("container" in command and "inspect" in command for command in seen)
+    image_list = next(command for command in seen if "image" in command and "ls" in command)
+    assert "--all" in image_list
 
 
 def test_multiple_tags_stay_report_only_without_force(
