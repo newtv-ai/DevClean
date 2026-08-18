@@ -49,9 +49,7 @@ def _item(
 ) -> TriageItem:
     root = str(Path(path).parents[1])
     kind = (
-        ScanRecordKind.DIRECTORY
-        if target is CleanupTargetKind.DIRECTORY
-        else ScanRecordKind.FILE
+        ScanRecordKind.DIRECTORY if target is CleanupTargetKind.DIRECTORY else ScanRecordKind.FILE
     )
     record = ScanRecord(
         root=root,
@@ -76,19 +74,17 @@ def _item(
         allocated_size=None if target is CleanupTargetKind.DIRECTORY else size,
         category=CleanupCategory.OTHER,
         source_domain=SourceDomain.GENERAL_STORAGE,
-        lane=ReviewLane.AI_REVIEW,
-        risk_tier=RiskTier.HIGH,
+        lane=ReviewLane.DETERMINISTIC_CANDIDATE,
+        risk_tier=RiskTier.LOW,
         evidence_kind=EvidenceKind.KNOWN_ROOT_HEURISTIC,
-        actionability=Actionability.AI_REVIEW,
+        actionability=Actionability.REVIEW_PLAN,
         execution_policy=ExecutionPolicy.USER_CHOICE_DELETE,
         recovery=RecoveryCapability.UNKNOWN,
         reason="test observation",
         tags=("whole_directory",) if target is CleanupTargetKind.DIRECTORY else ("known_root",),
         target_kind=target,
         directory_scope=(
-            DirectoryScope.KNOWN_CACHE_ROOT
-            if target is CleanupTargetKind.DIRECTORY
-            else None
+            DirectoryScope.KNOWN_CACHE_ROOT if target is CleanupTargetKind.DIRECTORY else None
         ),
     )
 
@@ -143,9 +139,7 @@ def test_keep_descendant_suppresses_whole_directory_candidate() -> None:
             ),
         ),
     )
-    session = TriageSession(
-        review_sample_per_category=rules.scan.review_sample_per_category
-    )
+    session = TriageSession(review_sample_per_category=rules.scan.review_sample_per_category)
     for item in (directory, protected, disposable):
         session.observe_path(item.path, rules)
         session.add(item)
@@ -163,9 +157,7 @@ def test_live_preview_is_bounded_but_totals_cover_all_rows(
 ) -> None:
     monkeypatch.setattr(app, "_LIVE_ROWS_DRAWN", 2)
     rules = default_rules()
-    session = TriageSession(
-        review_sample_per_category=rules.scan.review_sample_per_category
-    )
+    session = TriageSession(review_sample_per_category=rules.scan.review_sample_per_category)
     items = (
         _item(r"G:\work\cache\a.bin", size=1),
         _item(r"G:\work\cache\b.bin", size=10),
@@ -184,9 +176,7 @@ def test_live_preview_is_bounded_but_totals_cover_all_rows(
 
 def test_live_preview_directory_totals_do_not_depend_on_bucket_order() -> None:
     rules = default_rules()
-    session = TriageSession(
-        review_sample_per_category=rules.scan.review_sample_per_category
-    )
+    session = TriageSession(review_sample_per_category=rules.scan.review_sample_per_category)
     outside = replace(
         _item(r"G:\work\Temp\setup.log", size=4_096),
         category=CleanupCategory.SYSTEM_LOGS,
@@ -229,9 +219,7 @@ def test_slow_live_preview_does_not_immediately_repeat(
     clock = [0.0]
     preview_calls = 0
 
-    def fake_scan(
-        *_args: object, **_kwargs: object
-    ) -> Iterator[ScanRecord]:
+    def fake_scan(*_args: object, **_kwargs: object) -> Iterator[ScanRecord]:
         for index in range(4):
             clock[0] += 2.0 if index == 0 else 0.1
             yield ScanRecord(
@@ -388,9 +376,7 @@ def test_ai_grouping_merges_only_equivalent_generated_name_siblings() -> None:
         old,
         record=replace(
             old.record,
-            last_write_time_ns=int(
-                (now - timedelta(days=45)).timestamp() * 1_000_000_000
-            ),
+            last_write_time_ns=int((now - timedelta(days=45)).timestamp() * 1_000_000_000),
         ),
     )
 
@@ -440,3 +426,61 @@ def test_open_path_in_explorer_opens_directory_selects_file_and_falls_back(
 
     assert opened == [directory, directory]
     assert selected == [["explorer.exe", f"/select,{file_path}"]]
+
+
+def test_confidence_lanes_do_not_spend_ai_on_user_review() -> None:
+    direct = _item(r"G:\work\safe-cache\payload.bin", size=10)
+    user_review = replace(
+        direct,
+        path=r"G:\work\maybe-cache\payload.bin",
+        record=replace(direct.record, path=r"G:\work\maybe-cache\payload.bin"),
+        lane=ReviewLane.USER_REVIEW,
+        risk_tier=RiskTier.MEDIUM,
+        actionability=Actionability.USER_REVIEW,
+        tags=("user_review",),
+    )
+    ai_review = replace(
+        direct,
+        path=r"G:\work\unknown\payload.bin",
+        record=replace(direct.record, path=r"G:\work\unknown\payload.bin"),
+        lane=ReviewLane.AI_REVIEW,
+        risk_tier=RiskTier.HIGH,
+        actionability=Actionability.AI_REVIEW,
+        tags=("ai_review_required",),
+    )
+
+    assert app.is_direct_cleanup_eligible(direct)
+    assert not app.is_ai_review_eligible(direct)
+    assert app.is_user_review_eligible(user_review)
+    assert not app.is_direct_cleanup_eligible(user_review)
+    assert not app.is_ai_review_eligible(user_review)
+    assert app.is_ai_review_eligible(ai_review)
+    assert not app.is_user_review_eligible(ai_review)
+
+
+def test_partition_keeps_user_review_out_of_direct_cleanup() -> None:
+    rules = default_rules()
+    direct = _item(r"G:\work\safe-cache\payload.bin", size=10)
+    user_review = replace(
+        _item(r"G:\work\maybe-cache\payload.bin", size=20),
+        lane=ReviewLane.USER_REVIEW,
+        risk_tier=RiskTier.MEDIUM,
+        actionability=Actionability.USER_REVIEW,
+        tags=("user_review",),
+    )
+    ai_review = replace(
+        _item(r"G:\work\unknown\payload.bin", size=30),
+        lane=ReviewLane.AI_REVIEW,
+        risk_tier=RiskTier.HIGH,
+        actionability=Actionability.AI_REVIEW,
+        tags=("ai_review_required",),
+    )
+    session = TriageSession(review_sample_per_category=rules.scan.review_sample_per_category)
+    for item in (direct, user_review, ai_review):
+        session.observe_path(item.path, rules)
+        session.add(item)
+
+    deletable, needs_review = app._partition_items(session, rules)
+
+    assert deletable == (direct,)
+    assert set(needs_review) == {user_review, ai_review}
