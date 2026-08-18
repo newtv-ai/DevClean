@@ -13,6 +13,7 @@ from devclean.platform.windows.exact_cleanup import (
     purge_exact_directory_tree,
 )
 from devclean.platform.windows.filesystem import read_file_metadata
+from devclean.platform.windows.volumes import is_local_fixed_path
 
 _GIB = 1024**3
 _REVIEW_BYTES = 5 * _GIB
@@ -64,6 +65,7 @@ def delete_unity_project_library(project_root: Path) -> UnityLibraryCleanResult:
     root = _validated_project_root(project_root)
     library = root / "Library"
     _validate_library_entry(library, allow_missing=False)
+    _require_local_fixed_boundary(root, library)
     if unity_editor_running():
         raise RuntimeError("Unity Editor 正在运行; 请关闭所有 Unity Editor 后再删除项目 Library")
 
@@ -73,6 +75,7 @@ def delete_unity_project_library(project_root: Path) -> UnityLibraryCleanResult:
     root = _validated_project_root(root)
     library = root / "Library"
     _validate_library_entry(library, allow_missing=False)
+    _require_local_fixed_boundary(root, library)
     boundary = _exact_root_boundary(root)
     expected = _exact_directory_snapshot(library, "Unity Library")
     before = _directory_bytes(library)
@@ -142,6 +145,14 @@ def _validate_library_entry(library: Path, *, allow_missing: bool) -> bool:
     if not library.is_dir():
         raise ValueError(f"Unity Library 不是目录: {library}")
     return True
+
+
+def _require_local_fixed_boundary(root: Path, library: Path) -> None:
+    if not is_local_fixed_path(root) or not is_local_fixed_path(library):
+        raise ValueError(
+            "Unity 项目 Library 只允许在本地固定磁盘上删除; "
+            "共享、远程、可移动或经过 reparse 重定向的项目只允许检查"
+        )
 
 
 def _exact_directory_snapshot(path: Path, label: str) -> ExactDirectorySnapshot:
