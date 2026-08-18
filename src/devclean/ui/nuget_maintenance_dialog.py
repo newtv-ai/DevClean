@@ -29,6 +29,7 @@ class _InventoryEvent:
 @dataclass(frozen=True, slots=True)
 class _CleanupEvent:
     results: tuple[NuGetClearResult, ...]
+    error: str | None = None
 
 
 class _NuGetMaintenanceDialog:
@@ -142,11 +143,11 @@ class _NuGetMaintenanceDialog:
     def _start_cleanup(self) -> None:
         if self._busy or self._inventory is None:
             return
-        selected = tuple(
-            entry
-            for entry in self._inventory.locals
-            if entry.exists and self._choices.get(entry.kind, tk.BooleanVar()).get()
-        )
+        selected: list[NuGetLocalEntry] = []
+        for entry in self._inventory.locals:
+            choice = self._choices.get(entry.kind)
+            if entry.exists and choice is not None and choice.get():
+                selected.append(entry)
         if not selected:
             messagebox.showinfo("NuGet 缓存维护", "没有勾选需要清理的 NuGet 存储。")
             return
@@ -160,18 +161,20 @@ class _NuGetMaintenanceDialog:
             ):
                 return
 
+        selected.sort(key=lambda entry: entry.kind is NuGetLocalKind.GLOBAL_PACKAGES)
         self._set_busy(True)
         self._status.set(f"正在通过 NuGet 官方命令清理 {len(selected)} 项…")
 
-        def work(entries: tuple[NuGetLocalEntry, ...] = selected) -> None:
+        def work(entries: tuple[NuGetLocalEntry, ...] = tuple(selected)) -> None:
             results: list[NuGetClearResult] = []
-            try:
-                for entry in entries:
+            error_text: str | None = None
+            for entry in entries:
+                try:
                     results.append(clear_nuget_local(entry.kind, entry.path))
-            except Exception as error:
-                self._events.put(error)
-            else:
-                self._events.put(_CleanupEvent(tuple(results)))
+                except Exception as error:
+                    error_text = str(error)
+                    break
+            self._events.put(_CleanupEvent(tuple(results), error_text))
 
         threading.Thread(target=work, name="DevClean-NuGet-cleanup", daemon=True).start()
 
@@ -193,9 +196,15 @@ class _NuGetMaintenanceDialog:
             self._set_busy(False)
         else:
             reclaimed = sum(result.reclaimed_bytes for result in outcome.results)
-            self._status.set(
-                f"NuGet 官方清理完成，共释放约 {_format_bytes(reclaimed)}；正在重新统计…"
-            )
+            if outcome.error is None:
+                self._status.set(
+                    f"NuGet 官方清理完成，共释放约 {_format_bytes(reclaimed)}；正在重新统计…"
+                )
+            else:
+                self._status.set(
+                    f"已完成 {len(outcome.results)} 项并释放约 {_format_bytes(reclaimed)}，"
+                    f"随后停止：{outcome.error}；正在重新统计…"
+                )
             self._busy = False
             self._start_inventory()
         self._window.after(100, self._poll)
