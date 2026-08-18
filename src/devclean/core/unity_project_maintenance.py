@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+from devclean.platform.windows.exact_cleanup import (
+    ExactDirectorySnapshot,
+    ExactRootBoundary,
+    purge_exact_directory_tree,
+)
+from devclean.platform.windows.filesystem import read_file_metadata
 
 _GIB = 1024**3
 _REVIEW_BYTES = 5 * _GIB
@@ -67,8 +73,12 @@ def delete_unity_project_library(project_root: Path) -> UnityLibraryCleanResult:
     root = _validated_project_root(root)
     library = root / "Library"
     _validate_library_entry(library, allow_missing=False)
+    boundary = _exact_root_boundary(root)
+    expected = _exact_directory_snapshot(library, "Unity Library")
     before = _directory_bytes(library)
-    shutil.rmtree(library)
+    result = purge_exact_directory_tree(library, expected, boundary)
+    if not result.completed or not result.root_absent:
+        raise RuntimeError("Unity Library 精确删除未完整完成")
     after = _directory_bytes(library) if library.is_dir() else 0
     return UnityLibraryCleanResult(
         project_root=root,
@@ -132,6 +142,35 @@ def _validate_library_entry(library: Path, *, allow_missing: bool) -> bool:
     if not library.is_dir():
         raise ValueError(f"Unity Library 不是目录: {library}")
     return True
+
+
+def _exact_directory_snapshot(path: Path, label: str) -> ExactDirectorySnapshot:
+    metadata = read_file_metadata(path)
+    if (
+        not metadata.is_directory
+        or metadata.is_reparse_point
+        or metadata.volume_serial is None
+        or metadata.file_id is None
+        or metadata.file_id_kind is None
+        or metadata.creation_time_ns is None
+    ):
+        raise RuntimeError(f"{label} 没有可验证的普通目录身份")
+    return ExactDirectorySnapshot(
+        volume_serial=metadata.volume_serial,
+        file_id=metadata.file_id,
+        file_id_kind=metadata.file_id_kind,
+        creation_time_ns=metadata.creation_time_ns,
+    )
+
+
+def _exact_root_boundary(path: Path) -> ExactRootBoundary:
+    snapshot = _exact_directory_snapshot(path, "Unity 项目根目录")
+    return ExactRootBoundary(
+        path=path,
+        volume_serial=snapshot.volume_serial,
+        file_id=snapshot.file_id,
+        file_id_kind=snapshot.file_id_kind,
+    )
 
 
 def _editor_version(project_root: Path) -> str:
