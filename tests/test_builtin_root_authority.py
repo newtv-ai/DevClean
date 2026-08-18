@@ -22,8 +22,8 @@ def test_mixed_windows_maintenance_roots_are_not_universal_delete_targets() -> N
     assert _root_policy("windows-update-downloads") is CleanupPolicy.MANUAL_REVIEW
 
 
-def test_system_crash_dumps_use_age_threshold_instead_of_unconditional_cleanup() -> None:
-    assert _root_policy("system-crash-dumps") is CleanupPolicy.AGE_BASED_REVIEW
+def test_system_crash_dumps_require_user_review() -> None:
+    assert _root_policy("system-crash-dumps") is CleanupPolicy.MANUAL_REVIEW
 
 
 def test_user_model_store_is_not_a_vendor_managed_cache() -> None:
