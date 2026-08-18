@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 
 
-PATH = Path("src/devclean/config/scan-rules.json")
+SCAN_RULES_PATH = Path("src/devclean/config/scan-rules.json")
+RULE_TEST_PATH = Path("tests/_test_rules_impl.py")
 POLICIES = {
     "system-crash-dumps": "AGE_BASED_REVIEW",
     "windows-maintenance": "MANUAL_REVIEW",
@@ -17,7 +18,7 @@ POLICIES = {
 
 
 def main() -> None:
-    data = json.loads(PATH.read_text(encoding="utf-8"))
+    data = json.loads(SCAN_RULES_PATH.read_text(encoding="utf-8"))
     roots = data["known_cleanup_roots"]
     by_id = {root["id"]: root for root in roots}
     missing = sorted(set(POLICIES) - set(by_id))
@@ -28,12 +29,20 @@ def main() -> None:
         by_id[rule_id]["policy"] = policy
 
     delete_root_ids = list(data["delete_root_ids"])
-    data["delete_root_ids"] = [rule_id for rule_id in delete_root_ids if rule_id != "windows-old"]
-
-    PATH.write_text(
+    data["delete_root_ids"] = [
+        rule_id for rule_id in delete_root_ids if rule_id != "windows-old"
+    ]
+    SCAN_RULES_PATH.write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+    tests = RULE_TEST_PATH.read_text(encoding="utf-8")
+    old = '    assert rules.scan.delete_root_ids == {"windows-old"}\n'
+    new = "    assert rules.scan.delete_root_ids == set()\n"
+    if tests.count(old) != 1:
+        raise RuntimeError("packaged rule authority assertion changed unexpectedly")
+    RULE_TEST_PATH.write_text(tests.replace(old, new, 1), encoding="utf-8")
 
 
 if __name__ == "__main__":
