@@ -9,8 +9,10 @@ import pytest
 import devclean.core.nuget_maintenance as nuget_maintenance
 from devclean.core.nuget_maintenance import (
     NuGetLocalKind,
+    NuGetMaintenanceLane,
     clear_nuget_local,
     inventory_nuget_storage,
+    nuget_maintenance_lane,
 )
 
 
@@ -51,6 +53,48 @@ def test_nuget_inventory_is_read_only_and_sums_all_locals(tmp_path: Path) -> Non
     assert inventory.total_local_bytes == size
     assert all(entry.exists for entry in inventory.locals)
     assert all((entry.path / "payload.bin").exists() for entry in inventory.locals)
+
+
+def test_nuget_cache_lanes_are_local_and_do_not_require_ai() -> None:
+    assert (
+        nuget_maintenance_lane(NuGetLocalKind.GLOBAL_PACKAGES)
+        is NuGetMaintenanceLane.USER_REVIEW
+    )
+    for kind in (
+        NuGetLocalKind.HTTP_CACHE,
+        NuGetLocalKind.TEMP,
+        NuGetLocalKind.PLUGINS_CACHE,
+    ):
+        assert nuget_maintenance_lane(kind) is NuGetMaintenanceLane.DETERMINISTIC_CANDIDATE
+
+
+def test_nuget_inventory_recommends_only_worthwhile_deterministic_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env, roots = _layout(tmp_path)
+    sizes = {
+        roots[NuGetLocalKind.GLOBAL_PACKAGES]: 8 * 1024**3,
+        roots[NuGetLocalKind.HTTP_CACHE]: 128 * 1024**2,
+        roots[NuGetLocalKind.TEMP]: 1 * 1024**2,
+        roots[NuGetLocalKind.PLUGINS_CACHE]: 32 * 1024**2,
+    }
+    monkeypatch.setattr(
+        nuget_maintenance,
+        "_directory_bytes",
+        lambda path: sizes[path],
+    )
+
+    inventory = inventory_nuget_storage(env)
+    by_kind = {entry.kind: entry for entry in inventory.locals}
+
+    assert not by_kind[NuGetLocalKind.GLOBAL_PACKAGES].recommended
+    assert by_kind[NuGetLocalKind.GLOBAL_PACKAGES].lane is NuGetMaintenanceLane.USER_REVIEW
+    assert by_kind[NuGetLocalKind.HTTP_CACHE].recommended
+    assert not by_kind[NuGetLocalKind.TEMP].recommended
+    assert by_kind[NuGetLocalKind.PLUGINS_CACHE].recommended
+    assert inventory.recommended_bytes == 160 * 1024**2
+    assert inventory.deterministic_bytes == 161 * 1024**2
 
 
 @pytest.mark.parametrize(
