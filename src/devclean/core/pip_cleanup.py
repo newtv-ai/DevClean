@@ -1,12 +1,11 @@
 r"""Audited pip cache semantics for Windows cleanup.
 
-pip documents its default Windows cache as ``%LocalAppData%\pip\Cache`` and
-provides ``pip cache dir`` / ``pip cache purge`` as the supported cache
-management interface. The documented default is a dedicated cache root, so it
-can receive exact whole-tree TOOL authority. A user-configured cache directory
-is discovered for inventory but kept protected because pip treats the internal
-layout as an implementation detail and a custom root can be intentionally
-co-located with other user/CI state.
+pip documents its cache as disposable performance data and provides ``pip cache
+dir`` / ``pip cache purge`` as the supported management interface. It also says
+the internal filesystem layout is an implementation detail. DevClean therefore
+inventories exact effective cache roots here but grants no generic raw file or
+whole-tree deletion authority; mutation is delegated to pip in
+``pip_maintenance``.
 """
 
 from __future__ import annotations
@@ -28,10 +27,7 @@ from devclean.core._application_cleanup_impl import (
     MatchKind,
     PolicyAction,
     RebuildCost,
-    effective_idle_days,
 )
-
-_MIB = 1024**2
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,16 +38,10 @@ class PipRootSet:
 
 def _rule(
     rule_id: str,
-    owner: DecisionOwner,
-    rebuild_cost: RebuildCost,
-    label: str,
     *,
     root_key: str,
-    idle_days: float | None = None,
-    min_reclaim_bytes: int = 0,
-    requires_process_closed: bool = False,
-    size_sensitive_idle: bool = True,
-    allow_whole_tree: bool = False,
+    label: str,
+    rebuild_cost: RebuildCost,
 ) -> ApplicationCleanupRule:
     return ApplicationCleanupRule(
         rule_id=rule_id,
@@ -59,36 +49,24 @@ def _rule(
         root_key=root_key,
         relative_pattern="",
         match_kind=MatchKind.PREFIX,
-        owner=owner,
+        owner=DecisionOwner.KEEP,
         last_use=LastUseStrategy.FILE_MTIME,
         rebuild_cost=rebuild_cost,
-        idle_days=idle_days,
-        min_reclaim_bytes=min_reclaim_bytes,
-        requires_process_closed=requires_process_closed,
-        size_sensitive_idle=size_sensitive_idle,
-        allow_whole_tree=allow_whole_tree,
         label=label,
     )
 
 
 _PIP_MANAGED_CACHE_RULE = _rule(
     "pip-default-cache",
-    DecisionOwner.TOOL,
-    RebuildCost.MEDIUM,
-    "pip default wheel and HTTP cache",
     root_key="PIP_CACHE",
-    idle_days=30,
-    min_reclaim_bytes=64 * _MIB,
-    requires_process_closed=True,
-    size_sensitive_idle=False,
-    allow_whole_tree=True,
+    label="pip wheel and HTTP cache; maintain with pip cache purge",
+    rebuild_cost=RebuildCost.MEDIUM,
 )
 _PIP_CUSTOM_CACHE_RULE = _rule(
     "pip-custom-cache",
-    DecisionOwner.KEEP,
-    RebuildCost.HIGH,
-    "Custom pip cache directory; maintain with pip cache purge",
     root_key="PIP_CUSTOM_CACHE",
+    label="Custom pip cache directory; maintain with pip cache purge",
+    rebuild_cost=RebuildCost.MEDIUM,
 )
 
 PIP_RULES: tuple[ApplicationCleanupRule, ...] = (
@@ -106,8 +84,8 @@ def pip_roots(environment: Mapping[str, str] | None = None) -> PipRootSet:
     if localappdata:
         managed.append(PureWindowsPath(localappdata) / "pip" / "Cache")
 
-    # Explicit hook is intentionally treated as a dedicated default-shaped root
-    # so tests and controlled deployments can relocate the audited cache safely.
+    # Explicit hook is treated as another dedicated cache root for tests and
+    # controlled deployments. It still has no raw deletion authority.
     explicit = env.get("devclean_pip_cache_dir")
     if explicit:
         _append_absolute(managed, explicit)
@@ -116,10 +94,8 @@ def pip_roots(environment: Mapping[str, str] | None = None) -> PipRootSet:
     if configured:
         _append_absolute(custom, configured)
 
-    # ``pip cache dir`` is pip's authoritative report of the effective cache
-    # directory and captures pip configuration files that static discovery does
-    # not parse. Non-default results stay KEEP because the custom root may be
-    # shared with user or CI state and pip's internal layout is not stable API.
+    # ``pip cache dir`` is pip's authoritative report of the active cache and
+    # captures configuration files that static discovery does not parse.
     if environment is None:
         active = _active_pip_cache_dir()
         if active:
@@ -153,40 +129,30 @@ def match_pip_rule(
 ) -> ApplicationCleanupRule | None:
     normalized = _impl._normalize(path)
     roots = pip_roots(environment)
-    matches: list[tuple[int, int, ApplicationCleanupRule]] = []
+    matches: list[tuple[int, ApplicationCleanupRule]] = []
 
     for root in roots.managed_cache_roots:
-        _append_root_match(matches, normalized, root, _PIP_MANAGED_CACHE_RULE, 0)
+        _append_root_match(matches, normalized, root, _PIP_MANAGED_CACHE_RULE)
     for root in roots.custom_cache_roots:
-        _append_root_match(matches, normalized, root, _PIP_CUSTOM_CACHE_RULE, 0)
+        _append_root_match(matches, normalized, root, _PIP_CUSTOM_CACHE_RULE)
 
     if not matches:
         return None
-    return max(matches, key=lambda item: (item[0], item[1]))[2]
+    return max(matches, key=lambda item: item[0])[1]
 
 
 def pip_audited_tool_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
-    found: list[tuple[PureWindowsPath, ApplicationCleanupRule]] = []
-    seen: set[str] = set()
-    for root in pip_roots(environment).managed_cache_roots:
-        key = _impl._normalize(root)
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        found.append((root, _PIP_MANAGED_CACHE_RULE))
-    return tuple(found)
+    del environment
+    return ()
 
 
 def whole_tree_pip_rule(
     path: str | os.PathLike[str],
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationCleanupRule | None:
-    target = _impl._normalize(path)
-    for root, rule in pip_audited_tool_roots(environment):
-        if target == _impl._normalize(root):
-            return rule
+    del path, environment
     return None
 
 
@@ -199,6 +165,7 @@ def evaluate_pip_path(
     process_running: bool | None = None,
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationPolicyDecision | None:
+    del logical_size, process_running
     rule = match_pip_rule(path, environment)
     if rule is None:
         return None
@@ -211,27 +178,14 @@ def evaluate_pip_path(
         if observed is None
         else max(0.0, (current - observed).total_seconds() / 86_400)
     )
-    if rule.owner is DecisionOwner.KEEP:
-        return ApplicationPolicyDecision(
-            rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
-        )
-
-    threshold = effective_idle_days(rule, logical_size)
-    running = process_running
-    if running is None and rule.requires_process_closed:
-        running = pip_process_running()
-    score = _impl._benefit_score(logical_size, idle, threshold, rule.rebuild_cost)
-    if rule.requires_process_closed and running:
-        action = PolicyAction.TOOL_KEEP_IN_USE
-    elif logical_size < rule.min_reclaim_bytes:
-        action = PolicyAction.TOOL_KEEP_LOW_BENEFIT
-    elif idle is None or threshold is None:
-        action = PolicyAction.TOOL_KEEP_UNKNOWN_USAGE
-    elif idle < threshold:
-        action = PolicyAction.TOOL_KEEP_RECENT
-    else:
-        action = PolicyAction.TOOL_DELETE
-    return ApplicationPolicyDecision(rule, action, observed, idle, threshold, score)
+    return ApplicationPolicyDecision(
+        rule,
+        PolicyAction.KEEP_PROTECTED,
+        observed,
+        idle,
+        None,
+        0,
+    )
 
 
 @lru_cache(maxsize=1)
@@ -260,19 +214,10 @@ def pip_process_running() -> bool:
 
 @lru_cache(maxsize=1)
 def _active_pip_cache_dir() -> str | None:
-    commands = (
-        ("py.exe", "-m", "pip", "cache", "dir"),
-        ("python.exe", "-m", "pip", "cache", "dir"),
-        ("pip.exe", "cache", "dir"),
-    ) if os.name == "nt" else (
-        ("python3", "-m", "pip", "cache", "dir"),
-        ("python", "-m", "pip", "cache", "dir"),
-        ("pip", "cache", "dir"),
-    )
-    for command in commands:
+    for command in pip_command_candidates():
         try:
             result = subprocess.run(
-                list(command),
+                [*command, "cache", "dir"],
                 check=False,
                 capture_output=True,
                 text=True,
@@ -291,23 +236,34 @@ def _active_pip_cache_dir() -> str | None:
     return None
 
 
+def pip_command_candidates() -> tuple[tuple[str, ...], ...]:
+    if os.name == "nt":
+        return (
+            ("py.exe", "-m", "pip"),
+            ("python.exe", "-m", "pip"),
+            ("pip.exe",),
+        )
+    return (
+        ("python3", "-m", "pip"),
+        ("python", "-m", "pip"),
+        ("pip",),
+    )
+
+
 def clear_pip_process_cache() -> None:
     pip_process_running.cache_clear()
     _active_pip_cache_dir.cache_clear()
 
 
 def _append_root_match(
-    matches: list[tuple[int, int, ApplicationCleanupRule]],
+    matches: list[tuple[int, ApplicationCleanupRule]],
     normalized_path: str,
     root: PureWindowsPath,
     rule: ApplicationCleanupRule,
-    index: int,
 ) -> None:
     normalized_root = _impl._normalize(root)
-    if not _impl._matches(normalized_path, normalized_root, MatchKind.PREFIX):
-        return
-    owner_weight = 3 if rule.owner is DecisionOwner.KEEP else 1
-    matches.append((len(normalized_root), owner_weight * 1000 - index, rule))
+    if _impl._matches(normalized_path, normalized_root, MatchKind.PREFIX):
+        matches.append((len(normalized_root), rule))
 
 
 def _append_absolute(found: list[PureWindowsPath], value: str) -> None:
@@ -340,6 +296,7 @@ __all__ = [
     "evaluate_pip_path",
     "match_pip_rule",
     "pip_audited_tool_roots",
+    "pip_command_candidates",
     "pip_process_running",
     "pip_roots",
     "pip_scan_roots",
