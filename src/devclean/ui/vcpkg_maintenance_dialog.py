@@ -1,5 +1,7 @@
 """vcpkg storage UI: known semantics, explicit user intent, no AI."""
 
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import queue
@@ -37,7 +39,9 @@ class _VcpkgMaintenanceDialog:
         self._window.title("vcpkg 存储维护")
         self._window.geometry("980x660")
         self._window.minsize(840, 560)
-        self._events: queue.Queue[_InventoryEvent | _CleanupEvent | Exception] = queue.Queue()
+        self._events: queue.Queue[
+            _InventoryEvent | _CleanupEvent | Exception
+        ] = queue.Queue()
         self._status = tk.StringVar(value="请选择 vcpkg 根目录。")
         self._root_text = tk.StringVar(value="")
         self._inventory: VcpkgStorageInventory | None = None
@@ -46,12 +50,17 @@ class _VcpkgMaintenanceDialog:
 
         container = ttk.Frame(self._window, padding=12)
         container.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(container, text="vcpkg 存储维护", font=("Segoe UI", 13, "bold")).pack(anchor=tk.W)
+        ttk.Label(
+            container,
+            text="vcpkg 存储维护",
+            font=("Segoe UI", 13, "bold"),
+        ).pack(anchor=tk.W)
         ttk.Label(
             container,
             text=(
                 "Microsoft 明确区分 packages、buildtrees、downloads 和二进制缓存。"
-                "DevClean 不把它们混成一个“vcpkg 缓存”，也不交给 AI；是否删除由你决定。"
+                "DevClean 不把它们混成一个“vcpkg 缓存”，也不交给 AI；"
+                "是否删除由你决定。"
             ),
             wraplength=940,
             justify=tk.LEFT,
@@ -60,9 +69,15 @@ class _VcpkgMaintenanceDialog:
         picker = ttk.Frame(container)
         picker.pack(fill=tk.X)
         ttk.Entry(picker, textvariable=self._root_text, state="readonly").pack(
-            side=tk.LEFT, fill=tk.X, expand=True
+            side=tk.LEFT,
+            fill=tk.X,
+            expand=True,
         )
-        self._choose_button = ttk.Button(picker, text="选择 vcpkg 根目录…", command=self._choose_root)
+        self._choose_button = ttk.Button(
+            picker,
+            text="选择 vcpkg 根目录…",
+            command=self._choose_root,
+        )
         self._choose_button.pack(side=tk.LEFT, padx=(8, 0))
 
         self._rows = ttk.Frame(container)
@@ -71,15 +86,19 @@ class _VcpkgMaintenanceDialog:
         ttk.Label(
             container,
             text=(
-                "特别注意：buildtrees 可能包含通过 --editable 保留并修改的源码；downloads 和二进制缓存"
-                "也具有离线/减少重建时间的价值。默认不会勾选任何项。"
+                "特别注意：buildtrees 可能包含通过 --editable 保留并修改的源码；"
+                "downloads 和二进制缓存也具有离线/减少重建时间的价值。"
+                "默认不会勾选任何项。"
             ),
             wraplength=940,
             justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(8, 0))
-        ttk.Label(container, textvariable=self._status, wraplength=940, justify=tk.LEFT).pack(
-            anchor=tk.W, pady=(6, 0)
-        )
+        ttk.Label(
+            container,
+            textvariable=self._status,
+            wraplength=940,
+            justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(6, 0))
 
         footer = ttk.Frame(container)
         footer.pack(fill=tk.X, pady=(10, 0))
@@ -90,7 +109,9 @@ class _VcpkgMaintenanceDialog:
             state=tk.DISABLED,
         )
         self._clean_button.pack(side=tk.RIGHT, padx=(8, 0))
-        ttk.Button(footer, text="关闭", command=self._window.destroy).pack(side=tk.RIGHT)
+        ttk.Button(footer, text="关闭", command=self._window.destroy).pack(
+            side=tk.RIGHT
+        )
 
         self._window.after(100, self._poll)
 
@@ -128,7 +149,11 @@ class _VcpkgMaintenanceDialog:
             except Exception as error:
                 self._events.put(error)
 
-        threading.Thread(target=work, name="DevClean-vcpkg-inventory", daemon=True).start()
+        threading.Thread(
+            target=work,
+            name="DevClean-vcpkg-inventory",
+            daemon=True,
+        ).start()
 
     def _start_cleanup(self) -> None:
         inventory = self._inventory
@@ -143,14 +168,21 @@ class _VcpkgMaintenanceDialog:
             and choice.get()
         ]
         if not selected:
-            messagebox.showinfo("vcpkg 存储维护", "没有勾选可执行的 vcpkg 存储。")
+            messagebox.showinfo(
+                "vcpkg 存储维护",
+                "没有勾选可执行的 vcpkg 存储。",
+            )
             return
         warning = (
             "将永久删除你勾选的 vcpkg 临时/构建存储。\n\n"
             "如果包含 buildtrees，请确认没有 --editable 端口开发修改；"
             "downloads 删除后可能需要重新下载。\n\n确定继续吗？"
         )
-        if not messagebox.askyesno("确认 vcpkg 清理", warning, icon=messagebox.WARNING):
+        if not messagebox.askyesno(
+            "确认 vcpkg 清理",
+            warning,
+            icon=messagebox.WARNING,
+        ):
             return
         self._set_busy(True)
         self._status.set(f"正在精确清理 {len(selected)} 项 vcpkg 存储…")
@@ -166,7 +198,11 @@ class _VcpkgMaintenanceDialog:
                     break
             self._events.put(_CleanupEvent(tuple(results), error_text))
 
-        threading.Thread(target=work, name="DevClean-vcpkg-cleanup", daemon=True).start()
+        threading.Thread(
+            target=work,
+            name="DevClean-vcpkg-cleanup",
+            daemon=True,
+        ).start()
 
     def _poll(self) -> None:
         if not self._window.winfo_exists():
@@ -188,10 +224,16 @@ class _VcpkgMaintenanceDialog:
             reclaimed = sum(item.reclaimed_bytes for item in event.results)
             suffix = "" if event.error is None else f"；随后停止：{event.error}"
             self._status.set(
-                f"已完成 {len(event.results)} 项，释放约 {_format_bytes(reclaimed)}{suffix}；正在重新统计…"
+                f"已完成 {len(event.results)} 项，释放约 {_format_bytes(reclaimed)}"
+                f"{suffix}；正在重新统计…"
             )
             self._busy = False
-            self._start_inventory(self._inventory.root if self._inventory else Path(self._root_text.get()))
+            root = (
+                self._inventory.root
+                if self._inventory is not None
+                else Path(self._root_text.get())
+            )
+            self._start_inventory(root)
         self._window.after(100, self._poll)
 
     def _render(self, inventory: VcpkgStorageInventory) -> None:
@@ -213,17 +255,23 @@ class _VcpkgMaintenanceDialog:
                 variable=choice,
                 state=tk.NORMAL if entry.executable else tk.DISABLED,
             ).grid(row=0, column=0, rowspan=3, sticky="nw", padx=(0, 12))
-            ttk.Label(row, text=entry.reason, wraplength=760, justify=tk.LEFT).grid(
-                row=0, column=1, sticky="w"
-            )
-            ttk.Label(row, text=str(entry.path), wraplength=760, justify=tk.LEFT).grid(
-                row=1, column=1, sticky="w", pady=(4, 0)
-            )
+            ttk.Label(
+                row,
+                text=entry.reason,
+                wraplength=760,
+                justify=tk.LEFT,
+            ).grid(row=0, column=1, sticky="w")
+            ttk.Label(
+                row,
+                text=str(entry.path),
+                wraplength=760,
+                justify=tk.LEFT,
+            ).grid(row=1, column=1, sticky="w", pady=(4, 0))
             row.columnconfigure(1, weight=1)
         total = sum(entry.logical_bytes for entry in visible)
         self._status.set(
-            f"已确认 {inventory.version}；定位 {len(visible)} 类存储，共约 {_format_bytes(total)}。"
-            "全部由用户决定，AI 不参与。"
+            f"已确认 {inventory.version}；定位 {len(visible)} 类存储，"
+            f"共约 {_format_bytes(total)}。全部由用户决定，AI 不参与。"
         )
 
 
