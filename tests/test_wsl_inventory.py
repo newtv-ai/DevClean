@@ -55,7 +55,7 @@ def test_wsl_inventory_uses_only_read_only_vendor_commands(
             return _completed(command, stdout=_utf16("Default Version: 2\r\n"))
         raise AssertionError(cmd)
 
-    monkeypatch.setattr(wsl_inventory.subprocess, "run", fake_run)
+    monkeypatch.setattr("devclean.core.wsl_inventory.subprocess.run", fake_run)
 
     inventory = inspect_wsl({"DEVCLEAN_WSL_EXE": "wsl-test"})
 
@@ -93,7 +93,7 @@ def test_wsl_inventory_handles_utf8_output_and_deduplicates_casefolded_names(
             return _completed(command, returncode=1)
         raise AssertionError(cmd)
 
-    monkeypatch.setattr(wsl_inventory.subprocess, "run", fake_run)
+    monkeypatch.setattr("devclean.core.wsl_inventory.subprocess.run", fake_run)
 
     inventory = inspect_wsl({"DEVCLEAN_WSL_EXE": "wsl-test"})
 
@@ -125,7 +125,7 @@ def test_wsl_inventory_fails_closed_if_running_state_cannot_be_confirmed(
             return _completed(command, stderr=_utf16("WSL unavailable"), returncode=1)
         raise AssertionError(cmd)
 
-    monkeypatch.setattr(wsl_inventory.subprocess, "run", fake_run)
+    monkeypatch.setattr("devclean.core.wsl_inventory.subprocess.run", fake_run)
 
     with pytest.raises(RuntimeError, match="running distributions"):
         inspect_wsl({"DEVCLEAN_WSL_EXE": "wsl-test"})
@@ -150,7 +150,7 @@ def test_wsl_list_failure_surfaces_vendor_error(
             returncode=1,
         )
 
-    monkeypatch.setattr(wsl_inventory.subprocess, "run", fake_run)
+    monkeypatch.setattr("devclean.core.wsl_inventory.subprocess.run", fake_run)
 
     with pytest.raises(RuntimeError, match="not installed"):
         inspect_wsl({"DEVCLEAN_WSL_EXE": "wsl-test"})
