@@ -223,7 +223,9 @@ def _discover_engines(
             candidates.append(_editor_for_engine_root(root))
 
     if environment is None:
-        located = shutil.which("UnrealEditor-Cmd.exe" if os.name == "nt" else "UnrealEditor-Cmd")
+        located = shutil.which(
+            "UnrealEditor-Cmd.exe" if os.name == "nt" else "UnrealEditor-Cmd"
+        )
         if located:
             candidates.append(Path(located))
 
@@ -253,22 +255,18 @@ def _editor_for_engine_root(root: Path) -> Path:
 
 
 def _engine_root_for_editor(editor: Path) -> Path | None:
-    parts = [part.casefold() for part in editor.parts]
-    if len(parts) < 5 or editor.name.casefold() not in {
+    if len(editor.parts) < 5 or editor.name.casefold() not in {
         "unrealeditor-cmd.exe",
         "unrealeditor-cmd",
     }:
         return None
-    try:
-        if editor.parent.name.casefold() != "win64":
-            return None
-        if editor.parent.parent.name.casefold() != "binaries":
-            return None
-        if editor.parent.parent.parent.name.casefold() != "engine":
-            return None
-        return editor.parent.parent.parent.parent
-    except IndexError:
+    if editor.parent.name.casefold() != "win64":
         return None
+    if editor.parent.parent.name.casefold() != "binaries":
+        return None
+    if editor.parent.parent.parent.name.casefold() != "engine":
+        return None
+    return editor.parent.parent.parent.parent
 
 
 def _append_store(
