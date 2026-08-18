@@ -1,9 +1,10 @@
 r"""Audited Visual Studio IDE cache semantics for Windows cleanup.
 
 Visual Studio keeps per-instance MEF composition state under ComponentModelCache
-and a shared Roslyn analyzer cache under the local VisualStudio tree. Microsoft
-support guidance describes both as regenerable. DevClean delegates only those
-exact source-backed subtrees; surrounding IDE and project state stays protected.
+and a shared Roslyn analyzer cache under the local VisualStudio tree. Those exact
+source-backed caches are delegated. Per-instance WebTools storage is inventoried
+separately but stays protected because no authoritative vendor contract narrows
+that mixed web/language-service state to disposable cache data.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ _INSTANCE_SELECTOR = re.compile(r"^(?:16|17|18)\.0(?:_[0-9a-f]{4,})?$", re.IGNOR
 class VisualStudioRootSet:
     component_model_cache_roots: tuple[PureWindowsPath, ...]
     roslyn_cache_roots: tuple[PureWindowsPath, ...]
+    web_tools_roots: tuple[PureWindowsPath, ...]
 
 
 _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE = ApplicationCleanupRule(
@@ -69,10 +71,22 @@ _VISUAL_STUDIO_ROSLYN_CACHE_RULE = ApplicationCleanupRule(
     allow_whole_tree=True,
     label="Visual Studio Roslyn analyzer cache",
 )
+_VISUAL_STUDIO_WEBTOOLS_RULE = ApplicationCleanupRule(
+    rule_id="visual-studio-webtools-mixed-state",
+    app_id="visual_studio",
+    root_key="VISUAL_STUDIO_WEBTOOLS",
+    relative_pattern="",
+    match_kind=MatchKind.PREFIX,
+    owner=DecisionOwner.KEEP,
+    last_use=LastUseStrategy.DIRECTORY_MTIME,
+    rebuild_cost=RebuildCost.HIGH,
+    label="Visual Studio WebTools mixed web/language-service state",
+)
 
 VISUAL_STUDIO_RULES: tuple[ApplicationCleanupRule, ...] = (
     _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE,
     _VISUAL_STUDIO_ROSLYN_CACHE_RULE,
+    _VISUAL_STUDIO_WEBTOOLS_RULE,
 )
 
 
@@ -82,10 +96,11 @@ def visual_studio_roots(
     env = _casefold_env(environment)
     local = env.get("localappdata")
     if not local:
-        return VisualStudioRootSet((), ())
+        return VisualStudioRootSet((), (), ())
 
     parent = PureWindowsPath(local) / "Microsoft" / "VisualStudio"
     component_caches: list[PureWindowsPath] = []
+    web_tools: list[PureWindowsPath] = []
     try:
         children = tuple(Path(str(parent)).iterdir())
     except OSError:
@@ -97,10 +112,16 @@ def visual_studio_roots(
             continue
         if not is_directory or not _INSTANCE_SELECTOR.fullmatch(child.name):
             continue
-        component_caches.append(PureWindowsPath(str(child)) / "ComponentModelCache")
+        instance = PureWindowsPath(str(child))
+        component_caches.append(instance / "ComponentModelCache")
+        web_tools.append(instance / "WebTools")
 
     roslyn_cache = parent / "Roslyn" / "Cache"
-    return VisualStudioRootSet(tuple(component_caches), (roslyn_cache,))
+    return VisualStudioRootSet(
+        tuple(component_caches),
+        (roslyn_cache,),
+        tuple(web_tools),
+    )
 
 
 def visual_studio_scan_roots(
@@ -108,7 +129,13 @@ def visual_studio_scan_roots(
 ) -> tuple[PureWindowsPath, ...]:
     roots = visual_studio_roots(environment)
     return tuple(
-        dict.fromkeys((*roots.component_model_cache_roots, *roots.roslyn_cache_roots))
+        dict.fromkeys(
+            (
+                *roots.component_model_cache_roots,
+                *roots.roslyn_cache_roots,
+                *roots.web_tools_roots,
+            )
+        )
     )
 
 
@@ -122,6 +149,7 @@ def match_visual_studio_rule(
     for candidates, rule in (
         (roots.component_model_cache_roots, _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE),
         (roots.roslyn_cache_roots, _VISUAL_STUDIO_ROSLYN_CACHE_RULE),
+        (roots.web_tools_roots, _VISUAL_STUDIO_WEBTOOLS_RULE),
     ):
         for root in candidates:
             normalized_root = _impl._normalize(root)
@@ -153,6 +181,16 @@ def evaluate_visual_studio_path(
         if observed is None
         else max(0.0, (current - observed).total_seconds() / 86_400)
     )
+    if rule.owner is DecisionOwner.KEEP:
+        return ApplicationPolicyDecision(
+            rule,
+            PolicyAction.KEEP_PROTECTED,
+            observed,
+            idle,
+            None,
+            0,
+        )
+
     threshold = effective_idle_days(rule, logical_size)
     running = process_running
     if running is None:
