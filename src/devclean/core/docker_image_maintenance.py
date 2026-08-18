@@ -118,7 +118,7 @@ def inspect_docker_images(
         created = _required_string(payload, "Created", "Docker image inspect")
         logical_size = _nonnegative_int(payload.get("Size"), "Docker image Size")
         consumers = tuple(sorted(references.get(image_id, ())))
-        executable, reason = _image_decision(repo_tags, consumers)
+        can_remove, reason = _image_decision(repo_tags, consumers)
         entries.append(
             DockerImageEntry(
                 image_id=image_id,
@@ -127,7 +127,7 @@ def inspect_docker_images(
                 created=created,
                 logical_size=logical_size,
                 container_ids=consumers,
-                executable=executable,
+                executable=can_remove,
                 reason=reason,
             )
         )
