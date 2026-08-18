@@ -243,8 +243,8 @@ def _flag_for_kind(kind: GoCacheKind) -> str:
 
 def _decision_reason(kind: GoCacheKind) -> str:
     if kind is GoCacheKind.BUILD:
-        return "Go 编译构建缓存；清理后只是后续构建重新编译，不需要 AI 判断"
-    return "共享的已下载模块源码；Go 可安全清空，但离线/旧项目是否仍需要由你决定"
+        return "Go 编译构建缓存; 清理后只是后续构建重新编译, 不需要 AI 判断"
+    return "共享的已下载模块源码; Go 可安全清空, 但离线/旧项目是否仍需要由你决定"
 
 
 def _directory_bytes(root: Path) -> int:
