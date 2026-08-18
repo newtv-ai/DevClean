@@ -11,7 +11,7 @@ DevClean therefore splits the global cache into three independent semantic sourc
 | Storage | DevClean decision | Mutation |
 | --- | --- | --- |
 | active registry `db` | `UNITY_MANAGED` | none; Unity owns size/LRU GC |
-| deprecated `packages` | `USER_REVIEW` | exact directory removal only after explicit user confirmation |
+| deprecated `packages` | `USER_REVIEW` | exact local-directory removal only after explicit user confirmation |
 | `git-lfs` | `REPORT_ONLY` | none |
 
 AI adds no value to any of these decisions. The unknown question for the deprecated `packages` directory is user intent about older Unity projects, not technical file identity.
@@ -65,6 +65,8 @@ Environment-variable values take precedence over the user configuration for the 
 
 Unity also documents that changing a cache location does not migrate or delete data at the previous location. DevClean therefore keeps lower-priority/default roots visible when they still exist instead of pretending that the current effective root is the only disk consumer.
 
+Unity explicitly lists shared drives as one reason a user may relocate the cache. That matters to DevClean: a source-backed UPM path can still be shared state. Shared, remote, removable, or reparse-redirected roots remain visible, but DevClean does not offer destructive maintenance for them.
+
 Unity 6's upgrade guide explicitly says the old `UPM_CACHE_PATH` variable is no longer supported; DevClean does not revive or interpret that obsolete variable as deletion authority.
 
 ## Deprecated `packages`: USER_REVIEW
@@ -83,6 +85,8 @@ DevClean therefore classifies an exact `<audited-cache-root>\packages` directory
 - never selected by default;
 - never sent to AI by default;
 - always requires an explicit confirmation that the user no longer needs the older-Editor workflow;
+- only becomes executable on a local fixed volume with no reparse redirection in its boundary;
+- remains report-only for execution purposes when the cache is shared/remote/removable;
 - never authorizes a sibling `db`, `git-lfs`, or the cache root itself.
 
 ## Git LFS cache: report only
@@ -101,12 +105,13 @@ Immediately before a destructive action DevClean:
 2. requires the selected cache root to still exactly match one of the source-backed current/historical roots DevClean can confirm;
 3. grants authority only to its direct `packages` child;
 4. requires both root and target to be ordinary directories, not symlinks or Windows junctions;
-5. refuses while Unity Editor, Unity Hub, or Unity Package Manager activity is present;
-6. captures stable Windows identities for both the cache-root boundary and exact `packages` directory;
-7. uses DevClean's handle-bound exact-directory purge, never `rmtree` or a generic recursive-delete fallback;
-8. never descends through reparse points;
-9. requires the exact `packages` root to be absent before reporting success;
-10. measures before/after/reclaimed bytes and re-inventories after the operation.
+5. requires both boundary and target to remain on a local fixed volume and rejects shared/remote/removable/reparse-redirected storage;
+6. refuses while Unity Editor, Unity Hub, or Unity Package Manager activity is present;
+7. captures stable Windows identities for both the cache-root boundary and exact `packages` directory;
+8. uses DevClean's handle-bound exact-directory purge, never `rmtree` or a generic recursive-delete fallback;
+9. never descends through reparse points;
+10. requires the exact `packages` root to be absent before reporting success;
+11. measures before/after/reclaimed bytes and re-inventories after the operation.
 
 A directory named `packages` elsewhere receives no authority from this audit.
 
@@ -118,6 +123,7 @@ This lane does not delete or modify:
 - an inactive/old `db` merely because it is large;
 - `git-lfs` contents;
 - the complete UPM global-cache root;
+- shared/remote UPM cache contents;
 - project `Library`;
 - project `Packages`, `manifest.json`, or package lock state;
 - Asset Store `.unitypackage` cache data;
@@ -128,7 +134,7 @@ This lane does not delete or modify:
 
 - Unity 6 Manual, **Global cache**: current global-cache purpose and `db` / `git-lfs` / deprecated `packages` layout, including the condition under which the historical `packages` subtree can be removed.
   - https://docs.unity3d.com/cn/current/Manual/upm-cache.html
-- Unity 6 Manual, **Customize the global cache**: `cacheRoot`, `maxCacheSize`, Preferences, environment overrides, precedence, custom `db` / Git LFS paths, and the current Package Manager cache-size behavior.
+- Unity 6 Manual, **Customize the global cache**: `cacheRoot`, `maxCacheSize`, Preferences, environment overrides, precedence, custom `db` / Git LFS paths, shared-drive use cases, and the current Package Manager cache-size behavior.
   - https://docs.unity3d.com/cn/current/Manual/upm-config-cache.html
 - Unity 6 Manual, **Upgrade to Unity 6**: `packages` is no longer used by Package Manager, optional conditional deletion guidance, and removal of support for `UPM_CACHE_PATH`.
   - https://docs.unity3d.com/cn/current/Manual/UpgradeGuideUnity6.html
