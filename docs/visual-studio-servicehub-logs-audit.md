@@ -5,6 +5,7 @@ DevClean treats `%TEMP%\servicehub\logs` as a source-backed Visual Studio diagno
 Source-audited boundaries:
 
 - Microsoft Visual Studio performance-troubleshooting guidance describes ServiceHub and other satellite processes as out-of-process components that provide features alongside the main Visual Studio process.
+- Microsoft notes that starting with Visual Studio 2019 version 16.3, out-of-process logs are automatically attached when feedback is submitted through Report a Problem, reinforcing that this subtree is diagnostic evidence rather than persistent user state.
 - For a directly reproducible out-of-process issue, Microsoft explicitly instructs starting by deleting the `%temp%\servicehub\logs` folder before enabling full ServiceHub tracing and reproducing the issue.
 - That instruction is an exact whole-folder regeneration contract for the `logs` subtree. DevClean does not generalize it to the parent `%TEMP%\servicehub` directory or similarly named siblings.
 - Recent logs can still be diagnostically valuable. DevClean therefore uses a conservative 14-day idle threshold and a 16 MiB minimum reclaim threshold instead of deleting every discovered log tree immediately.
