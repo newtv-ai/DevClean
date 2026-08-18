@@ -8,6 +8,7 @@ from collections.abc import Sequence
 
 from devclean.ui.app import DevCleanWindow
 from devclean.ui.bazel_maintenance_dialog import open_bazel_maintenance_dialog
+from devclean.ui.cargo_project_maintenance_dialog import open_cargo_project_maintenance_dialog
 from devclean.ui.claude_maintenance_dialog import open_claude_maintenance_dialog
 from devclean.ui.codex_history_dialog import open_codex_history_dialog
 from devclean.ui.conan_maintenance_dialog import open_conan_maintenance_dialog
@@ -82,6 +83,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Bazel 工作区维护…",
         command=lambda: open_bazel_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="Cargo 工作区 target 维护…",
+        command=lambda: open_cargo_project_maintenance_dialog(root),
     )
     tools.add_command(
         label="Unity 项目 Library 维护…",
