@@ -1,5 +1,7 @@
 """Project-aware Cargo target-directory inventory and vendor cleanup."""
 
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import json
