@@ -44,7 +44,7 @@ def run_dotnet_workload_clean(
     clear_dotnet_process_cache()
     if dotnet_sdk_process_running():
         raise RuntimeError(
-            ".NET SDK、MSBuild 或 Visual Studio 正在运行；关闭相关进程后再清理 workload"
+            ".NET SDK、MSBuild 或 Visual Studio 正在运行; 关闭相关进程后再清理 workload"
         )
 
     command = (dotnet_executable(environment), "workload", "clean")
@@ -63,13 +63,13 @@ def run_dotnet_workload_clean(
             env=env,
         )
     except (OSError, subprocess.SubprocessError) as error:
-        raise RuntimeError(f"无法执行 dotnet workload clean：{error}") from error
+        raise RuntimeError(f"无法执行 dotnet workload clean: {error}") from error
 
     output = _combined_output(completed.stdout, completed.stderr)
     if completed.returncode != 0:
         raise RuntimeError(
             "dotnet workload clean 失败 "
-            f"(退出码 {completed.returncode})：{output or '没有输出'}"
+            f"(退出码 {completed.returncode}): {output or '没有输出'}"
         )
     return DotnetWorkloadCleanResult(
         command=command,
