@@ -332,6 +332,16 @@ from devclean.core.uv_cleanup import (
     uv_scan_roots,
     whole_tree_uv_rule,
 )
+from devclean.core.visual_studio_cleanup import (
+    VISUAL_STUDIO_RULES,
+    clear_visual_studio_process_cache,
+    evaluate_visual_studio_path,
+    match_visual_studio_rule,
+    visual_studio_audited_tool_roots,
+    visual_studio_process_running,
+    visual_studio_scan_roots,
+    whole_tree_visual_studio_rule,
+)
 from devclean.core.visual_studio_installer_cleanup import (
     VISUAL_STUDIO_INSTALLER_RULES,
     clear_visual_studio_installer_process_cache,
@@ -434,6 +444,7 @@ def application_scan_roots(
                 *puppeteer_scan_roots(environment),
                 *cypress_scan_roots(environment),
                 *electron_scan_roots(environment),
+                *visual_studio_scan_roots(environment),
                 *visual_studio_installer_scan_roots(environment),
                 *chrome_scan_roots(environment),
                 *edge_scan_roots(environment),
@@ -479,6 +490,7 @@ def audited_dynamic_tool_roots(
         *puppeteer_audited_tool_roots(environment),
         *cypress_audited_tool_roots(environment),
         *electron_audited_tool_roots(environment),
+        *visual_studio_audited_tool_roots(environment),
         *visual_studio_installer_audited_tool_roots(environment),
         *chrome_audited_tool_roots(environment),
         *edge_audited_tool_roots(environment),
@@ -551,6 +563,9 @@ def match_application_rule(
     claude = match_claude_rule(path, environment)
     if claude is not None:
         return claude
+    visual_studio = match_visual_studio_rule(path, environment)
+    if visual_studio is not None:
+        return visual_studio
     visual_studio_installer = match_visual_studio_installer_rule(path, environment)
     if visual_studio_installer is not None:
         return visual_studio_installer
@@ -781,6 +796,15 @@ def evaluate_application_path(
             environment=environment,
         )
     if decision is None:
+        decision = evaluate_visual_studio_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=now,
+            process_running=process_running,
+            environment=environment,
+        )
+    if decision is None:
         decision = evaluate_visual_studio_installer_path(
             path,
             logical_size=logical_size,
@@ -990,6 +1014,8 @@ def application_process_running(app_id: str) -> bool:
         return edge_process_running()
     if app_id == "chrome":
         return chrome_process_running()
+    if app_id == "visual_studio":
+        return visual_studio_process_running()
     if app_id == "visual_studio_installer":
         return visual_studio_installer_process_running()
     if app_id == "electron":
@@ -1066,6 +1092,7 @@ def clear_process_cache() -> None:
     clear_puppeteer_process_cache()
     clear_cypress_process_cache()
     clear_electron_process_cache()
+    clear_visual_studio_process_cache()
     clear_visual_studio_installer_process_cache()
     clear_chrome_process_cache()
     clear_edge_process_cache()
@@ -1133,6 +1160,9 @@ def whole_tree_application_rule(
     if dynamic is not None:
         return dynamic
     dynamic = whole_tree_chrome_rule(path, environment)
+    if dynamic is not None:
+        return dynamic
+    dynamic = whole_tree_visual_studio_rule(path, environment)
     if dynamic is not None:
         return dynamic
     dynamic = whole_tree_visual_studio_installer_rule(path, environment)
@@ -1248,6 +1278,7 @@ def application_display_name(app_id: str) -> str:
         "nuget": "NuGet",
         "opera": "Opera / Opera GX",
         "vivaldi": "Vivaldi",
+        "visual_studio": "Visual Studio",
         "visual_studio_installer": "Visual Studio Installer",
         "codex": "Codex",
         "claude": "Claude Code",
@@ -1297,6 +1328,7 @@ __all__ = [
     "TRAE_RULES",
     "UV_RULES",
     "VISUAL_STUDIO_INSTALLER_RULES",
+    "VISUAL_STUDIO_RULES",
     "VIVALDI_RULES",
     "VSCODE_RULES",
     "WINDSURF_RULES",
