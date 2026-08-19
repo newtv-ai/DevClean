@@ -1,7 +1,5 @@
 """WSL pip cache maintenance through pip's own cache commands."""
 
-# ruff: noqa: RUF001
-
 from __future__ import annotations
 
 import queue
