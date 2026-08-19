@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import winreg
 from dataclasses import replace
 from pathlib import Path
 
@@ -100,7 +101,7 @@ def test_live_kernel_default_root_accepts_only_root_and_one_component_level(
         del args, kwargs
         raise FileNotFoundError
 
-    monkeypatch.setattr(crash_dumps.winreg, "OpenKey", missing_live_key)
+    monkeypatch.setattr(winreg, "OpenKey", missing_live_key)
     monkeypatch.setattr(crash_dumps, "is_local_fixed_path", lambda path: True)
 
     locations, warnings = crash_dumps._discover_live_kernel_locations(
