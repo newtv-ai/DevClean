@@ -147,13 +147,17 @@ class _PodmanContainerMaintenanceDialog:
         if self._busy:
             return
         selected = self._selected()
-        if selected is None or not selected.executable:
+        inventory = self._inventory
+        if selected is None or inventory is None or not selected.executable:
             return
+        reviewed_target = inventory.target
         volumes = ", ".join(selected.volume_names) if selected.volume_names else "无命名卷"
         if not messagebox.askyesno(
             "确认删除 Podman 容器",
             (
                 "将删除一个精确的已停止 Podman 容器。\n\n"
+                f"Machine：{reviewed_target.machine_name}\n"
+                f"Connection：{reviewed_target.connection_name}\n"
                 f"名称：{selected.name}\n"
                 f"ID：{selected.container_id}\n"
                 f"镜像：{selected.image_name or selected.image_id}\n"
@@ -171,7 +175,7 @@ class _PodmanContainerMaintenanceDialog:
 
         def work() -> None:
             try:
-                result = remove_podman_container(selected)
+                result = remove_podman_container(selected, reviewed_target)
             except Exception as error:
                 self._events.put(_RemoveEvent(None, str(error)))
             else:
@@ -242,7 +246,9 @@ class _PodmanContainerMaintenanceDialog:
                     decision,
                 ),
             )
-        self._status.set(f"检查完成：{len(inventory.containers)} 个容器。只有符合边界的已停止 standalone container 可删除。")
+        self._status.set(
+            f"检查完成：{len(inventory.containers)} 个容器。只有符合边界的已停止 standalone container 可删除。"
+        )
 
 
 def open_podman_container_maintenance_dialog(parent: tk.Tk | tk.Toplevel) -> None:
