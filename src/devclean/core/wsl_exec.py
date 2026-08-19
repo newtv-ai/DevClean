@@ -8,7 +8,11 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from devclean.core.wsl_inventory import WslDistribution, inspect_wsl, wsl_executable
+from devclean.core.wsl_inventory import (
+    WslDistribution,
+    inspect_wsl,
+    wsl_executable,
+)
 
 
 _FORBIDDEN_EXECUTABLES = frozenset(
