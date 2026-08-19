@@ -207,7 +207,8 @@ class _WindowsComponentStoreMaintenanceDialog:
             return
         self._set_busy(True)
         self._status.set(
-            "正在重新分析并验证 DISM/Windows 映像身份，然后执行 StartComponentCleanup；请勿关闭程序…"
+            "正在重新分析并验证 DISM/Windows 映像身份，然后执行 "
+            "StartComponentCleanup；请勿关闭程序…"
         )
 
         def work() -> None:
