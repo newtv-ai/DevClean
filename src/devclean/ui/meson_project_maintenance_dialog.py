@@ -7,6 +7,7 @@ from __future__ import annotations
 import queue
 import threading
 import tkinter as tk
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -134,7 +135,7 @@ class _MesonProjectMaintenanceDialog:
         label: str,
         variable: tk.StringVar,
         button_text: str,
-        command: object,
+        command: Callable[[], None],
     ) -> ttk.Button:
         row = ttk.Frame(parent)
         row.pack(fill=tk.X, pady=(2, 0))
