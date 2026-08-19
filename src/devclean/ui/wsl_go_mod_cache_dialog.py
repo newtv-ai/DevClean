@@ -105,13 +105,17 @@ class _WslGoModCacheDialog:
             explanation,
             text=(
                 "GOMODCACHE 不是项目源码, 但它也不只是普通编译加速数据. Go 官方说明 "
-                "`go clean -modcache` 会移除整个 module cache, 包括已解包的版本化依赖源码.\n\n"
-                "这些内容可以重新下载, 但旧分支, 私有模块, 离线开发或较慢网络都可能让保留缓存有实际价值. "
+                "`go clean -modcache` 会移除整个 module cache, 包括已解包的版本化"
+                "依赖源码.\n\n"
+                "这些内容可以重新下载, 但旧分支, 私有模块, 离线开发或较慢网络都可能"
+                "让保留缓存有实际价值. "
                 "因此这里是 USER_REVIEW: 不自动选择, 不交给 AI 判断, 只在你明确确认后执行.\n\n"
                 "执行前 DevClean 会重新确认 Go 版本和 GOMODCACHE, 检查 go/gopls 运行状态, "
-                "并要求目标属于所选 WSL 发行版自己的根文件系统. `/mnt/c` 和其他独立挂载点只报告不执行.\n\n"
-                "清理命令会把 GOFLAGS 固定为空, 避免用户持久配置额外注入 `-cache`, `-testcache` 或 "
-                "`-fuzzcache`. 本入口不会 raw delete, 也不会触碰 GOPATH 其他内容, 项目文件或安装的 Go 工具.\n\n"
+                "并要求目标属于所选 WSL 发行版自己的根文件系统. `/mnt/c` 和其他独立"
+                "挂载点只报告不执行.\n\n"
+                "清理命令会把 GOFLAGS 固定为空, 避免用户持久配置额外注入 `-cache`, "
+                "`-testcache` 或 `-fuzzcache`. "
+                "本入口不会 raw delete, 也不会触碰 GOPATH 其他内容, 项目文件或安装的 Go 工具.\n\n"
                 "WSL 中释放的是 Linux 逻辑空间, 不保证 Windows 侧 VHD 文件同步缩小."
             ),
             wraplength=870,
@@ -209,9 +213,11 @@ class _WslGoModCacheDialog:
             f"发行版: {inventory.distribution}\n"
             f"Go: {inventory.version_text}\n"
             f"GOMODCACHE: {inventory.module_cache_path}\n\n"
-            "`go clean -modcache` 会移除整个 module cache, 包括已下载文件和解包后的版本化依赖源码. "
+            "`go clean -modcache` 会移除整个 module cache, 包括已下载文件和解包后的"
+            "版本化依赖源码. "
             "之后需要时必须重新下载, 私有模块还可能再次需要相应网络和凭据.\n\n"
-            "DevClean 会重新确认身份和 WSL 本地文件系统边界, 然后只执行这一条官方清理动作. 继续?",
+            "DevClean 会重新确认身份和 WSL 本地文件系统边界, 然后只执行这一条官方"
+            "清理动作. 继续?",
         ):
             return
 
