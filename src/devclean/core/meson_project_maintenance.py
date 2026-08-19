@@ -190,7 +190,9 @@ try {
     if ($name -eq 'meson') { 'RUNNING'; exit 0 }
     if ($name -in @('python','pythonw','py')) {
       $cmd = [string]$p.CommandLine
-      if ($cmd -match '(?i)-m\s+mesonbuild\.mesonmain' -or $cmd -match '(?i)(^|[\\/\s\"])(meson|meson\.py)([\s\"]|$)') {
+      $moduleMatch = $cmd -match '(?i)-m\s+mesonbuild\.mesonmain'
+      $scriptMatch = $cmd -match '(?i)(^|[\\/\s\"])(meson|meson\.py)([\s\"]|$)'
+      if ($moduleMatch -or $scriptMatch) {
         'RUNNING'; exit 0
       }
     }
