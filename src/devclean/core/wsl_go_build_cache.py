@@ -17,6 +17,15 @@ from devclean.core.wsl_inventory import WslDistribution, inspect_wsl
 from devclean.core.wsl_path_scope import require_wsl_root_filesystem_path
 
 _GO_COMM_RE = re.compile(r"^(?:go|gopls)$")
+_GO_BUILD_CACHE_CLEAN_ARGS = (
+    "clean",
+    "-i=false",
+    "-r=false",
+    "-cache=true",
+    "-testcache=false",
+    "-modcache=false",
+    "-fuzzcache=false",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,15 +54,8 @@ def inventory_wsl_go_build_cache(
     environment: Mapping[str, str] | None = None,
 ) -> WslGoBuildCacheInventory:
     """Ask Go for its exact build-cache path and external-cache setting."""
-
     distro = _exact_distribution(distribution, environment)
-    version = run_wsl_exec(
-        distro.name,
-        "go",
-        ("version",),
-        environment,
-        timeout=60,
-    )
+    version = run_wsl_exec(distro.name, "go", ("version",), environment, timeout=60)
     config = run_wsl_exec(
         distro.name,
         "go",
@@ -75,8 +77,7 @@ def clean_wsl_go_build_cache(
     expected: WslGoBuildCacheInventory,
     environment: Mapping[str, str] | None = None,
 ) -> WslGoBuildCacheCleanResult:
-    """Run only ``go clean -cache`` for one freshly re-confirmed local cache."""
-
+    """Run one fully pinned Go build-cache clean for a re-confirmed local cache."""
     fresh = inventory_wsl_go_build_cache(expected.distribution, environment)
     if _inventory_identity(fresh) != _inventory_identity(expected):
         raise RuntimeError(
@@ -86,26 +87,16 @@ def clean_wsl_go_build_cache(
         raise RuntimeError(
             "GOCACHEPROG is configured; external Go cache backends remain report-only"
         )
-
     _require_go_idle(fresh.distribution, environment)
-    require_wsl_root_filesystem_path(
-        fresh.distribution,
-        fresh.cache_path,
-        environment,
-    )
+    require_wsl_root_filesystem_path(fresh.distribution, fresh.cache_path, environment)
     result = run_wsl_exec_with_env(
         fresh.distribution,
         "go",
-        ("clean", "-cache"),
-        {
-            "GOCACHE": fresh.cache_path,
-            "GOCACHEPROG": "",
-            "GOFLAGS": "",
-        },
+        _GO_BUILD_CACHE_CLEAN_ARGS,
+        {"GOCACHE": fresh.cache_path, "GOCACHEPROG": ""},
         environment,
         timeout=900,
     )
-
     after = inventory_wsl_go_build_cache(fresh.distribution, environment)
     if _inventory_identity(after) != _inventory_identity(fresh):
         raise RuntimeError(
