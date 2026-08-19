@@ -113,8 +113,9 @@ class _WslGoModCacheDialog:
                 "执行前 DevClean 会重新确认 Go 版本和 GOMODCACHE, 检查 go/gopls 运行状态, "
                 "并要求目标属于所选 WSL 发行版自己的根文件系统. `/mnt/c` 和其他独立"
                 "挂载点只报告不执行.\n\n"
-                "清理命令会把 GOFLAGS 固定为空, 避免用户持久配置额外注入 `-cache`, "
-                "`-testcache` 或 `-fuzzcache`. "
+                "Go 会先应用持久 GOFLAGS 再解析命令行. 因此本入口在命令行明确固定所有"
+                "破坏性 clean flags: 只允许 `-modcache=true`, 并把 `-cache`, `-testcache`, "
+                "`-fuzzcache`, `-i`, `-r` 全部固定为 false.\n\n"
                 "本入口不会 raw delete, 也不会触碰 GOPATH 其他内容, 项目文件或安装的 Go 工具.\n\n"
                 "WSL 中释放的是 Linux 逻辑空间, 不保证 Windows 侧 VHD 文件同步缩小."
             ),
