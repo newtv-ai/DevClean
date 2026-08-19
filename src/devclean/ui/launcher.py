@@ -29,6 +29,7 @@ from devclean.ui.pnpm_maintenance_dialog import open_pnpm_maintenance_dialog
 from devclean.ui.podman_container_maintenance_dialog import (
     open_podman_container_maintenance_dialog,
 )
+from devclean.ui.podman_image_maintenance_dialog import open_podman_image_maintenance_dialog
 from devclean.ui.unity_asset_store_maintenance_dialog import (
     open_unity_asset_store_maintenance_dialog,
 )
@@ -138,6 +139,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Podman 已停止容器维护…",
         command=lambda: open_podman_container_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="Podman 镜像维护…",
+        command=lambda: open_podman_image_maintenance_dialog(root),
     )
     tools.add_command(
         label="Unity 项目 Library 维护…",
