@@ -95,7 +95,9 @@ def purge_wsl_pip_cache(
 
     after = inventory_wsl_pip_cache(fresh.distribution, environment)
     if _inventory_identity(after) != _inventory_identity(fresh):
-        raise RuntimeError("WSL pip identity/cache path changed after purge; result cannot be confirmed")
+        raise RuntimeError(
+            "WSL pip identity/cache path changed after purge; result cannot be confirmed"
+        )
     return WslPipPurgeResult(
         before=fresh,
         after=after,
@@ -209,7 +211,9 @@ def _require_pip_idle(
         raise RuntimeError("Cannot confirm WSL pip process state; purge stopped safely") from error
 
     if any(_looks_like_pip_process(line) for line in result.stdout.splitlines()):
-        raise RuntimeError("pip appears to be running in this WSL distro; wait before purging cache")
+        raise RuntimeError(
+            "pip appears to be running in this WSL distro; wait before purging cache"
+        )
 
 
 def _looks_like_pip_process(line: str) -> bool:
