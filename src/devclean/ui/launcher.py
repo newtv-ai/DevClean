@@ -18,6 +18,7 @@ from devclean.ui.git_repository_maintenance_dialog import (
     open_git_repository_maintenance_dialog,
 )
 from devclean.ui.go_maintenance_dialog import open_go_maintenance_dialog
+from devclean.ui.meson_project_maintenance_dialog import open_meson_project_maintenance_dialog
 from devclean.ui.nuget_maintenance_dialog import open_nuget_maintenance_dialog
 from devclean.ui.ollama_model_maintenance_dialog import open_ollama_model_maintenance_dialog
 from devclean.ui.pip_maintenance_dialog import open_pip_maintenance_dialog
@@ -110,6 +111,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Cargo 工作区 target 维护…",
         command=lambda: open_cargo_project_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="Meson 构建目录维护…",
+        command=lambda: open_meson_project_maintenance_dialog(root),
     )
     tools.add_command(
         label="Unity 项目 Library 维护…",
