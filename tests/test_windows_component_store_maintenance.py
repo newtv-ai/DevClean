@@ -99,7 +99,10 @@ def test_parse_component_store_report_missing_or_duplicate_recommendation_fails_
 
 
 def test_parse_component_store_report_allows_optional_size_fields_to_be_unparseable() -> None:
-    output = _sample_output().replace("Actual Size of Component Store : 9.32 GB", "Actual Size of Component Store : unknown")
+    output = _sample_output().replace(
+        "Actual Size of Component Store : 9.32 GB",
+        "Actual Size of Component Store : unknown",
+    )
     output = output.replace("Number of Reclaimable Packages : 2\n", "")
 
     report = parse_component_store_report(output, _identity())
@@ -109,10 +112,16 @@ def test_parse_component_store_report_allows_optional_size_fields_to_be_unparsea
     assert report.cleanup_recommended
 
 
-def test_inventory_non_elevated_never_runs_dism_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_inventory_non_elevated_never_runs_dism_analysis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     identity = _identity()
     monkeypatch.setattr(component_store, "_WINDOWS", True)
-    monkeypatch.setattr(component_store, "dism_executable", lambda environment=None: identity.path)
+    monkeypatch.setattr(
+        component_store,
+        "dism_executable",
+        lambda environment=None: identity.path,
+    )
     monkeypatch.setattr(component_store, "_dism_identity", lambda path: identity)
     monkeypatch.setattr(component_store, "is_process_elevated", lambda: False)
     monkeypatch.setattr(
@@ -135,10 +144,18 @@ def test_inventory_uses_vendor_recommendation_without_defaulting_cleanup(
     identity = _identity()
     report = _report(identity, recommended=True)
     monkeypatch.setattr(component_store, "_WINDOWS", True)
-    monkeypatch.setattr(component_store, "dism_executable", lambda environment=None: identity.path)
+    monkeypatch.setattr(
+        component_store,
+        "dism_executable",
+        lambda environment=None: identity.path,
+    )
     monkeypatch.setattr(component_store, "_dism_identity", lambda path: identity)
     monkeypatch.setattr(component_store, "is_process_elevated", lambda: True)
-    monkeypatch.setattr(component_store, "_analyze_component_store", lambda identity, environment: report)
+    monkeypatch.setattr(
+        component_store,
+        "_analyze_component_store",
+        lambda identity, environment: report,
+    )
 
     inventory = inventory_windows_component_store()
 
@@ -163,11 +180,17 @@ def test_cleanup_refuses_existing_dism_activity_before_vendor_mutation(
     identity = _identity()
     monkeypatch.setattr(component_store, "_WINDOWS", True)
     monkeypatch.setattr(component_store, "is_process_elevated", lambda: True)
-    monkeypatch.setattr(component_store, "dism_activity_running", lambda environment=None: True)
+    monkeypatch.setattr(
+        component_store,
+        "dism_activity_running",
+        lambda environment=None: True,
+    )
     monkeypatch.setattr(
         component_store,
         "_run_command",
-        lambda *args, **kwargs: pytest.fail("cleanup must not run during existing DISM activity"),
+        lambda *args, **kwargs: pytest.fail(
+            "cleanup must not run during existing DISM activity"
+        ),
     )
 
     with pytest.raises(RuntimeError, match="DISM/DismHost"):
@@ -181,8 +204,16 @@ def test_cleanup_revalidates_exact_dism_and_image_identity(
     changed_identity = _identity(2)
     monkeypatch.setattr(component_store, "_WINDOWS", True)
     monkeypatch.setattr(component_store, "is_process_elevated", lambda: True)
-    monkeypatch.setattr(component_store, "dism_activity_running", lambda environment=None: False)
-    monkeypatch.setattr(component_store, "dism_executable", lambda environment=None: expected_identity.path)
+    monkeypatch.setattr(
+        component_store,
+        "dism_activity_running",
+        lambda environment=None: False,
+    )
+    monkeypatch.setattr(
+        component_store,
+        "dism_executable",
+        lambda environment=None: expected_identity.path,
+    )
     monkeypatch.setattr(component_store, "_dism_identity", lambda path: changed_identity)
 
     with pytest.raises(RuntimeError, match="可执行文件身份"):
@@ -195,8 +226,16 @@ def test_cleanup_refuses_if_fresh_analysis_no_longer_recommends_cleanup(
     identity = _identity()
     monkeypatch.setattr(component_store, "_WINDOWS", True)
     monkeypatch.setattr(component_store, "is_process_elevated", lambda: True)
-    monkeypatch.setattr(component_store, "dism_activity_running", lambda environment=None: False)
-    monkeypatch.setattr(component_store, "dism_executable", lambda environment=None: identity.path)
+    monkeypatch.setattr(
+        component_store,
+        "dism_activity_running",
+        lambda environment=None: False,
+    )
+    monkeypatch.setattr(
+        component_store,
+        "dism_executable",
+        lambda environment=None: identity.path,
+    )
     monkeypatch.setattr(component_store, "_dism_identity", lambda path: identity)
     monkeypatch.setattr(
         component_store,
@@ -206,7 +245,9 @@ def test_cleanup_refuses_if_fresh_analysis_no_longer_recommends_cleanup(
     monkeypatch.setattr(
         component_store,
         "_run_command",
-        lambda *args, **kwargs: pytest.fail("cleanup must not run after recommendation changed"),
+        lambda *args, **kwargs: pytest.fail(
+            "cleanup must not run after recommendation changed"
+        ),
     )
 
     with pytest.raises(RuntimeError, match="已不再建议"):
@@ -224,8 +265,16 @@ def test_cleanup_uses_only_bounded_startcomponentcleanup_command_and_reanalyzes(
 
     monkeypatch.setattr(component_store, "_WINDOWS", True)
     monkeypatch.setattr(component_store, "is_process_elevated", lambda: True)
-    monkeypatch.setattr(component_store, "dism_activity_running", lambda environment=None: False)
-    monkeypatch.setattr(component_store, "dism_executable", lambda environment=None: identity.path)
+    monkeypatch.setattr(
+        component_store,
+        "dism_activity_running",
+        lambda environment=None: False,
+    )
+    monkeypatch.setattr(
+        component_store,
+        "dism_executable",
+        lambda environment=None: identity.path,
+    )
     monkeypatch.setattr(component_store, "_dism_identity", lambda path: identity)
     monkeypatch.setattr(
         component_store,
@@ -242,7 +291,12 @@ def test_cleanup_uses_only_bounded_startcomponentcleanup_command_and_reanalyzes(
     ) -> subprocess.CompletedProcess[str]:
         del environment, timeout, operation
         commands.append(command)
-        return subprocess.CompletedProcess(command, 0, stdout="cleanup complete\n", stderr="")
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="cleanup complete\n",
+            stderr="",
+        )
 
     monkeypatch.setattr(component_store, "_run_command", fake_run)
 
@@ -274,10 +328,22 @@ def test_cleanup_refuses_changed_image_version_before_mutation(
     changed = _report(identity, image_version="10.0.99999.1")
     monkeypatch.setattr(component_store, "_WINDOWS", True)
     monkeypatch.setattr(component_store, "is_process_elevated", lambda: True)
-    monkeypatch.setattr(component_store, "dism_activity_running", lambda environment=None: False)
-    monkeypatch.setattr(component_store, "dism_executable", lambda environment=None: identity.path)
+    monkeypatch.setattr(
+        component_store,
+        "dism_activity_running",
+        lambda environment=None: False,
+    )
+    monkeypatch.setattr(
+        component_store,
+        "dism_executable",
+        lambda environment=None: identity.path,
+    )
     monkeypatch.setattr(component_store, "_dism_identity", lambda path: identity)
-    monkeypatch.setattr(component_store, "_analyze_component_store", lambda identity, environment: changed)
+    monkeypatch.setattr(
+        component_store,
+        "_analyze_component_store",
+        lambda identity, environment: changed,
+    )
 
     with pytest.raises(RuntimeError, match="映像身份"):
         cleanup_windows_component_store(expected)
@@ -290,10 +356,17 @@ def test_dism_activity_check_fails_closed_on_process_query_error(
     monkeypatch.setattr(
         component_store.subprocess,
         "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 1, stdout="", stderr="denied"),
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            1,
+            stdout="",
+            stderr="denied",
+        ),
     )
 
-    assert component_store.dism_activity_running({"DEVCLEAN_TASKLIST_EXE": "tasklist-test"})
+    assert component_store.dism_activity_running(
+        {"DEVCLEAN_TASKLIST_EXE": "tasklist-test"}
+    )
 
 
 def test_dism_activity_check_detects_dismhost(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -302,10 +375,17 @@ def test_dism_activity_check_detects_dismhost(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(
         component_store.subprocess,
         "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, stdout=output, stderr=""),
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0],
+            0,
+            stdout=output,
+            stderr="",
+        ),
     )
 
-    assert component_store.dism_activity_running({"DEVCLEAN_TASKLIST_EXE": "tasklist-test"})
+    assert component_store.dism_activity_running(
+        {"DEVCLEAN_TASKLIST_EXE": "tasklist-test"}
+    )
 
 
 def test_dism_identity_rejects_reparse_or_non_local_executable(
