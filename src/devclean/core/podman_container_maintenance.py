@@ -97,9 +97,7 @@ def inspect_podman_machine_target(
     )
     defaults = [item for item in connections if item.get("Default") is True]
     if len(defaults) != 1:
-        raise RuntimeError(
-            f"无法唯一确认 Podman 默认连接: found={len(defaults)}"
-        )
+        raise RuntimeError(f"无法唯一确认 Podman 默认连接: found={len(defaults)}")
     connection = defaults[0]
     if connection.get("IsMachine") is not True:
         raise RuntimeError("当前 Podman 默认连接不是 Podman-managed machine；仅允许只读检查")
@@ -126,9 +124,7 @@ def inspect_podman_machine_target(
         elif name == f"{machine_name}-root":
             matches.append((machine, True))
     if len(matches) != 1:
-        raise RuntimeError(
-            "Podman 默认 machine connection 无法唯一绑定到本机 managed machine"
-        )
+        raise RuntimeError("Podman 默认 machine connection 无法唯一绑定到本机 managed machine")
     machine, rootful = matches[0]
     machine_name = _required_string(machine, "Name", "Podman machine")
     vm_type = _required_string(machine, "VMType", "Podman machine").casefold()
@@ -205,11 +201,14 @@ def inspect_podman_containers(
 
 def remove_podman_container(
     expected: PodmanContainerEntry,
+    expected_target: PodmanMachineConnection,
     environment: Mapping[str, str] | None = None,
 ) -> PodmanContainerRemoveResult:
-    """Remove one exact stopped standalone Podman container without force/volumes."""
+    """Remove one reviewed container only from the exact reviewed machine target."""
 
     initial = inspect_podman_containers(environment)
+    if _target_key(initial.target) != _target_key(expected_target):
+        raise RuntimeError("Podman machine connection 与用户查看/确认的目标已不同；请重新检查")
     current = _exact_container(initial.containers, expected.container_id)
     _require_same_container(expected, current)
     if not current.executable:
@@ -297,9 +296,7 @@ def _container_entry(payload: dict[str, object]) -> PodmanContainerEntry:
     is_infra_raw = payload.get("IsInfra", False)
     if not isinstance(is_infra_raw, bool):
         raise RuntimeError("Podman container inspect IsInfra 不是 boolean")
-    writable_size = _optional_nonnegative_int(
-        payload.get("SizeRw", payload.get("SizeRW", 0))
-    )
+    writable_size = _optional_nonnegative_int(payload.get("SizeRw", payload.get("SizeRW", 0)))
     rootfs_size = _optional_nonnegative_int(payload.get("SizeRootFs", 0))
     volume_names = _volume_names(payload.get("Mounts"))
 
@@ -395,9 +392,7 @@ def _exact_container(
 ) -> PodmanContainerEntry:
     matches = [item for item in containers if item.container_id == container_id]
     if len(matches) != 1:
-        raise RuntimeError(
-            f"无法唯一确认 Podman container {container_id!r}: found={len(matches)}"
-        )
+        raise RuntimeError(f"无法唯一确认 Podman container {container_id!r}: found={len(matches)}")
     return matches[0]
 
 
@@ -421,13 +416,14 @@ def _require_same_container(
         raise RuntimeError("Podman container 身份/image/state/pod/volume 绑定已变化；请重新检查")
 
 
-def _target_key(target: PodmanMachineConnection) -> tuple[str, str, str, str, bool]:
+def _target_key(target: PodmanMachineConnection) -> tuple[str, str, str, str, bool, str]:
     return (
         target.connection_name,
         target.connection_uri,
         target.machine_name,
         target.vm_type,
         target.rootful,
+        target.executable,
     )
 
 
