@@ -354,7 +354,7 @@ def test_dism_activity_check_fails_closed_on_process_query_error(
 ) -> None:
     monkeypatch.setattr(component_store, "_WINDOWS", True)
     monkeypatch.setattr(
-        component_store.subprocess,
+        subprocess,
         "run",
         lambda *args, **kwargs: subprocess.CompletedProcess(
             args[0],
@@ -373,7 +373,7 @@ def test_dism_activity_check_detects_dismhost(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(component_store, "_WINDOWS", True)
     output = '"DismHost.exe","4242","Console","1","10,000 K"\n'
     monkeypatch.setattr(
-        component_store.subprocess,
+        subprocess,
         "run",
         lambda *args, **kwargs: subprocess.CompletedProcess(
             args[0],
