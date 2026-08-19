@@ -75,7 +75,7 @@ A clean CI run on a stale stacked base is not enough. Positive audit and impleme
 | Previous Windows installation | exact `Windows.old` USER_REVIEW through `cleanmgr /AUTOCLEAN`; rollback/personal-file warning; no raw system-folder delete |
 | Windows Recycle Bin | exact per-drive Shell API USER_REVIEW; no raw `$Recycle.Bin` and never all-drive widening |
 | Delivery Optimization cache | exact FileId vendor maintenance; expired unpinned `Caching` item deterministic candidate, retained unpinned `Caching` item USER_REVIEW, pinned/active/unknown protected |
-| Windows crash dumps | exact CrashControl large/small and WER LocalDumps `.dmp` files USER_REVIEW with handle-bound exact deletion; WER queue/archive report stores REPORT_ONLY |
+| Windows crash dumps | exact CrashControl large/small, LiveKernelReports root/component, and WER LocalDumps `.dmp` files USER_REVIEW with handle-bound exact deletion; WER queue/archive report stores REPORT_ONLY |
 | WSL distribution inventory | exact registered/running distro inventory only; distro/rootfs/VHD lifecycle protected |
 | WSL pip cache | exact distro + vendor `pip cache` behind root-filesystem locality proof |
 | WSL uv cache | exact distro + vendor `uv cache prune` behind root-filesystem locality proof |
@@ -167,7 +167,7 @@ A lower-level backend never inherits broader authority than the higher-level gen
 Recent Windows/Podman/Android queues are substantially closed. Prefer the next source where vendor semantics can still provide a narrow object lifecycle.
 
 1. **Remaining Windows diagnostics exact sub-sources**
-   - live kernel reports, setup diagnostics, CBS/application-specific diagnostic bundles need separate source audits;
+   - setup diagnostics, CBS/application-specific diagnostic bundles and Task Manager-specific dump locations need separate source audits;
    - broad `Logs`, `Prefetch`, `CbsTemp`, WER roots or diagnostic parent directories remain protected.
 2. **Docker unified UI/accounting**
    - unify already-audited build-cache/image/container/volume views without changing any decision class;

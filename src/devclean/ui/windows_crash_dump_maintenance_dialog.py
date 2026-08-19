@@ -54,8 +54,9 @@ class _WindowsCrashDumpMaintenanceDialog:
             root,
             text=(
                 "崩溃转储不是缓存，而是用于 WinDbg、驱动/应用故障排查和技术支持的诊断证据。"
-                "DevClean 只识别 Windows 当前 CrashControl / WER LocalDumps 配置能够证明的"
-                "精确转储文件，并全部放在 USER_REVIEW：不会按年龄或大小自动删除，也不发送 AI。"
+                "DevClean 只识别 Windows 当前 CrashControl、LiveKernelReports / WER LocalDumps "
+                "配置能够证明的精确转储文件，并全部放在 USER_REVIEW：不会按年龄或大小自动删除，"
+                "也不发送 AI。"
             ),
             wraplength=1080,
             justify=tk.LEFT,
@@ -67,10 +68,11 @@ class _WindowsCrashDumpMaintenanceDialog:
             info,
             text=(
                 "内核/完整/自动转储使用 CrashControl 的精确 DumpFile；小型内核转储只检查"
-                " MinidumpDir 的直接 .dmp 文件；用户模式转储只检查已确认 LocalDumps "
-                "DumpFolder 的直接 .dmp 文件。自定义环境变量路径、网络/可移动存储、reparse、"
-                "硬链接以及嵌套任意目录都不会获得删除权限。内核转储删除要求你自己以管理员"
-                "身份启动 DevClean；程序不会自动提权。"
+                " MinidumpDir 的直接 .dmp；实时内核转储只检查精确 LiveKernelReports 根的直接"
+                " .dmp，以及一层组件目录中的直接 .dmp；用户模式转储只检查已确认 LocalDumps "
+                "DumpFolder 的直接 .dmp。网络/可移动存储、reparse、硬链接和更深嵌套目录都不会"
+                "获得删除权限。内核类转储删除要求你自己以管理员身份启动 DevClean；程序不会"
+                "自动提权。"
             ),
             wraplength=1050,
             justify=tk.LEFT,
@@ -144,7 +146,9 @@ class _WindowsCrashDumpMaintenanceDialog:
         if self._busy:
             return
         self._set_busy(True)
-        self._status.set("正在读取 CrashControl / WER LocalDumps 并验证精确文件身份…")
+        self._status.set(
+            "正在读取 CrashControl / LiveKernelReports / WER LocalDumps 并验证精确文件身份…"
+        )
 
         def work() -> None:
             try:
@@ -286,6 +290,7 @@ def _kind_label(kind: WindowsCrashDumpKind) -> str:
     return {
         WindowsCrashDumpKind.KERNEL_MEMORY: "内核/完整转储",
         WindowsCrashDumpKind.KERNEL_SMALL: "小型内核转储",
+        WindowsCrashDumpKind.KERNEL_LIVE: "实时内核转储",
         WindowsCrashDumpKind.USER_MODE: "用户模式转储",
     }[kind]
 
