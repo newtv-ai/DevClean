@@ -64,6 +64,7 @@ _FORBIDDEN_EXECUTABLES = frozenset(
         "cmd.exe",
         "wsl",
         "wsl.exe",
+        "env",
     }
 )
 _PYTHON_NAMES = frozenset({"python", "python3"})
@@ -74,8 +75,10 @@ _ALLOWED_LINUX_ENV_OVERRIDES = frozenset(
         "GOCACHE",
         "GOCACHEPROG",
         "GOMODCACHE",
+        "GOFLAGS",
     }
 )
+_EMPTY_ONLY_LINUX_ENV_OVERRIDES = frozenset({"GOCACHEPROG", "GOFLAGS"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,9 +133,9 @@ def run_wsl_exec_with_env(
 
     The wrapper uses POSIX ``env NAME=value ... tool argv...`` inside the exact
     selected distribution. Both the nested executable and its argv are validated
-    by the same boundary as :func:`run_wsl_exec`. Environment names are also
-    allowlisted so callers cannot alter loader/search-path behavior through this
-    helper.
+    by the same boundary as :func:`run_wsl_exec`. Environment names and the few
+    control values are constrained so callers cannot alter loader/search-path or
+    inject extra Go cleanup flags through this helper.
     """
 
     if timeout <= 0:
@@ -283,6 +286,8 @@ def _validated_linux_environment(
             raise ValueError(f"WSL Linux environment override 未审计: {name}")
         if "\x00" in value:
             raise ValueError(f"WSL Linux environment value 包含 NUL: {name}")
+        if name in _EMPTY_ONLY_LINUX_ENV_OVERRIDES and value:
+            raise ValueError(f"WSL Linux environment override 只允许空值: {name}")
         assignments.append(f"{name}={value}")
     return tuple(assignments)
 
