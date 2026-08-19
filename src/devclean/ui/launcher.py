@@ -36,6 +36,9 @@ from devclean.ui.podman_container_maintenance_dialog import (
     open_podman_container_maintenance_dialog,
 )
 from devclean.ui.podman_image_maintenance_dialog import open_podman_image_maintenance_dialog
+from devclean.ui.task_manager_live_dump_maintenance_dialog import (
+    open_task_manager_live_dump_maintenance_dialog,
+)
 from devclean.ui.unity_asset_store_maintenance_dialog import (
     open_unity_asset_store_maintenance_dialog,
 )
@@ -189,6 +192,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Windows 崩溃转储维护…",
         command=lambda: open_windows_crash_dump_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="Task Manager 实时内核转储维护…",
+        command=lambda: open_task_manager_live_dump_maintenance_dialog(root),
     )
     tools.add_separator()
     tools.add_command(
