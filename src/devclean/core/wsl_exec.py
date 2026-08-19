@@ -9,8 +9,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from devclean.core.wsl_inventory import (
-    WslDistribution,
     inspect_wsl,
+    WslDistribution,
     wsl_executable,
 )
 
