@@ -33,6 +33,7 @@ from devclean.ui.vcpkg_maintenance_dialog import open_vcpkg_maintenance_dialog
 from devclean.ui.vscode_maintenance_dialog import open_vscode_maintenance_dialog
 from devclean.ui.wsl_inventory_dialog import open_wsl_inventory_dialog
 from devclean.ui.wsl_pip_maintenance_dialog import open_wsl_pip_maintenance_dialog
+from devclean.ui.wsl_uv_maintenance_dialog import open_wsl_uv_maintenance_dialog
 
 
 def _install_tools_menu(root: tk.Tk) -> None:
@@ -127,6 +128,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="WSL pip 缓存维护…",
         command=lambda: open_wsl_pip_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="WSL uv 缓存维护…",
+        command=lambda: open_wsl_uv_maintenance_dialog(root),
     )
     menu.add_cascade(label="工具", menu=tools)
     root.configure(menu=menu)
