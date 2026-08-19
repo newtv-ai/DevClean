@@ -213,7 +213,11 @@ def test_clean_revalidates_scope_idle_and_pins_exact_gocache(
         (
             "Ubuntu",
             ("clean", "-cache"),
-            {"GOCACHE": "/home/me/.cache/go-build", "GOCACHEPROG": ""},
+            {
+                "GOCACHE": "/home/me/.cache/go-build",
+                "GOCACHEPROG": "",
+                "GOFLAGS": "",
+            },
             900,
         )
     ]
