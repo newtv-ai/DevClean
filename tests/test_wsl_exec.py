@@ -84,7 +84,10 @@ def test_wsl_exec_with_env_pins_linux_env_without_shell(
     monkeypatch.setattr(wsl_exec, "wsl_executable", lambda environment=None: "wsl-test")
     seen: list[list[str]] = []
 
-    def fake_run(command: Sequence[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    def fake_run(
+        command: Sequence[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
         del kwargs
         seen.append(list(command))
         return _completed(command, stdout=b"ok\n")
@@ -169,6 +172,17 @@ def test_wsl_exec_with_env_rejects_invalid_assignment(
         run_wsl_exec_with_env("Ubuntu", "go", (), {"BAD-NAME": "1"}, {})
     with pytest.raises(ValueError, match="NUL"):
         run_wsl_exec_with_env("Ubuntu", "go", (), {"GOCACHE": "bad\x00path"}, {})
+
+
+@pytest.mark.parametrize("name", ["PATH", "LD_PRELOAD", "GOENV"])
+def test_wsl_exec_with_env_rejects_unreviewed_environment_names(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+) -> None:
+    monkeypatch.setattr(wsl_exec, "inspect_wsl", lambda environment=None: _inventory("Ubuntu"))
+
+    with pytest.raises(ValueError, match="未审计"):
+        run_wsl_exec_with_env("Ubuntu", "go", (), {name: "value"}, {})
 
 
 def test_wsl_exec_allows_python_module_pip_only(
