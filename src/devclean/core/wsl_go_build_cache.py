@@ -100,6 +100,7 @@ def clean_wsl_go_build_cache(
         {
             "GOCACHE": fresh.cache_path,
             "GOCACHEPROG": "",
+            "GOFLAGS": "",
         },
         environment,
         timeout=900,
