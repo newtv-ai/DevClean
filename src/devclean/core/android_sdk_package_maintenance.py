@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 
@@ -439,8 +439,9 @@ def _inventory_avd_references(
     environment: Mapping[str, str] | None,
 ) -> tuple[tuple[AndroidAvdSystemReference, ...], bool, str]:
     references: list[AndroidAvdSystemReference] = []
-    errors: list[str] = []
-    for raw_content in _source_avd_content_roots(environment):
+    content_roots, discovery_errors = _strict_avd_content_roots(environment)
+    errors: list[str] = list(discovery_errors)
+    for raw_content in content_roots:
         content = Path(os.path.abspath(os.fspath(raw_content)))
         try:
             content = _ordinary_directory(content, "AVD content root")
@@ -462,11 +463,7 @@ def _inventory_avd_references(
                 resolved.extend(_resolve_system_dir_candidates(value, sdk_roots))
             if not resolved:
                 raise RuntimeError("AVD system-image 路径无法解析")
-            avd_name = (
-                values.get("avdid")
-                or values.get("avd.ini.displayname")
-                or content.stem
-            )
+            avd_name = values.get("avdid") or values.get("avd.ini.displayname") or content.stem
             references.append(
                 AndroidAvdSystemReference(
                     avd_name=avd_name,
@@ -485,6 +482,74 @@ def _inventory_avd_references(
             preview += f"; 另有 {len(errors) - 3} 个错误"
         return tuple(references), False, preview
     return tuple(references), True, ""
+
+
+def _strict_avd_content_roots(
+    environment: Mapping[str, str] | None,
+) -> tuple[tuple[Path, ...], tuple[str, ...]]:
+    """Discover AVD content roots without inheriting silent registry-read failures."""
+
+    contents = list(_source_avd_content_roots(environment))
+    errors: list[str] = []
+    for raw_registry in _source_avd_registry_roots(environment):
+        registry = Path(os.path.abspath(os.fspath(raw_registry)))
+        try:
+            try:
+                registry.lstat()
+            except FileNotFoundError:
+                continue
+            registry = _ordinary_directory(registry, "AVD registry root")
+            children = tuple(registry.iterdir())
+        except Exception as error:
+            errors.append(f"{registry}: 无法完整枚举 AVD registry: {error}")
+            continue
+
+        for child in children:
+            try:
+                if child.is_symlink() or child.is_junction():
+                    raise RuntimeError("AVD registry child 是 symlink/junction/reparse")
+                if child.is_dir() and child.name.casefold().endswith(".avd"):
+                    contents.append(_ordinary_directory(child, "AVD registry content root"))
+                    continue
+                if not (child.is_file() and child.suffix.casefold() == ".ini"):
+                    continue
+                descriptor = _ordinary_file(child, "AVD registry descriptor")
+                before = _identity(descriptor, require_directory=False)
+                values = _read_ini(descriptor)
+                after = _identity(descriptor, require_directory=False)
+                if before != after:
+                    raise RuntimeError("AVD registry descriptor 在读取期间发生变化")
+                mapped = _content_root_from_registry_ini(values, registry)
+                contents.append(mapped)
+            except Exception as error:
+                errors.append(f"{child}: 无法证明 AVD registry 条目: {error}")
+    return _unique_paths(contents), tuple(errors)
+
+
+def _content_root_from_registry_ini(values: Mapping[str, str], registry: Path) -> Path:
+    absolute = values.get("path", "").strip()
+    if absolute:
+        windows_path = PureWindowsPath(absolute)
+        native = Path(absolute)
+        if not (windows_path.is_absolute() or native.is_absolute()):
+            raise RuntimeError("AVD registry path= 不是绝对路径")
+        candidate = Path(absolute.replace("\\", os.sep).replace("/", os.sep))
+        return Path(os.path.abspath(candidate))
+
+    relative = values.get("path.rel", "").strip()
+    if not relative:
+        raise RuntimeError("AVD registry descriptor 缺少 path/path.rel")
+    windows_path = PureWindowsPath(relative)
+    native = Path(relative)
+    if windows_path.is_absolute() or native.is_absolute():
+        candidate = Path(relative.replace("\\", os.sep).replace("/", os.sep))
+        return Path(os.path.abspath(candidate))
+    parts = tuple(part for part in re.split(r"[\\/]+", relative) if part not in {"", "."})
+    if not parts:
+        raise RuntimeError("AVD registry path.rel 为空")
+    # AOSP defines path.rel relative to the Android user configuration root;
+    # the registry itself is its `avd` child.
+    return Path(os.path.abspath(registry.parent.joinpath(*parts)))
 
 
 def _resolve_system_dir_candidates(value: str, sdk_roots: tuple[Path, ...]) -> tuple[Path, ...]:
@@ -519,7 +584,7 @@ def _read_ini(path: Path) -> dict[str, str]:
     try:
         text = path.read_text(encoding="utf-8-sig", errors="strict")
     except (OSError, UnicodeError) as error:
-        raise RuntimeError(f"无法读取 AVD config.ini: {error}") from error
+        raise RuntimeError(f"无法读取 AVD ini: {error}") from error
     values: dict[str, str] = {}
     for raw_line in text.splitlines():
         line = raw_line.strip()
@@ -528,7 +593,7 @@ def _read_ini(path: Path) -> dict[str, str]:
         key, value = line.split("=", 1)
         normalized_key = key.strip().casefold()
         if normalized_key in values:
-            raise RuntimeError(f"AVD config.ini 包含重复 key: {normalized_key}")
+            raise RuntimeError(f"AVD ini 包含重复 key: {normalized_key}")
         values[normalized_key] = value.strip().strip('"').strip("'")
     return values
 
@@ -744,6 +809,10 @@ def _source_avd_content_roots(environment: Mapping[str, str] | None) -> tuple[Pa
     return _unique_paths(Path(str(path)) for path in android_avd_roots(environment).content_roots)
 
 
+def _source_avd_registry_roots(environment: Mapping[str, str] | None) -> tuple[Path, ...]:
+    return _unique_paths(Path(str(path)) for path in android_avd_roots(environment).registry_roots)
+
+
 def _strict_descendant(path: Path, root: Path) -> bool:
     try:
         common = Path(os.path.commonpath((str(root), str(path))))
@@ -752,9 +821,8 @@ def _strict_descendant(path: Path, root: Path) -> bool:
     return _normalized(common) == _normalized(root) and _normalized(path) != _normalized(root)
 
 
-def _unique_paths(paths: Sequence[Path] | object) -> tuple[Path, ...]:
-    # Accept generators without exposing a broad Iterable type to callers.
-    values = tuple(paths)  # type: ignore[arg-type]
+def _unique_paths(paths: Iterable[Path]) -> tuple[Path, ...]:
+    values: tuple[Path, ...] = tuple(paths)
     found: list[Path] = []
     seen: set[str] = set()
     for path in values:
