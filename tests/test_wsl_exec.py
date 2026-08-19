@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 import pytest
 
 import devclean.core.wsl_exec as wsl_exec
-from devclean.core.wsl_exec import run_wsl_exec
+from devclean.core.wsl_exec import run_wsl_exec, run_wsl_exec_with_env
 from devclean.core.wsl_inventory import WslDistribution, WslInventory
 
 
@@ -76,6 +76,52 @@ def test_wsl_exec_pins_exact_distro_and_uses_no_shell(
     assert "bash" not in result.command
 
 
+def test_wsl_exec_with_env_pins_linux_env_without_shell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inventories = iter([_inventory("Ubuntu"), _inventory("Ubuntu")])
+    monkeypatch.setattr(wsl_exec, "inspect_wsl", lambda environment=None: next(inventories))
+    monkeypatch.setattr(wsl_exec, "wsl_executable", lambda environment=None: "wsl-test")
+    seen: list[list[str]] = []
+
+    def fake_run(
+        command: Sequence[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        del kwargs
+        seen.append(list(command))
+        return _completed(command, stdout=b"ok\n")
+
+    monkeypatch.setattr("devclean.core.wsl_exec.subprocess.run", fake_run)
+
+    result = run_wsl_exec_with_env(
+        "ubuntu",
+        "go",
+        ("clean", "-cache"),
+        {"GOCACHE": "/home/me/.cache/go-build", "GOCACHEPROG": ""},
+        {},
+    )
+
+    assert seen == [
+        [
+            "wsl-test",
+            "--distribution",
+            "Ubuntu",
+            "--exec",
+            "env",
+            "GOCACHE=/home/me/.cache/go-build",
+            "GOCACHEPROG=",
+            "go",
+            "clean",
+            "-cache",
+        ]
+    ]
+    assert result.executable == "go"
+    assert result.arguments == ("clean", "-cache")
+    assert "sh" not in result.command
+    assert "bash" not in result.command
+
+
 def test_wsl_exec_refuses_missing_distribution(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(wsl_exec, "inspect_wsl", lambda environment=None: _inventory("Debian"))
 
@@ -106,6 +152,37 @@ def test_wsl_exec_blocks_shell_raw_delete_admin_and_unreviewed_lifecycle_tools(
 
     with pytest.raises(ValueError, match="禁止直接执行"):
         run_wsl_exec("Ubuntu", executable, (), {})
+
+
+def test_wsl_exec_with_env_cannot_wrap_forbidden_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(wsl_exec, "inspect_wsl", lambda environment=None: _inventory("Ubuntu"))
+
+    with pytest.raises(ValueError, match="禁止直接执行"):
+        run_wsl_exec_with_env("Ubuntu", "sh", ("-c", "echo unsafe"), {"A": "1"}, {})
+
+
+def test_wsl_exec_with_env_rejects_invalid_assignment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(wsl_exec, "inspect_wsl", lambda environment=None: _inventory("Ubuntu"))
+
+    with pytest.raises(ValueError, match="name"):
+        run_wsl_exec_with_env("Ubuntu", "go", (), {"BAD-NAME": "1"}, {})
+    with pytest.raises(ValueError, match="NUL"):
+        run_wsl_exec_with_env("Ubuntu", "go", (), {"GOCACHE": "bad\x00path"}, {})
+
+
+@pytest.mark.parametrize("name", ["PATH", "LD_PRELOAD", "GOENV"])
+def test_wsl_exec_with_env_rejects_unreviewed_environment_names(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+) -> None:
+    monkeypatch.setattr(wsl_exec, "inspect_wsl", lambda environment=None: _inventory("Ubuntu"))
+
+    with pytest.raises(ValueError, match="未审计"):
+        run_wsl_exec_with_env("Ubuntu", "go", (), {name: "value"}, {})
 
 
 def test_wsl_exec_allows_python_module_pip_only(
