@@ -62,7 +62,11 @@ def local_appdata_path() -> Path:
     if init_result in {_S_OK, _S_FALSE}:
         initialized = True
     elif init_result != _RPC_E_CHANGED_MODE:
-        raise RuntimeError(f"CoInitializeEx failed for Known Folder lookup: 0x{init_result & 0xFFFFFFFF:08X}")
+        message = (
+            "CoInitializeEx failed for Known Folder lookup: "
+            f"0x{init_result & 0xFFFFFFFF:08X}"
+        )
+        raise RuntimeError(message)
 
     guid = _guid(_FOLDERID_LOCAL_APPDATA)
     pointer = ctypes.c_void_p()
