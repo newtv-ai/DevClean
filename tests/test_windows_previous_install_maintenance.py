@@ -205,7 +205,7 @@ def test_cleanup_does_not_report_success_if_windows_old_remains(
     )
     monkeypatch.setattr(previous_install, "_run_cleanup", lambda command, environment: None)
 
-    with pytest.raises(RuntimeError, match="Windows.old 仍存在"):
+    with pytest.raises(RuntimeError, match=r"Windows\.old 仍存在"):
         cleanup_previous_windows_installation(expected)
 
 
