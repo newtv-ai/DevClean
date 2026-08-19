@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Mapping
+from dataclasses import replace
 
 import pytest
 
@@ -92,7 +93,6 @@ def test_inventory_separates_exact_image_safety_classes(monkeypatch: pytest.Monk
     external_ref = _id("3")
     all_ids = {normal, read_only, manifest, parent, child, multi, ordinary_ref, external_ref}
 
-    rows = [{"Id": image_id} for image_id in all_ids]
     records = {
         normal: _record(normal),
         read_only: _record(read_only),
@@ -110,9 +110,8 @@ def test_inventory_separates_exact_image_safety_classes(monkeypatch: pytest.Monk
         "CreatedAt": "2026-08-01T00:00:00Z",
         "VirtualSize": 2048,
     }
-    rows[-1] = manifest_summary
-    # Ensure the manifest summary actually replaces the matching ID regardless of set ordering.
-    rows = [row for row in rows if row.get("Id") != manifest] + [manifest_summary]
+    rows = [{"Id": image_id} for image_id in all_ids if image_id != manifest]
+    rows.append(manifest_summary)
 
     monkeypatch.setattr(images, "inspect_podman_machine_target", lambda environment=None: target)
     monkeypatch.setattr(images, "_image_list_rows", lambda target, environment: rows)
@@ -326,12 +325,7 @@ def test_remove_refuses_reviewed_target_change(monkeypatch: pytest.MonkeyPatch) 
 def test_remove_refuses_image_identity_change(monkeypatch: pytest.MonkeyPatch) -> None:
     target = _target()
     expected = _entry()
-    changed = PodmanImageEntry(
-        **{
-            **expected.__dict__,
-            "repo_tags": ("docker.io/library/demo:changed",),
-        }
-    )
+    changed = replace(expected, repo_tags=("docker.io/library/demo:changed",))
     inventories = iter(
         (
             PodmanImageInventory(target, (expected,), True, "", "before"),
