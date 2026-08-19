@@ -6,6 +6,9 @@ import sys
 import tkinter as tk
 from collections.abc import Sequence
 
+from devclean.ui.android_sdk_package_maintenance_dialog import (
+    open_android_sdk_package_maintenance_dialog,
+)
 from devclean.ui.app import DevCleanWindow
 from devclean.ui.bazel_maintenance_dialog import open_bazel_maintenance_dialog
 from devclean.ui.cargo_project_maintenance_dialog import open_cargo_project_maintenance_dialog
@@ -135,6 +138,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Meson 构建目录维护…",
         command=lambda: open_meson_project_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="Android SDK Package 维护…",
+        command=lambda: open_android_sdk_package_maintenance_dialog(root),
     )
     tools.add_command(
         label="Podman 已停止容器维护…",

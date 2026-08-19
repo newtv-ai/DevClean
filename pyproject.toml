@@ -37,10 +37,13 @@ target-version = "py313"
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
+"src/devclean/core/android_sdk_package_maintenance.py" = ["E501"]
 "src/devclean/core/podman_image_maintenance.py" = ["E501"]
+"src/devclean/ui/android_sdk_package_maintenance_dialog.py" = ["E501"]
 "src/devclean/ui/codex_history_dialog.py" = ["E501", "RUF100"]
 "src/devclean/ui/podman_container_maintenance_dialog.py" = ["E501"]
 "src/devclean/ui/podman_image_maintenance_dialog.py" = ["E501"]
+"tests/test_android_sdk_package_maintenance.py" = ["E501", "RUF001"]
 "tests/test_codex_history.py" = ["E501"]
 "tests/test_podman_container_maintenance.py" = ["E501"]
 "tests/test_podman_image_maintenance.py" = ["E501"]
