@@ -16,6 +16,7 @@ from devclean.core.podman_container_maintenance import (
 )
 
 _ENV = {"DEVCLEAN_TEST_WINDOWS": "1", "DEVCLEAN_PODMAN_EXE": "podman.exe"}
+_SAFE_TEST_STATUSES = frozenset({"configured", "created", "exited", "stopped"})
 
 
 def _completed(stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess[str]:
@@ -43,7 +44,13 @@ def _container(
     pod_id: str = "",
     is_infra: bool = False,
 ) -> PodmanContainerEntry:
-    executable = not running and not paused and not pod_id and not is_infra and status != "unknown"
+    executable = (
+        status in _SAFE_TEST_STATUSES
+        and not running
+        and not paused
+        and not pod_id
+        and not is_infra
+    )
     return PodmanContainerEntry(
         container_id=container_id,
         name="demo",
@@ -222,6 +229,30 @@ def test_container_entry_protects_running_paused_pod_and_infra() -> None:
     assert not paused.executable
     assert not pod_member.executable
     assert not infra.executable
+
+
+def test_container_entry_fails_closed_on_transitional_or_unrecognized_status() -> None:
+    base = {
+        "Id": "a" * 64,
+        "Name": "demo",
+        "Image": "b" * 64,
+        "ImageName": "alpine:latest",
+        "Created": "2026-08-01T00:00:00Z",
+        "Mounts": [],
+    }
+
+    for status in ("stopping", "removing", "initialized", "mystery"):
+        entry = podman._container_entry(
+            {**base, "State": {"Status": status, "Running": False, "Paused": False}}
+        )
+        assert not entry.executable
+        assert "白名单" in entry.reason
+
+    for status in ("configured", "created", "exited", "stopped"):
+        entry = podman._container_entry(
+            {**base, "State": {"Status": status, "Running": False, "Paused": False}}
+        )
+        assert entry.executable
 
 
 def test_inspect_pins_exact_connection_and_collects_vendor_df(
