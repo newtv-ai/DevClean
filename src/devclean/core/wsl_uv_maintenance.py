@@ -8,6 +8,7 @@ from pathlib import PurePosixPath
 
 from devclean.core.wsl_exec import WslExecResult, run_wsl_exec
 from devclean.core.wsl_inventory import WslDistribution, inspect_wsl
+from devclean.core.wsl_path_scope import require_wsl_root_filesystem_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +66,11 @@ def prune_wsl_uv_cache(
     if _inventory_identity(fresh) != _inventory_identity(expected):
         raise RuntimeError("WSL uv identity/cache path changed before prune; please inspect again")
 
+    require_wsl_root_filesystem_path(
+        fresh.distribution,
+        fresh.cache_path,
+        environment,
+    )
     result = run_wsl_exec(
         fresh.distribution,
         "uv",
