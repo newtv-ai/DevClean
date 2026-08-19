@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 _BATCH_SIZE = 40
 _ALLOWED_VM_TYPES = frozenset({"wsl", "hyperv"})
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_SAFE_REMOVAL_STATUSES = frozenset({"configured", "created", "exited", "stopped"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,17 +303,21 @@ def _container_entry(payload: dict[str, object]) -> PodmanContainerEntry:
     rootfs_size = _optional_nonnegative_int(payload.get("SizeRootFs", 0))
     volume_names = _volume_names(payload.get("Mounts"))
 
-    executable = True
-    reason = "container 已停止；writable layer 可能包含唯一用户状态，仅由用户决定是否删除"
+    executable = status in _SAFE_REMOVAL_STATUSES
+    reason = (
+        "container 已处于明确终止状态；writable layer 可能包含唯一用户状态，仅由用户决定是否删除"
+        if executable
+        else f"container 状态 {status!r} 不在审计过的终止状态白名单内；不允许删除"
+    )
     if running:
         executable = False
         reason = "container 当前正在运行；不允许删除"
     elif paused:
         executable = False
         reason = "container 当前处于 paused 状态；不允许删除"
-    elif status in {"running", "paused", "unknown"}:
+    elif status not in _SAFE_REMOVAL_STATUSES:
         executable = False
-        reason = f"container 状态 {status!r} 不允许删除"
+        reason = f"container 状态 {status!r} 不在审计过的终止状态白名单内；不允许删除"
     elif is_infra_raw:
         executable = False
         reason = "Pod infra container 属于 pod 生命周期；当前 lane 不删除"
