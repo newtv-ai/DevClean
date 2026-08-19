@@ -186,7 +186,7 @@ def is_process_elevated() -> bool:
     if not _WINDOWS:
         return False
     try:
-        shell32 = ctypes.windll.shell32  # type: ignore[attr-defined]
+        shell32 = ctypes.windll.shell32
         return bool(shell32.IsUserAnAdmin())
     except (AttributeError, OSError):
         return False
