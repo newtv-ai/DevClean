@@ -101,7 +101,7 @@ def test_inventory_rejects_non_absolute_or_root_cache_path(
             inventory_wsl_uv_cache("Ubuntu", {})
 
 
-def test_prune_pins_exact_cache_and_uses_no_force_or_ci(
+def test_prune_pins_exact_rootfs_cache_and_uses_no_force_or_ci(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     inventories = iter(
@@ -114,6 +114,12 @@ def test_prune_pins_exact_cache_and_uses_no_force_or_ci(
         wsl_uv,
         "inventory_wsl_uv_cache",
         lambda distribution, environment=None: next(inventories),
+    )
+    scope_calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        wsl_uv,
+        "require_wsl_root_filesystem_path",
+        lambda distribution, path, environment=None: scope_calls.append((distribution, path)),
     )
     seen: list[tuple[str, tuple[str, ...], int]] = []
 
@@ -144,6 +150,7 @@ def test_prune_pins_exact_cache_and_uses_no_force_or_ci(
 
     result = prune_wsl_uv_cache(expected, {})
 
+    assert scope_calls == [("Ubuntu", "/home/me/.cache/uv")]
     assert seen == [
         (
             "uv",
@@ -156,6 +163,41 @@ def test_prune_pins_exact_cache_and_uses_no_force_or_ci(
     assert "--ci" not in command_text
     assert "cache clean" not in command_text
     assert result.output.startswith("Removed 42 files")
+
+
+def test_prune_refuses_non_root_filesystem_before_vendor_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inventory = WslUvCacheInventory(
+        "Ubuntu",
+        True,
+        "uv 0.9.0",
+        "/mnt/share/uv-cache",
+    )
+    monkeypatch.setattr(
+        wsl_uv,
+        "inventory_wsl_uv_cache",
+        lambda distribution, environment=None: inventory,
+    )
+    monkeypatch.setattr(
+        wsl_uv,
+        "require_wsl_root_filesystem_path",
+        lambda distribution, path, environment=None: (_ for _ in ()).throw(
+            RuntimeError("mounted filesystem")
+        ),
+    )
+    called = False
+
+    def unexpected_exec(*args: object, **kwargs: object) -> WslExecResult:
+        nonlocal called
+        called = True
+        raise AssertionError("vendor mutation should not run")
+
+    monkeypatch.setattr(wsl_uv, "run_wsl_exec", unexpected_exec)
+
+    with pytest.raises(RuntimeError, match="mounted filesystem"):
+        prune_wsl_uv_cache(inventory, {})
+    assert not called
 
 
 def test_prune_refuses_identity_change_before_mutation(
@@ -203,6 +245,11 @@ def test_prune_refuses_cache_change_after_vendor_success(
         wsl_uv,
         "inventory_wsl_uv_cache",
         lambda distribution, environment=None: next(inventories),
+    )
+    monkeypatch.setattr(
+        wsl_uv,
+        "require_wsl_root_filesystem_path",
+        lambda distribution, path, environment=None: None,
     )
     monkeypatch.setattr(
         wsl_uv,
