@@ -7,10 +7,14 @@ from __future__ import annotations
 import queue
 import threading
 import tkinter as tk
+from collections.abc import Callable
 from dataclasses import dataclass
 from tkinter import messagebox, ttk
 
-from devclean.core.docker_buildx_maintenance import BuildxCacheInventory
+from devclean.core.docker_buildx_maintenance import (
+    BuildxCacheInventory,
+    BuildxPruneResult,
+)
 from devclean.core.docker_container_maintenance import DockerContainerEntry
 from devclean.core.docker_image_maintenance import DockerImageEntry
 from devclean.core.docker_unified_maintenance import (
@@ -454,7 +458,7 @@ class _DockerUnifiedMaintenanceDialog:
             "DevClean-Docker-container-remove",
         )
 
-    def _run_action(self, status: str, work, thread_name: str) -> None:  # type: ignore[no-untyped-def]
+    def _run_action(self, status: str, work: Callable[[], str], thread_name: str) -> None:
         if self._busy:
             return
         self._set_busy(True)
@@ -462,7 +466,7 @@ class _DockerUnifiedMaintenanceDialog:
 
         def runner() -> None:
             try:
-                message = str(work())
+                message = work()
             except Exception as error:
                 self._events.put(_ActionEvent(None, str(error)))
             else:
@@ -532,7 +536,7 @@ class _DockerUnifiedMaintenanceDialog:
                 values=(row.kind, row.total, row.active, row.size, row.reclaimable),
             )
 
-        cache_by_name = {entry.builder.name: entry for entry in inventory.buildx_cache}
+        cache_by_name = {cache_entry.builder.name: cache_entry for cache_entry in inventory.buildx_cache}
         for index, builder in enumerate(inventory.builders):
             cache = cache_by_name.get(builder.name)
             nodes = ", ".join(f"{node.name}@{node.endpoint}" for node in builder.nodes) or "—"
@@ -559,39 +563,60 @@ class _DockerUnifiedMaintenanceDialog:
                 values=(builder.name, builder.driver, nodes, aged, records, decision),
             )
 
-        for entry in inventory.images.images:
-            label = entry.repo_tags[0] if entry.repo_tags else entry.image_id[:20]
-            decision = "USER_REVIEW" if entry.executable else f"保护：{entry.reason}"
+        for image_entry in inventory.images.images:
+            label = image_entry.repo_tags[0] if image_entry.repo_tags else image_entry.image_id[:20]
+            decision = (
+                "USER_REVIEW" if image_entry.executable else f"保护：{image_entry.reason}"
+            )
             self._image_tree.insert(
                 "",
                 tk.END,
-                iid=entry.image_id,
-                values=(label, _format_bytes(entry.logical_size), len(entry.container_ids), decision),
+                iid=image_entry.image_id,
+                values=(
+                    label,
+                    _format_bytes(image_entry.logical_size),
+                    len(image_entry.container_ids),
+                    decision,
+                ),
             )
 
-        for entry in inventory.containers.containers:
-            decision = "USER_REVIEW" if entry.executable else f"保护：{entry.reason}"
-            volumes = ", ".join(entry.volume_names) if entry.volume_names else "—"
+        for container_entry in inventory.containers.containers:
+            decision = (
+                "USER_REVIEW"
+                if container_entry.executable
+                else f"保护：{container_entry.reason}"
+            )
+            volumes = (
+                ", ".join(container_entry.volume_names)
+                if container_entry.volume_names
+                else "—"
+            )
             self._container_tree.insert(
                 "",
                 tk.END,
-                iid=entry.container_id,
+                iid=container_entry.container_id,
                 values=(
-                    entry.name,
-                    entry.status,
-                    _format_bytes(entry.writable_size),
-                    _format_bytes(entry.rootfs_size),
+                    container_entry.name,
+                    container_entry.status,
+                    _format_bytes(container_entry.writable_size),
+                    _format_bytes(container_entry.rootfs_size),
                     volumes,
                     decision,
                 ),
             )
 
-        for index, entry in enumerate(inventory.volumes.volumes):
+        for index, volume_entry in enumerate(inventory.volumes.volumes):
             self._volume_tree.insert(
                 "",
                 tk.END,
                 iid=f"volume-{index}",
-                values=(entry.name, entry.driver, entry.scope or "—", len(entry.container_ids), entry.reason),
+                values=(
+                    volume_entry.name,
+                    volume_entry.driver,
+                    volume_entry.scope or "—",
+                    len(volume_entry.container_ids),
+                    volume_entry.reason,
+                ),
             )
 
         buildx_note = f"；Buildx 检查失败：{inventory.buildx_error}" if inventory.buildx_error else ""
@@ -605,7 +630,7 @@ class _DockerUnifiedMaintenanceDialog:
         self._update_action_buttons()
 
 
-def _buildx_action_message(result) -> str:  # type: ignore[no-untyped-def]
+def _buildx_action_message(result: BuildxPruneResult) -> str:
     return (
         f"Buildx builder {result.builder.name} 清理完成；"
         f"观察到 aged reclaimable 从 {_format_bytes(result.before_reclaimable_bytes)} "
