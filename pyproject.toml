@@ -38,7 +38,9 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/devclean/ui/codex_history_dialog.py" = ["E501", "RUF100"]
+"src/devclean/ui/podman_container_maintenance_dialog.py" = ["E501"]
 "tests/test_codex_history.py" = ["E501"]
+"tests/test_podman_container_maintenance.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.13"
