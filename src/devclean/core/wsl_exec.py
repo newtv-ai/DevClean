@@ -9,7 +9,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
-from devclean.core.wsl_inventory import WslDistribution, inspect_wsl, wsl_executable
+from devclean.core.wsl_inventory import (
+    WslDistribution,
+    inspect_wsl,
+    wsl_executable,
+)
 
 
 _FORBIDDEN_EXECUTABLES = frozenset(
@@ -187,7 +191,8 @@ def _validate_arguments(tool: str, arguments: Sequence[str]) -> tuple[str, ...]:
     argv = tuple(result)
 
     python_family = tool in _PYTHON_NAMES or (
-        tool.startswith("python3.") and tool.removeprefix("python3.").replace(".", "").isdigit()
+        tool.startswith("python3.")
+        and tool.removeprefix("python3.").replace(".", "").isdigit()
     )
     if python_family:
         if len(argv) < 2 or argv[0] != "-m" or argv[1] not in _ALLOWED_PYTHON_MODULES:
