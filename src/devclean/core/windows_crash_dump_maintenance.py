@@ -515,6 +515,8 @@ def _ordinary_absolute_local_path(value: str) -> Path | None:
 
 
 def _crash_mode_label(mode: int | None, filter_pages: int | None) -> str:
+    if mode is None:
+        return "default/unspecified"
     if mode == 0:
         return "disabled"
     if mode == 1 and filter_pages == 1:
@@ -524,7 +526,7 @@ def _crash_mode_label(mode: int | None, filter_pages: int | None) -> str:
         2: "kernel",
         3: "small",
         7: "automatic",
-    }.get(mode, "unknown" if mode is not None else "default/unspecified")
+    }.get(mode, "unknown")
 
 
 def _root_boundary(path: Path) -> ExactRootBoundary:
