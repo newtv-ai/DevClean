@@ -49,7 +49,7 @@ _SELECTOR_PREFIXES = (
 )
 _SELECTOR_RE = re.compile(
     rf"^(?:{'|'.join(re.escape(item) for item in _SELECTOR_PREFIXES)})"
-    r"\d{4}\.\d+(?:\.\d+)?$",
+    r"(?P<version>\d{4}\.\d+(?:\.\d+)?)$",
     re.IGNORECASE,
 )
 
@@ -116,7 +116,7 @@ def inventory_jetbrains_expired_system_directories(
     inventories: list[JetBrainsLeftoverInventory] = []
     for config_root in children:
         selector = config_root.name
-        if _SELECTOR_RE.fullmatch(selector) is None:
+        if not _supported_selector(selector):
             continue
         system_root = system_parent / selector
         if not system_root.is_dir():
@@ -201,8 +201,8 @@ def _inspect_selector(
     *,
     current_ns: int,
 ) -> JetBrainsLeftoverInventory:
-    if _SELECTOR_RE.fullmatch(selector) is None:
-        raise ValueError(f"不是受审计的 JetBrains 产品版本目录: {selector}")
+    if not _supported_selector(selector):
+        raise ValueError(f"不是受审计的现代 JetBrains 产品版本目录: {selector}")
 
     config = _ordinary_resolved_directory(config_root, "JetBrains 配置目录")
     system = _ordinary_resolved_directory(system_root, "JetBrains system 目录")
@@ -253,6 +253,21 @@ def _inspect_selector(
         cleanup_supported=supported,
         reason=reason,
     )
+
+
+def _supported_selector(selector: str) -> bool:
+    """Accept only selectors using JetBrains' modern 2020.1+ Windows default roots."""
+
+    match = _SELECTOR_RE.fullmatch(selector)
+    if match is None:
+        return False
+    version = match.group("version").split(".")
+    try:
+        major = int(version[0])
+        minor = int(version[1])
+    except (IndexError, ValueError):
+        return False
+    return (major, minor) >= (2020, 1)
 
 
 def _tree_stats(root: Path) -> JetBrainsTreeStats:
