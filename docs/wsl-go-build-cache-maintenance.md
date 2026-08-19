@@ -65,13 +65,17 @@ Immediately before mutation DevClean:
    Linux environment overrides:
 
 ```text
-env GOCACHE=<exact-path> GOCACHEPROG= go clean -cache
+env GOCACHE=<exact-path> GOCACHEPROG= GOFLAGS= go clean -cache
 ```
 
+`GOFLAGS` is explicitly forced empty. The Go command supports default command-line
+flags through `GOFLAGS`; allowing inherited clean flags here could unintentionally
+widen an audited `-cache` operation to other clean lanes such as `-modcache`.
+
 The environment wrapper validates the nested executable and argv through the
-same WSL denylist. Environment-variable names are also allowlisted; generic
+same WSL denylist. Environment-variable names are allowlisted; generic
 loader/search-path variables such as `PATH` or `LD_PRELOAD` cannot be supplied
-through this helper.
+through this helper. `GOCACHEPROG` and `GOFLAGS` are empty-only overrides.
 
 Afterward DevClean re-inventories Go and refuses to claim a confirmed result if
 the Go/cache identity changed.
