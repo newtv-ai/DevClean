@@ -381,8 +381,8 @@ __all__ = [
     "PreviousInstallInventory",
     "WindowsDirectoryIdentity",
     "WindowsFileIdentity",
-    "cleanup_previous_windows_installation",
     "cleanmgr_executable",
+    "cleanup_previous_windows_installation",
     "inventory_previous_windows_installation",
     "windows_setup_or_cleanup_activity_running",
 ]
