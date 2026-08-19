@@ -48,7 +48,7 @@ These sources have dedicated vendor/application-aware semantics rather than broa
 | pip cache | vendor-supported cache inventory and purge with authoritative cache-path validation |
 | pnpm store | vendor garbage collection rather than whole-store deletion |
 | uv cache | vendor garbage collection |
-| Go caches | vendor commands for build/module/test-cache semantics |
+| Go caches | vendor commands for build/module cache semantics with deterministic build-cache and USER_REVIEW module-cache lanes |
 | Conda caches | vendor cleanup with packages/environments semantically separated |
 | Conan 2 cache | `conan cache clean`; source/build/download/temp cleanup without deleting recipes/package artifacts/config/remotes |
 | Git object storage | `git maintenance run --auto` behind exact worktree/object-store/alternate-storage checks |
@@ -56,6 +56,7 @@ These sources have dedicated vendor/application-aware semantics rather than broa
 | Unreal Engine DDC | project/vendor-aware DDC maintenance; no raw recursive deletion of Zen/custom DDC trees |
 | Bazel workspace output | exact workspace/output-base discovery; ordinary clean and user-confirmed expunge separated |
 | Cargo workspace target | exact `cargo metadata` workspace/target discovery; full vendor clean remains USER_REVIEW |
+| Meson configured build tree | exact source/build binding through Meson introspection; whole verified build tree USER_REVIEW with handle-bound deletion |
 | Unity project `Library` | USER_REVIEW at exact project boundary with Editor/process/identity guards |
 | Unity Asset Store packages | USER_REVIEW per exact `.unitypackage`; no whole-cache deletion |
 | Unity UPM legacy packages | USER_REVIEW only for the deprecated subtree; current registry DB remains Unity-managed |
@@ -64,6 +65,14 @@ These sources have dedicated vendor/application-aware semantics rather than broa
 | Docker classic builder cache | vendor-owned builder prune hardened to source-verified local daemon only |
 | Docker Buildx cache | exact local builder identity, aged reclaimable inventory, conservative vendor prune, never `--all` |
 | Docker images | exact per-image USER_REVIEW; container references and multi-tag cases protected; exact no-force/no-parent-prune removal |
+| Docker stopped containers | exact stopped-container USER_REVIEW; no force and attached volumes preserved |
+| Docker volumes | exact read-only inventory only; all volumes REPORT_ONLY because they are persistent data |
+| WSL distribution inventory | exact registered/running distro inventory only; distro/rootfs/VHD lifecycle remains protected |
+| WSL pip cache | exact distro + vendor `pip cache` operation behind WSL root-filesystem locality proof |
+| WSL uv cache | exact distro + vendor `uv cache prune` behind WSL root-filesystem locality proof |
+| WSL pnpm store | exact distro/store identity + vendor `pnpm store prune` behind WSL root-filesystem locality proof |
+| WSL Go build cache | exact distro/GOCACHE + constrained vendor clean; deterministic candidate |
+| WSL Go module cache | exact distro/GOMODCACHE + constrained vendor clean; USER_REVIEW |
 
 ## Docker boundary now established
 
@@ -71,11 +80,11 @@ Docker is deliberately split into semantic lanes. DevClean must never collapse t
 
 ### Local daemon authority
 
-All Docker mutation must first resolve the effective Docker target through Docker's context/host semantics and prove that the operation targets the local machine. Remote SSH/TCP/ambiguous contexts are inspectable but non-executable. DevClean never switches the user's Docker context automatically.
+All Docker mutation first resolves the effective Docker target through Docker's context/host semantics and proves that the operation targets the local machine. Remote SSH/TCP/ambiguous contexts are inspectable but non-executable. DevClean never switches the user's Docker context automatically.
 
 ### Build cache
 
-Classic builder and Buildx cache are generated acceleration state and use Docker/Buildx vendor maintenance. Buildx is scoped to one exact local builder; current implementation verifies builder/driver/node endpoints, counts only vendor-reported reclaimable old records, enforces a retention floor, revalidates before prune, and never adds `--all`.
+Classic builder and Buildx cache are generated acceleration state and use Docker/Buildx vendor maintenance. Buildx is scoped to one exact local builder; the implementation verifies builder/driver/node endpoints, counts only vendor-reported reclaimable old records, enforces a retention floor, revalidates before prune, and never adds `--all`.
 
 ### Images
 
@@ -83,43 +92,62 @@ Images are not automatically disposable merely because they are dangling, old, o
 
 ### Stopped containers
 
-Stopped containers are USER_REVIEW because their writable layers may contain unique state. The implementation is being revalidated on the image-enabled main branch. It removes only one exact stopped container, never uses force, and never removes attached volumes as a side effect.
+Stopped containers are USER_REVIEW because their writable layers may contain unique state. DevClean removes only one exact freshly revalidated stopped container, never uses force, and never removes attached volumes as a side effect.
 
 ### Volumes
 
-Volumes are persistent data. The initial lane is strictly REPORT_ONLY, including currently-unreferenced volumes. DevClean may explain exact current container references, driver/scope/metadata, but does not infer deletion safety from age, name, size, or lack of references. No `volume rm`, `volume prune`, or system prune authority is granted.
+Volumes are persistent data. The implemented lane is strictly REPORT_ONLY, including currently-unreferenced volumes. DevClean may explain exact current container references, driver/scope/metadata, but does not infer deletion safety from age, name, size, or lack of references. No `volume rm`, `volume prune`, or system prune authority is granted.
+
+### Follow-up
+
+A future Docker UI/accounting pass may unify the already-audited object lanes into one clearly separated dialog, but it must preserve the semantic divisions above and must not expose a broad system-prune shortcut.
 
 ## WSL boundary now established
 
 A WSL distribution is persistent state. Its Linux filesystem/VHD is not a cache object.
 
-The source audit establishes:
+The source and implementation sequence now establishes:
 
-- exact distro identity and state must come from WSL itself;
+- exact distro identity and running state come from WSL itself;
 - `wsl --unregister` is destructive lifecycle administration, never cleanup;
 - raw `ext4.vhdx` deletion/truncation/path guessing is prohibited;
 - logical Linux free space is distinct from physical Windows host VHD size;
 - Docker Desktop WSL disks are not targets of the WSL lane;
-- in-distro developer cleanup should use each Linux tool's own audited command through an exact WSL execution boundary.
-
-The read-only distro inventory is in validation. It uses WSL's own registered/running queries, exposes no lifecycle mutation, and is wired to a read-only desktop overview.
+- the shared WSL execution boundary pins one exact registered distro and argv-only `--exec`, with no shell command strings or automatic root/sudo/su escalation;
+- vendor-owned cache paths must separately pass the selected distro root-filesystem device-identity proof before mutation;
+- paths redirected to `/mnt/c`, another mount, network/removable storage, or otherwise non-rootfs storage remain reportable but non-executable;
+- pip, uv, pnpm, Go build cache and Go module cache have now been implemented one-by-one on that boundary.
 
 ### Sparse VHD safety status
 
-Current upstream WSL safety signals are not strong enough for DevClean to expose sparse conversion as a mutation. The lane is REPORT_ONLY for now. DevClean must never append or normalize away an `--allow-unsafe` override, must not auto-edit experimental sparse settings, and must not fall back to raw VHD/registry/package-path workarounds.
+Current upstream WSL safety signals are not strong enough for DevClean to expose sparse conversion as a mutation. The lane is REPORT_ONLY. DevClean must never append or normalize away an `--allow-unsafe` override, must not auto-edit experimental sparse settings, and must not fall back to raw VHD/registry/package-path workarounds.
 
-### WSL tool adapter direction
+### Physical VHD reclaim
 
-The next safe WSL expansion is a narrow non-shell adapter:
+In-distro cleanup can release logical Linux filesystem space without reducing the Windows VHD file by the same amount. DevClean makes no physical-host reclaim promise. A future VHD compaction lane needs an exact distro-to-VHD identity, a supported offline vendor procedure across supported installation/import variants, and verifiable pre/post state before it can be executable.
 
-- exact distro selected with WSL's distribution argument;
-- tool and arguments passed as separate argv through WSL exec, not dynamically constructed `sh -c`/`bash -c` text;
-- no arbitrary command UI or AI-built commands;
-- no automatic root/sudo/su escalation;
-- Linux-native authoritative tool paths/configuration revalidated inside the same distro;
-- logical Linux bytes reported separately from Windows physical reclaim.
+## Project build-system audit sequence
 
-Initial candidates are the already-audited narrow vendor cache operations, beginning with pip, then uv/pnpm/Go one-by-one. Their Windows path/process implementations are not reused blindly; only the semantic vendor contract is reused.
+Project build outputs are now treated as **build-system authority problems**, not as a reason to add generalized `build` / `out` / `target` / `bin` / `obj` directory rules.
+
+Current conclusions:
+
+| Build system | Current conclusion |
+| --- | --- |
+| Bazel workspace output | executable vendor-owned lane; ordinary clean deterministic, expunge USER_REVIEW |
+| Cargo workspace `target_directory` | exact metadata-backed USER_REVIEW vendor clean when target is local and workspace-contained |
+| Cargo `build.build-dir` | audit complete; execution deferred pending stable effective-path/vendor interface |
+| Maven | audit complete; generic clean deferred because inherited/configured filesets can widen destructive scope |
+| Gradle | audit complete; generic clean deferred because task graph/Delete/custom actions can widen destructive scope |
+| CMake | audit complete; generic clean deferred because generated clean scope can be widened by supported project configuration and generator behavior |
+| .NET / MSBuild | audit complete; generic clean deferred because evaluated/imported targets and Before/AfterTargets can widen destructive scope |
+| Meson | exact configured whole build-tree removal implemented as USER_REVIEW; `meson compile --clean` remains separately unaudited backend behavior |
+| Ninja standalone | audit complete; generic clean deferred because graph outputs/depfiles/rspfiles/dyndeps are not directory-bounded and no complete machine-readable destructive manifest is exposed |
+| GNU Make | audit complete; generic clean deferred because `clean` is arbitrary project-defined recipe execution and dry-run is not a guaranteed read-only scope probe |
+| GNU Automake | audit complete; generic clean-family targets deferred because clean-file variables and `*-local` recipes can widen behavior |
+| SCons | audit complete; generic clean deferred because graph discovery executes SConstruct/SConscript Python and `Clean()` can add project-defined extra paths |
+
+A backend never inherits broader authority than the higher-level generator that produced it. For example, CMake-generated Ninja/Make cannot use the lower-level backend to bypass the CMake audit result, while Meson uses its separately proved whole configured build-tree lifecycle rather than generic Ninja clean.
 
 ## Completed audits intentionally kept non-executable
 
@@ -131,6 +159,12 @@ These are completed safety decisions, not missing coverage:
 | Bazel `--disk_cache` | shared/configurable vendor-managed state | stable effective-path + installed GC/control interface |
 | Maven project clean | clean-plugin can widen scope through inherited/configured filesets | complete effective destructive manifest before invocation |
 | Gradle project clean | clean/Delete task graph is extensible and can widen targets | supported complete task/action target proof |
+| CMake project clean | clean scope is generator/project-extensible and not bounded by a conventional build directory | stable complete exact-generator destructive manifest |
+| .NET / MSBuild project clean | evaluated/imported target graph can add arbitrary cleanup behavior | stable complete evaluated Clean destructive model with unresolved execution failing closed |
+| Ninja standalone clean | output/depfile/rspfile/dyndep paths are not directory-bounded | complete stable machine-readable Cleaner plan before mutation |
+| GNU Make clean | arbitrary recipe execution; even dry-run is not a guaranteed read-only discovery boundary | only a separately audited higher-level generator lifecycle can earn authority |
+| GNU Automake clean family | generated defaults can be widened by file variables and arbitrary `*-local` recipes | complete non-executing effective clean model with all extensions bounded |
+| SCons project clean | graph/clean discovery executes project Python; `Clean()` widens extra paths | complete non-executing clean-plan interface |
 | Cargo `build.build-dir` | intermediate state but stable effective-path discovery is insufficient | stable metadata/config query or narrow vendor clean action |
 | Ollama raw model store | downloaded user content with shared blobs/manifests | never raw-delete; use per-model vendor action |
 | Maven local repository | mixture of downloaded cache and unique local artifacts | vendor semantics that distinguish safely reclaimable remote content |
@@ -141,49 +175,39 @@ These are completed safety decisions, not missing coverage:
 
 ## Cross-cutting protections
 
-- Broad roots never inherit delete authority from names such as `cache`, `tmp`, `temp`, `build`, `target`, `.cache`, `_bazel_*`, or `ext4.vhdx`.
+- Broad roots never inherit delete authority from names such as `cache`, `tmp`, `temp`, `build`, `target`, `bin`, `obj`, `.cache`, `_bazel_*`, or `ext4.vhdx`.
 - User-downloaded models/packages/images/volumes are not silently converted into cache because they are large or redownloadable.
 - Vendor-owned GC/lifecycle is preferred over DevClean inventing a second retention/LRU model.
 - Raw shared stores/databases/VHDs remain protected when the vendor exposes a safer object-level operation.
 - AI never creates command authority, never supplies arbitrary destructive commands, and does not compensate for missing source research.
 - Physical reclaimed bytes are not equated with logical object/package/image size when layers, hardlinks, shared blobs, VHDs, or vendor accounting make them different.
+- A project-provided executable recipe/script cannot become safe merely because the target is conventionally named `clean`.
 
-## Active validation queue
+## Current high-value queue
 
-These are the current near-term lanes and should be resolved before broadening scope further:
+The previous Docker/WSL implementation queue is substantially closed. The next work should prioritize sources where the expected disk win is high and Windows/vendor semantics can provide a narrow operation.
 
-1. **Stopped Docker containers** — fresh current-main PR; exact stopped container USER_REVIEW, no force, preserve volumes.
-2. **Docker volumes** — read-only exact inventory; all volumes REPORT_ONLY.
-3. **Docker unified maintenance UI** — after the image/container/volume core lanes are all on `main`, expose Buildx, images, stopped containers, and volumes in one clearly separated Docker dialog without broad prune shortcuts.
-4. **WSL read-only inventory UI** — exact registered/running distros, no VHD path or lifecycle mutation.
-5. **WSL sparse safety follow-up** — durable REPORT_ONLY block on unsafe conversion behavior.
-6. **WSL tool execution adapter audit** — exact distro, argv-only non-shell execution, no arbitrary/root command surface; first implementation candidate pip cache.
+### Priority A — Windows-supported cleanup flows
 
-## Remaining high-value backlog
+1. **Windows component store / superseded update components**
+   - audit `DISM /Online /Cleanup-Image /AnalyzeComponentStore` as read-only vendor inventory;
+   - keep scheduled StartComponentCleanup, manual `/StartComponentCleanup`, and `/ResetBase` semantically separate because they have different rollback/uninstall effects;
+   - never raw-delete WinSxS or `SoftwareDistribution` as a shortcut.
 
-After the active queue is closed, prioritize sources where disk value is high and a narrow vendor-owned action is plausible.
+2. **Previous Windows installation (`Windows.old`)**
+   - preserve rollback semantics;
+   - use only current supported Windows cleanup surfaces;
+   - deletion before the normal retention window is USER_REVIEW, never defaulted from folder size/name.
 
-### Priority A
+3. **Windows cleanup surfaces / accounting**
+   - audit `cleanmgr`, Storage settings/Storage Sense and supported system cleanup categories without writing registry profiles blindly;
+   - separate user-content categories (Downloads/Recycle Bin) from system-generated cleanup state.
 
-1. **Windows-supported cleanup flows**
-   - Windows Update/servicing leftovers: use OS/service-aware supported maintenance, never routine raw deletion of `SoftwareDistribution\Download`;
-   - `Windows.old`: preserve rollback semantics; only supported removal after explicit USER_REVIEW;
-   - component store: audit DISM/Storage Sense/Disk Cleanup scopes separately from ordinary file cleanup.
-
-2. **Docker follow-up UI/accounting**
-   - unify already-audited object lanes;
-   - explain shared-layer accounting without pretending image logical size equals reclaim;
-   - keep networks outside storage cleanup unless a real storage value emerges.
-
-3. **WSL in-distro high-confidence vendor caches**
-   - pip first, then uv/pnpm/Go;
-   - package managers and project outputs remain separate audits.
-
-### Priority B
+### Priority B — developer storage follow-ups
 
 4. **JetBrains exact product/version children**
    - split indexes/caches/logs/system state by product/version;
-   - prefer IDE/vendor cache invalidation and documented storage semantics.
+   - prefer IDE/vendor invalidation and documented storage semantics.
 
 5. **Podman/container alternatives**
    - audit local-machine identity and split image/container/volume/build-cache semantics similarly to Docker;
@@ -191,19 +215,23 @@ After the active queue is closed, prioritize sources where disk value is high an
 
 6. **Android/Gradle follow-ups**
    - correlate AVD usage with installed system images for better USER_REVIEW explanations;
-   - Gradle mutation remains blocked until destructive task scope can be proven.
+   - Gradle project mutation remains blocked until destructive task scope can be proven.
 
-### Priority C
+7. **Docker unified UI/accounting**
+   - unify already-audited object lanes without changing their decision class;
+   - explain shared-layer accounting without pretending image logical size equals physical reclaim.
 
-7. **Windows diagnostics**
+### Priority C — narrower sources
+
+8. **Windows diagnostics**
    - WER/crash dumps are USER_REVIEW unless a narrower documented retention lane is justified;
    - Prefetch/Logs/CbsTemp remain broad protected roots until exact sub-sources are audited.
 
-8. **Generic `%USERPROFILE%\.cache` descendants**
+9. **Generic `%USERPROFILE%\.cache` descendants**
    - audit high-impact known applications individually;
    - never restore generic parent delete authority.
 
-9. **Additional local-model products**
+10. **Additional local-model products**
    - model directories remain user-selected content;
    - add exact per-model vendor actions only where supported APIs/CLIs exist.
 
@@ -219,6 +247,7 @@ DevClean should not pursue a coverage percentage by adding rules for every recog
 - parse one configuration file and pretend to reproduce a richer precedence/inheritance system;
 - silently escalate privilege;
 - build arbitrary shell commands from scanned/user/model text;
+- execute project code merely to discover whether its cleanup is safe;
 - claim reclaimed physical disk space from logical package/model/image size when the storage model does not support that claim.
 
 ## Continuation protocol
@@ -229,7 +258,9 @@ When a new session continues this project:
 2. inspect current `main` and active PR state before relying on an old branch;
 3. pick the first unfinished lane with meaningful disk value and a plausible narrow authority boundary;
 4. read current primary vendor documentation/source;
-5. either implement the narrow vendor-owned/USER_REVIEW lane with tests and full CI, or record a REPORT_ONLY/protected outcome with a concrete revisit trigger;
-6. do not merge until CI, strict typing/lint/tests, Windows artifact, and CodeQL are green.
+5. determine the semantic lane before coding;
+6. if the audit is positive, implement the narrow vendor-owned/USER_REVIEW lane **in the same work branch/PR** rather than creating a second stacked implementation PR;
+7. if the audit is negative, record the REPORT_ONLY/protected result with a concrete revisit trigger instead of adding a weak fallback rule;
+8. do not merge until lock/dependency checks, Ruff, strict typing, full tests, Windows artifact, and CodeQL are green on the final head.
 
 A well-supported decision to **not delete** is a successful audit outcome. Safety boundaries are product functionality, not missing features.
