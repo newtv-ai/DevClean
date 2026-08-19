@@ -61,7 +61,12 @@ def test_inventory_prefers_python_module_and_uses_pip_owned_surfaces(
         if arguments == ("-m", "pip", "--version"):
             return _result(distribution, executable, arguments, "pip 26.2 from /opt/pip\n")
         if arguments == ("-m", "pip", "cache", "info"):
-            return _result(distribution, executable, arguments, "Package index page cache size: 42 MB\n")
+            return _result(
+                distribution,
+                executable,
+                arguments,
+                "Package index page cache size: 42 MB\n",
+            )
         raise AssertionError(arguments)
 
     monkeypatch.setattr(wsl_pip, "run_wsl_exec", fake_exec)
@@ -119,13 +124,20 @@ def test_inventory_rejects_non_absolute_or_root_cache_path(
     monkeypatch.setattr(wsl_pip, "inspect_wsl", lambda environment=None: _wsl_inventory())
 
     for bad_path in ("relative/cache\n", "/\n"):
-        monkeypatch.setattr(
-            wsl_pip,
-            "run_wsl_exec",
-            lambda distribution, executable, arguments=(), environment=None, timeout=120, value=bad_path: (
-                _result(distribution, executable, tuple(arguments), value)
-            ),
-        )
+
+        def fake_bad_path(
+            distribution: str,
+            executable: str,
+            arguments: tuple[str, ...] = (),
+            environment: Mapping[str, str] | None = None,
+            *,
+            timeout: int = 120,
+            value: str = bad_path,
+        ) -> WslExecResult:
+            del environment, timeout
+            return _result(distribution, executable, arguments, value)
+
+        monkeypatch.setattr(wsl_pip, "run_wsl_exec", fake_bad_path)
         with pytest.raises(RuntimeError, match="unsafe/non-absolute"):
             inventory_wsl_pip_cache("Ubuntu", {})
 
