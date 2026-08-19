@@ -20,6 +20,7 @@ from devclean.platform.windows.filesystem import read_file_metadata
 from devclean.platform.windows.volumes import is_local_fixed_path
 
 _CRASH_CONTROL_KEY = r"SYSTEM\CurrentControlSet\Control\CrashControl"
+_LIVE_KERNEL_REPORTS_KEY = _CRASH_CONTROL_KEY + r"\LiveKernelReports"
 _LOCAL_DUMPS_KEY = r"SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps"
 _DEFAULT_DUMP_FILE = r"%SystemRoot%\MEMORY.DMP"
 _DEFAULT_MINIDUMP_DIR = r"%SystemRoot%\Minidump"
@@ -30,6 +31,7 @@ _WINDOWS = os.name == "nt"
 class WindowsCrashDumpKind(StrEnum):
     KERNEL_MEMORY = "kernel-memory"
     KERNEL_SMALL = "kernel-small"
+    KERNEL_LIVE = "kernel-live"
     USER_MODE = "user-mode"
 
 
@@ -245,10 +247,13 @@ def _discover_locations(
     warnings: list[str] = []
 
     crash_locations, crash_warnings = _discover_crash_control_locations(env)
+    live_locations, live_warnings = _discover_live_kernel_locations(env)
     local_locations, local_warnings = _discover_local_dump_locations(env)
     locations.extend(crash_locations)
+    locations.extend(live_locations)
     locations.extend(local_locations)
     warnings.extend(crash_warnings)
+    warnings.extend(live_warnings)
     warnings.extend(local_warnings)
 
     deduped: list[WindowsCrashDumpLocation] = []
@@ -322,6 +327,76 @@ def _discover_crash_control_locations(
     return tuple(found), tuple(warnings)
 
 
+def _discover_live_kernel_locations(
+    env: Mapping[str, str],
+) -> tuple[tuple[WindowsCrashDumpLocation, ...], tuple[str, ...]]:
+    warnings: list[str] = []
+    raw_path: str | None = None
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            _LIVE_KERNEL_REPORTS_KEY,
+            0,
+            winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
+        )
+    except FileNotFoundError:
+        key = None
+    except OSError:
+        return (), ("无法读取 CrashControl\\LiveKernelReports；不猜测实时内核转储位置",)
+
+    if key is not None:
+        try:
+            raw_path, path_ok = _optional_registry_string(key, "LiveKernelReportsPath")
+        finally:
+            winreg.CloseKey(key)
+        if not path_ok:
+            return (), ("LiveKernelReportsPath 类型异常；拒绝从不完整配置获得删除权限",)
+
+    root = _resolve_live_kernel_path(raw_path, env)
+    if root is None:
+        return (), ("LiveKernelReportsPath 不是受支持的本地 NT DOS 卷路径；拒绝猜测",)
+
+    locations: list[WindowsCrashDumpLocation] = [
+        WindowsCrashDumpLocation(
+            kind=WindowsCrashDumpKind.KERNEL_LIVE,
+            path=root,
+            direct_file=False,
+            source="CrashControl LiveKernelReportsPath（完整实时内核转储根）",
+            configured_for=("系统完整实时内核转储",),
+            requires_elevation=True,
+        )
+    ]
+
+    try:
+        with os.scandir(root) as scan:
+            for child in scan:
+                try:
+                    if not child.is_dir(follow_symlinks=False):
+                        continue
+                    metadata = read_file_metadata(Path(child.path))
+                except OSError:
+                    warnings.append(f"无法验证实时内核转储组件目录 {child.name!r}；跳过")
+                    continue
+                if not metadata.is_directory or metadata.is_reparse_point:
+                    continue
+                locations.append(
+                    WindowsCrashDumpLocation(
+                        kind=WindowsCrashDumpKind.KERNEL_LIVE,
+                        path=Path(child.path),
+                        direct_file=False,
+                        source="CrashControl LiveKernelReportsPath（组件小型转储）",
+                        configured_for=(f"实时内核转储组件 {child.name}",),
+                        requires_elevation=True,
+                    )
+                )
+    except FileNotFoundError:
+        pass
+    except OSError:
+        warnings.append("无法枚举 LiveKernelReports 组件目录；保留已确认的根级转储范围")
+
+    return tuple(locations), tuple(warnings)
+
+
 def _discover_local_dump_locations(
     env: Mapping[str, str],
 ) -> tuple[tuple[WindowsCrashDumpLocation, ...], tuple[str, ...]]:
@@ -341,10 +416,9 @@ def _discover_local_dump_locations(
     configs: list[tuple[str, str | None, bool]] = []
     try:
         global_folder, global_ok = _optional_registry_string(key, "DumpFolder")
-        global_enabled = _local_dump_settings_present(key)
-        if global_ok and global_enabled:
+        if global_ok:
             configs.append(("全局 LocalDumps", global_folder, True))
-        elif not global_ok:
+        else:
             warnings.append("全局 LocalDumps DumpFolder 类型异常；不使用该继承配置")
 
         index = 0
@@ -463,6 +537,23 @@ def _resolve_crash_control_path(raw: str, env: Mapping[str, str]) -> Path | None
     if expanded is None:
         return None
     return _ordinary_absolute_local_path(expanded)
+
+
+def _resolve_live_kernel_path(raw: str | None, env: Mapping[str, str]) -> Path | None:
+    if raw is None:
+        system_root = env.get("systemroot") or env.get("windir")
+        if not system_root:
+            return None
+        return _ordinary_absolute_local_path(str(Path(system_root) / "LiveKernelReports"))
+
+    text = raw.strip().strip('"').replace("/", "\\")
+    prefix = "\\??\\"
+    if not text.casefold().startswith(prefix.casefold()):
+        return None
+    text = text[len(prefix) :]
+    if not text or "%" in text:
+        return None
+    return _ordinary_absolute_local_path(text)
 
 
 def _resolve_local_dump_path(raw: str | None, env: Mapping[str, str]) -> Path | None:
