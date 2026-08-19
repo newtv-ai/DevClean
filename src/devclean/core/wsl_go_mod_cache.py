@@ -17,6 +17,15 @@ from devclean.core.wsl_inventory import WslDistribution, inspect_wsl
 from devclean.core.wsl_path_scope import require_wsl_root_filesystem_path
 
 _GO_COMM_RE = re.compile(r"^(?:go|gopls)$")
+_GO_MOD_CACHE_CLEAN_ARGS = (
+    "clean",
+    "-i=false",
+    "-r=false",
+    "-cache=false",
+    "-testcache=false",
+    "-modcache=true",
+    "-fuzzcache=false",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,15 +49,8 @@ def inventory_wsl_go_mod_cache(
     environment: Mapping[str, str] | None = None,
 ) -> WslGoModCacheInventory:
     """Ask Go for the exact effective GOMODCACHE in one registered distro."""
-
     distro = _exact_distribution(distribution, environment)
-    version = run_wsl_exec(
-        distro.name,
-        "go",
-        ("version",),
-        environment,
-        timeout=60,
-    )
+    version = run_wsl_exec(distro.name, "go", ("version",), environment, timeout=60)
     config = run_wsl_exec(
         distro.name,
         "go",
@@ -68,14 +70,12 @@ def clean_wsl_go_mod_cache(
     expected: WslGoModCacheInventory,
     environment: Mapping[str, str] | None = None,
 ) -> WslGoModCacheCleanResult:
-    """Run only ``go clean -modcache`` for one freshly re-confirmed cache."""
-
+    """Run one fully pinned Go module-cache clean after fresh revalidation."""
     fresh = inventory_wsl_go_mod_cache(expected.distribution, environment)
     if _inventory_identity(fresh) != _inventory_identity(expected):
         raise RuntimeError(
             "WSL Go identity/module-cache configuration changed before clean; inspect again"
         )
-
     _require_go_idle(fresh.distribution, environment)
     require_wsl_root_filesystem_path(
         fresh.distribution,
@@ -85,15 +85,11 @@ def clean_wsl_go_mod_cache(
     result = run_wsl_exec_with_env(
         fresh.distribution,
         "go",
-        ("clean", "-modcache"),
-        {
-            "GOMODCACHE": fresh.module_cache_path,
-            "GOFLAGS": "",
-        },
+        _GO_MOD_CACHE_CLEAN_ARGS,
+        {"GOMODCACHE": fresh.module_cache_path},
         environment,
         timeout=1800,
     )
-
     after = inventory_wsl_go_mod_cache(fresh.distribution, environment)
     if _inventory_identity(after) != _inventory_identity(fresh):
         raise RuntimeError(
