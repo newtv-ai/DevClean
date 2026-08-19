@@ -142,7 +142,7 @@ def test_inventory_rejects_non_absolute_or_root_cache_path(
             inventory_wsl_pip_cache("Ubuntu", {})
 
 
-def test_purge_revalidates_identity_checks_processes_and_uses_cache_purge(
+def test_purge_revalidates_identity_checks_scope_processes_and_uses_cache_purge(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     entrypoint = WslPipEntrypoint("python3", ("-m", "pip"), "pip 26.2 from /opt/pip")
@@ -156,6 +156,12 @@ def test_purge_revalidates_identity_checks_processes_and_uses_cache_purge(
         wsl_pip,
         "inventory_wsl_pip_cache",
         lambda distribution, environment=None: next(inventories),
+    )
+    scope_calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        wsl_pip,
+        "require_wsl_root_filesystem_path",
+        lambda distribution, path, environment=None: scope_calls.append((distribution, path)),
     )
     seen: list[tuple[str, tuple[str, ...]]] = []
 
@@ -186,11 +192,54 @@ def test_purge_revalidates_identity_checks_processes_and_uses_cache_purge(
 
     result = purge_wsl_pip_cache(expected, {})
 
+    assert scope_calls == [("Ubuntu", "/home/me/.cache/pip")]
     assert ("ps", ("-ww", "-eo", "comm=,args=")) in seen
     assert ("python3", ("-m", "pip", "cache", "purge")) in seen
     assert all(executable not in {"rm", "sh", "bash"} for executable, _arguments in seen)
     assert result.output.startswith("Files removed")
     assert result.after.cache_info == "after"
+
+
+def test_purge_refuses_non_root_filesystem_before_vendor_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entrypoint = WslPipEntrypoint("pip3", (), "pip 26.2 from /opt/pip")
+    inventory = WslPipCacheInventory(
+        "Ubuntu",
+        True,
+        entrypoint,
+        "/mnt/share/pip-cache",
+        "info",
+    )
+    monkeypatch.setattr(
+        wsl_pip,
+        "inventory_wsl_pip_cache",
+        lambda distribution, environment=None: inventory,
+    )
+    monkeypatch.setattr(
+        wsl_pip,
+        "_require_pip_idle",
+        lambda distribution, environment=None: None,
+    )
+    monkeypatch.setattr(
+        wsl_pip,
+        "require_wsl_root_filesystem_path",
+        lambda distribution, path, environment=None: (_ for _ in ()).throw(
+            RuntimeError("mounted filesystem")
+        ),
+    )
+    called = False
+
+    def unexpected_pip(*args: object, **kwargs: object) -> WslExecResult:
+        nonlocal called
+        called = True
+        raise AssertionError("vendor mutation should not run")
+
+    monkeypatch.setattr(wsl_pip, "_run_pip", unexpected_pip)
+
+    with pytest.raises(RuntimeError, match="mounted filesystem"):
+        purge_wsl_pip_cache(inventory, {})
+    assert not called
 
 
 @pytest.mark.parametrize(
