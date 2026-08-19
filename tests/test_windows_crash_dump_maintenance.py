@@ -76,6 +76,86 @@ def test_inventory_only_accepts_exact_dump_file_and_direct_dmp_children(
     assert "管理员" in kernel_entry.reason
 
 
+def test_live_kernel_default_root_accepts_only_root_and_one_component_level(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    live_root = tmp_path / "LiveKernelReports"
+    live_root.mkdir()
+    full_dump = live_root / "full-live.dmp"
+    full_dump.write_bytes(b"full")
+    (live_root / "notes.txt").write_text("keep", encoding="utf-8")
+
+    component = live_root / "WATCHDOG"
+    component.mkdir()
+    component_dump = component / "watchdog.dmp"
+    component_dump.write_bytes(b"component")
+    (component / "context.txt").write_text("keep", encoding="utf-8")
+
+    deeper = component / "nested"
+    deeper.mkdir()
+    (deeper / "deep.dmp").write_bytes(b"deep")
+
+    def missing_live_key(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise FileNotFoundError
+
+    monkeypatch.setattr(crash_dumps.winreg, "OpenKey", missing_live_key)
+    monkeypatch.setattr(crash_dumps, "is_local_fixed_path", lambda path: True)
+
+    locations, warnings = crash_dumps._discover_live_kernel_locations(
+        {"systemroot": str(tmp_path)}
+    )
+
+    assert not warnings
+    assert len(locations) == 2
+    assert locations[0].path == live_root
+    assert locations[0].kind is WindowsCrashDumpKind.KERNEL_LIVE
+    assert locations[0].requires_elevation
+    assert locations[1].path == component
+    assert "WATCHDOG" in locations[1].configured_for[0]
+
+    entries = tuple(
+        entry
+        for location in locations
+        for entry in crash_dumps._entries_for_location(location, elevated=True)
+    )
+    assert {entry.path for entry in entries} == {full_dump, component_dump}
+    assert all(entry.kind is WindowsCrashDumpKind.KERNEL_LIVE for entry in entries)
+    assert all(entry.deletion_supported for entry in entries)
+
+
+def test_live_kernel_dump_requires_existing_elevation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "LiveKernelReports"
+    root.mkdir()
+    dump = root / "live.dmp"
+    dump.write_bytes(b"diagnostic")
+    location = _location(
+        WindowsCrashDumpKind.KERNEL_LIVE,
+        root,
+        direct_file=False,
+        elevation=True,
+    )
+    monkeypatch.setattr(crash_dumps, "_WINDOWS", True)
+    monkeypatch.setattr(crash_dumps, "_is_process_elevated", lambda: False)
+    monkeypatch.setattr(crash_dumps, "is_local_fixed_path", lambda path: True)
+    monkeypatch.setattr(
+        crash_dumps,
+        "_discover_locations",
+        lambda environment: ((location,), ()),
+    )
+
+    inventory = inventory_windows_crash_dumps({})
+
+    assert len(inventory.entries) == 1
+    assert inventory.entries[0].kind is WindowsCrashDumpKind.KERNEL_LIVE
+    assert not inventory.entries[0].deletion_supported
+    assert "管理员" in inventory.entries[0].reason
+
+
 def test_inventory_rejects_nonlocal_or_unverifiable_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -240,6 +320,21 @@ def test_path_resolution_accepts_only_audited_variable_shapes() -> None:
     assert crash_dumps._resolve_local_dump_path(r"D:\CrashDumps", env) == Path(
         r"D:\CrashDumps"
     )
+
+
+def test_live_kernel_path_resolution_requires_documented_nt_dos_form() -> None:
+    env = {"systemroot": r"C:\Windows", "windir": r"C:\Windows"}
+
+    assert crash_dumps._resolve_live_kernel_path(None, env) == Path(
+        r"C:\Windows\LiveKernelReports"
+    )
+    assert crash_dumps._resolve_live_kernel_path(
+        r"\??\D:\LiveDumps",
+        env,
+    ) == Path(r"D:\LiveDumps")
+    assert crash_dumps._resolve_live_kernel_path(r"D:\LiveDumps", env) is None
+    assert crash_dumps._resolve_live_kernel_path(r"\Device\HarddiskVolume4\LiveDumps", env) is None
+    assert crash_dumps._resolve_live_kernel_path(r"\??\UNC\server\share\LiveDumps", env) is None
 
 
 def test_kernel_mode_labels_are_positive_whitelist() -> None:
