@@ -300,10 +300,7 @@ def test_inspect_pins_exact_connection_and_collects_vendor_df(
     assert len(inventory.containers) == 1
     assert inventory.containers[0].executable
     assert inventory.containers[0].volume_names == ("data",)
-    assert all(
-        call[1:3] == ("--connection", "podman-machine-default")
-        for call in calls
-    )
+    assert all(call[1:3] == ("--connection", "podman-machine-default") for call in calls)
 
 
 def test_remove_uses_only_exact_rm_without_force_or_volumes(
@@ -328,7 +325,7 @@ def test_remove_uses_only_exact_rm_without_force_or_volumes(
         return _completed(expected.container_id + "\n")
 
     monkeypatch.setattr(podman, "_run_podman", fake_run)
-    result = remove_podman_container(expected, _ENV)
+    result = remove_podman_container(expected, target, _ENV)
 
     assert result.command == (
         "podman.exe",
@@ -342,6 +339,30 @@ def test_remove_uses_only_exact_rm_without_force_or_volumes(
     assert "--volumes" not in flat
     assert "--all" not in flat
     assert commands == [result.command]
+
+
+def test_remove_refuses_reviewed_target_change(monkeypatch: pytest.MonkeyPatch) -> None:
+    reviewed_target = _target()
+    changed_target = PodmanMachineConnection(
+        executable="podman.exe",
+        connection_name="other-machine",
+        connection_uri="ssh://user@127.0.0.1:55222/run/user/1000/podman/podman.sock",
+        machine_name="other-machine",
+        vm_type="wsl",
+        running=True,
+        rootful=False,
+    )
+    expected = _container()
+    inventory = podman.PodmanContainerInventory(changed_target, (expected,), "before")
+    monkeypatch.setattr(podman, "inspect_podman_containers", lambda environment=None: inventory)
+    monkeypatch.setattr(
+        podman,
+        "_run_podman",
+        lambda *args, **kwargs: pytest.fail("rm must not run on a different reviewed target"),
+    )
+
+    with pytest.raises(RuntimeError, match="查看/确认的目标已不同"):
+        remove_podman_container(expected, reviewed_target, _ENV)
 
 
 def test_remove_refuses_identity_change(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -362,7 +383,7 @@ def test_remove_refuses_identity_change(monkeypatch: pytest.MonkeyPatch) -> None
     )
 
     with pytest.raises(RuntimeError, match="绑定已变化"):
-        remove_podman_container(expected, _ENV)
+        remove_podman_container(expected, target, _ENV)
 
 
 def test_remove_refuses_non_executable_container(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -372,4 +393,4 @@ def test_remove_refuses_non_executable_container(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(podman, "inspect_podman_containers", lambda environment=None: inventory)
 
     with pytest.raises(RuntimeError):
-        remove_podman_container(expected, _ENV)
+        remove_podman_container(expected, target, _ENV)
