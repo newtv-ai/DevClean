@@ -218,7 +218,7 @@ def test_get_os_uninstall_window_parses_configured_window_only(
         lambda path, label: _cleanmgr_identity(),
     )
     monkeypatch.setattr(
-        previous_install.subprocess,
+        subprocess,
         "run",
         lambda *args, **kwargs: SimpleNamespace(
             returncode=0,
@@ -244,7 +244,7 @@ def test_get_os_uninstall_window_fails_closed_on_ambiguous_output(
         lambda path, label: _cleanmgr_identity(),
     )
     monkeypatch.setattr(
-        previous_install.subprocess,
+        subprocess,
         "run",
         lambda *args, **kwargs: subprocess.CompletedProcess(
             args=[],
@@ -260,7 +260,7 @@ def test_get_os_uninstall_window_fails_closed_on_ambiguous_output(
 def test_process_snapshot_failure_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(previous_install, "_WINDOWS", True)
     monkeypatch.setattr(
-        previous_install.subprocess,
+        subprocess,
         "run",
         lambda *args, **kwargs: subprocess.CompletedProcess(
             args=[], returncode=1, stdout="", stderr="denied"
