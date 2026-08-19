@@ -7,13 +7,8 @@ import os
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import PurePosixPath
 
-from devclean.core.wsl_inventory import (
-    WslDistribution,
-    inspect_wsl,
-    wsl_executable,
-)
+from devclean.core.wsl_inventory import WslDistribution, inspect_wsl, wsl_executable
 
 
 _FORBIDDEN_EXECUTABLES = frozenset(
@@ -173,7 +168,7 @@ def _validate_executable(executable: str) -> str:
     value = executable.strip()
     if not value or "\x00" in value or "\n" in value or "\r" in value:
         raise ValueError("WSL tool executable 无效")
-    base = PurePosixPath(value.replace("\\", "/")).name.casefold()
+    base = value.replace("\\", "/").rsplit("/", 1)[-1].casefold()
     if not base:
         raise ValueError("WSL tool executable 无效")
     if base in _FORBIDDEN_EXECUTABLES or base.startswith("mkfs."):
