@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import locale
 import os
+import re
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -67,6 +68,7 @@ _FORBIDDEN_EXECUTABLES = frozenset(
 )
 _PYTHON_NAMES = frozenset({"python", "python3"})
 _ALLOWED_PYTHON_MODULES = frozenset({"pip"})
+_ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +101,64 @@ def run_wsl_exec(
     distro = _require_distribution(distribution, environment)
     tool = _validate_executable(executable)
     argv = _validate_arguments(tool, arguments)
+    return _run_validated_wsl_exec(
+        distro,
+        executable,
+        argv,
+        environment,
+        timeout=timeout,
+    )
+
+
+def run_wsl_exec_with_env(
+    distribution: str,
+    executable: str,
+    arguments: Sequence[str] = (),
+    linux_environment: Mapping[str, str] | None = None,
+    environment: Mapping[str, str] | None = None,
+    *,
+    timeout: int = 120,
+) -> WslExecResult:
+    """Run one audited tool with exact Linux environment overrides, without a shell.
+
+    The wrapper uses POSIX ``env NAME=value ... tool argv...`` inside the exact
+    selected distribution. Both the nested executable and its argv are validated
+    by the same boundary as :func:`run_wsl_exec`, so this cannot be used as a
+    bypass for blocked shells, raw deletion utilities, or scripting runtimes.
+    """
+
+    if timeout <= 0:
+        raise ValueError("WSL command timeout 必须大于 0")
+    distro = _require_distribution(distribution, environment)
+    tool = _validate_executable(executable)
+    argv = _validate_arguments(tool, arguments)
+    assignments = _validated_linux_environment(linux_environment)
+    env_argv = (*assignments, executable, *argv)
+    raw = _run_validated_wsl_exec(
+        distro,
+        "env",
+        env_argv,
+        environment,
+        timeout=timeout,
+    )
+    return WslExecResult(
+        distribution=raw.distribution,
+        executable=executable,
+        arguments=argv,
+        command=raw.command,
+        stdout=raw.stdout,
+        stderr=raw.stderr,
+    )
+
+
+def _run_validated_wsl_exec(
+    distro: WslDistribution,
+    executable: str,
+    argv: tuple[str, ...],
+    environment: Mapping[str, str] | None,
+    *,
+    timeout: int,
+) -> WslExecResult:
     wsl = wsl_executable(environment)
     command = (
         wsl,
@@ -200,6 +260,23 @@ def _validate_arguments(tool: str, arguments: Sequence[str]) -> tuple[str, ...]:
     return argv
 
 
+def _validated_linux_environment(
+    linux_environment: Mapping[str, str] | None,
+) -> tuple[str, ...]:
+    if not linux_environment:
+        return ()
+    assignments: list[str] = []
+    for raw_name, raw_value in linux_environment.items():
+        name = str(raw_name)
+        value = str(raw_value)
+        if not _ENV_NAME_RE.fullmatch(name):
+            raise ValueError(f"WSL Linux environment name 无效: {name!r}")
+        if "\x00" in value:
+            raise ValueError(f"WSL Linux environment value 包含 NUL: {name}")
+        assignments.append(f"{name}={value}")
+    return tuple(assignments)
+
+
 def _decode_output(output: bytes) -> str:
     if not output:
         return ""
@@ -211,4 +288,4 @@ def _decode_output(output: bytes) -> str:
     return output.decode("utf-8", errors="replace")
 
 
-__all__ = ["WslExecResult", "run_wsl_exec"]
+__all__ = ["WslExecResult", "run_wsl_exec", "run_wsl_exec_with_env"]
