@@ -1,7 +1,5 @@
 """Unified Docker maintenance inventory while preserving exact mutation lanes."""
 
-# ruff: noqa: RUF001
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -33,8 +31,8 @@ from devclean.core.docker_maintenance import (
     DockerBuildPruneResult,
     DockerDaemonIdentity,
     DockerStorageInventory,
-    inventory_docker_storage,
     inspect_docker_daemon_target,
+    inventory_docker_storage,
     prune_docker_build_cache,
 )
 from devclean.core.docker_volume_inventory import (
@@ -58,7 +56,6 @@ class DockerUnifiedInventory:
     buildx_cache: tuple[BuildxCacheInventory, ...]
     buildx_error: str | None
     retention_hours: int
-
 
 
 def inspect_docker_unified(
@@ -218,7 +215,11 @@ def _pinned_environment(
     target: DockerDaemonIdentity,
     environment: Mapping[str, str] | None,
 ) -> dict[str, str]:
-    pinned = {} if environment is None else {str(key): str(value) for key, value in environment.items()}
+    pinned = (
+        {}
+        if environment is None
+        else {str(key): str(value) for key, value in environment.items()}
+    )
     # Prefer an immutable endpoint binding over a mutable context name. An empty
     # DOCKER_CONTEXT deliberately masks any inherited process setting.
     pinned["DOCKER_CONTEXT"] = ""
