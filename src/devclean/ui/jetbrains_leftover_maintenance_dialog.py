@@ -8,7 +8,6 @@ import queue
 import threading
 import tkinter as tk
 from dataclasses import dataclass
-from datetime import datetime
 from tkinter import messagebox, ttk
 
 from devclean.core.jetbrains_leftover_maintenance import (
@@ -53,8 +52,8 @@ class _JetBrainsLeftoverMaintenanceDialog:
             root,
             text=(
                 "JetBrains 当前文档和源码定义了 180 天旧版本自动清理生命周期。"
-                "DevClean 只镜像这个更窄的厂商边界：默认 system 目录整棵树至少 180 天未更新，"
-                "并且没有对应的现存 IDE 安装。"
+                "DevClean 只镜像这个更窄的厂商边界：默认 system 目录整棵树至少 "
+                "180 天未更新，并且没有对应的现存 IDE 安装。"
             ),
             wraplength=920,
             justify=tk.LEFT,
@@ -65,9 +64,10 @@ class _JetBrainsLeftoverMaintenanceDialog:
         ttk.Label(
             note,
             text=(
-                "不会删除 %APPDATA% 下的 IDE 配置、用户插件，也不会处理自定义 idea.system.path。"
-                "注意：旧 system 目录本身可能包含 Local History；JetBrains 的自动过期清理同样删除"
-                "这棵旧 system 树。因此这里只对已经超过厂商 180 天期限且确认没有现存安装的版本开放。"
+                "不会删除 %APPDATA% 下的 IDE 配置、用户插件，也不会处理自定义 "
+                "idea.system.path。注意：旧 system 目录本身可能包含 Local History；"
+                "JetBrains 的自动过期清理同样删除这棵旧 system 树。因此这里只对已经"
+                "超过厂商 180 天期限且确认没有现存安装的版本开放。"
             ),
             wraplength=900,
             justify=tk.LEFT,
@@ -95,7 +95,11 @@ class _JetBrainsLeftoverMaintenanceDialog:
         self._tree.column("size", width=120, anchor=tk.E)
         self._tree.column("installed", width=110, anchor=tk.W)
         self._tree.column("state", width=400, anchor=tk.W)
-        scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self._tree.yview)
+        scrollbar = ttk.Scrollbar(
+            table_frame,
+            orient=tk.VERTICAL,
+            command=self._tree.yview,
+        )
         self._tree.configure(yscrollcommand=scrollbar.set)
         self._tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -104,17 +108,26 @@ class _JetBrainsLeftoverMaintenanceDialog:
         ttk.Label(
             root,
             text=(
-                "删除前会重新扫描整棵 system 树、重新判断 .home/product-info 安装状态、刷新 JetBrains "
-                "进程状态，并核对稳定目录身份。任何变化都会中止。显示大小是逻辑统计，不等于物理回收空间。"
+                "删除前会重新扫描整棵 system 树、重新判断 .home/product-info 安装状态、"
+                "刷新 JetBrains 进程状态，并核对稳定目录身份。任何变化都会中止。"
+                "显示大小是逻辑统计，不等于物理回收空间。"
             ),
             wraplength=920,
             justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(8, 0))
-        ttk.Label(root, textvariable=self._status, wraplength=920).pack(anchor=tk.W, pady=(6, 0))
+        ttk.Label(
+            root,
+            textvariable=self._status,
+            wraplength=920,
+        ).pack(anchor=tk.W, pady=(6, 0))
 
         footer = ttk.Frame(root)
         footer.pack(fill=tk.X, pady=(10, 0))
-        self._refresh_button = ttk.Button(footer, text="刷新", command=self._start_inventory)
+        self._refresh_button = ttk.Button(
+            footer,
+            text="刷新",
+            command=self._start_inventory,
+        )
         self._refresh_button.pack(side=tk.RIGHT, padx=(8, 0))
         self._cleanup_button = ttk.Button(
             footer,
@@ -188,9 +201,10 @@ class _JetBrainsLeftoverMaintenanceDialog:
                 f"system：{selected.system_root}\n"
                 f"整棵树最近更新：约 {selected.stale_days:.0f} 天前\n"
                 f"逻辑大小：{_format_bytes(selected.stats.logical_bytes)}\n\n"
-                "该目录已超过 JetBrains 源码使用的 180 天旧版本 shelf life，且没有发现对应的现存安装。\n\n"
-                "重要：system 目录可能包含该旧版本的 Local History；删除后不会保留这些恢复记录。"
-                "DevClean 不会删除配置目录或用户插件。\n\n"
+                "该目录已超过 JetBrains 源码使用的 180 天旧版本 shelf life，"
+                "且没有发现对应的现存安装。\n\n"
+                "重要：system 目录可能包含该旧版本的 Local History；"
+                "删除后不会保留这些恢复记录。DevClean 不会删除配置目录或用户插件。\n\n"
                 "确定继续吗？"
             ),
             icon=messagebox.WARNING,
@@ -242,7 +256,8 @@ class _JetBrainsLeftoverMaintenanceDialog:
                 before = event.result.before
                 self._status.set(
                     f"已确认 {before.selector} 的精确 system 根目录不存在。"
-                    f"删除前逻辑统计为 {_format_bytes(before.stats.logical_bytes)}；不承诺等量物理回收。"
+                    "删除前逻辑统计为 "
+                    f"{_format_bytes(before.stats.logical_bytes)}；不承诺等量物理回收。"
                 )
                 self._set_busy(False)
                 self._start_inventory()
@@ -251,7 +266,9 @@ class _JetBrainsLeftoverMaintenanceDialog:
     def _render(self) -> None:
         self._tree.delete(*self._tree.get_children())
         for index, item in enumerate(self._inventories):
-            installed = "是" if item.installed else "否" if item.installed is False else "不确定"
+            installed = (
+                "是" if item.installed else "否" if item.installed is False else "不确定"
+            )
             state = "厂商过期候选" if item.cleanup_supported else item.reason
             self._tree.insert(
                 "",
