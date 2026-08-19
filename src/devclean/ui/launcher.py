@@ -32,6 +32,7 @@ from devclean.ui.uv_maintenance_dialog import open_uv_maintenance_dialog
 from devclean.ui.vcpkg_maintenance_dialog import open_vcpkg_maintenance_dialog
 from devclean.ui.vscode_maintenance_dialog import open_vscode_maintenance_dialog
 from devclean.ui.wsl_go_build_cache_dialog import open_wsl_go_build_cache_dialog
+from devclean.ui.wsl_go_mod_cache_dialog import open_wsl_go_mod_cache_dialog
 from devclean.ui.wsl_inventory_dialog import open_wsl_inventory_dialog
 from devclean.ui.wsl_pip_maintenance_dialog import open_wsl_pip_maintenance_dialog
 from devclean.ui.wsl_pnpm_maintenance_dialog import open_wsl_pnpm_maintenance_dialog
@@ -142,6 +143,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="WSL Go 构建缓存维护…",
         command=lambda: open_wsl_go_build_cache_dialog(root),
+    )
+    tools.add_command(
+        label="WSL Go 模块缓存维护…",
+        command=lambda: open_wsl_go_mod_cache_dialog(root),
     )
     menu.add_cascade(label="工具", menu=tools)
     root.configure(menu=menu)

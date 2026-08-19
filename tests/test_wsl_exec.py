@@ -97,8 +97,11 @@ def test_wsl_exec_with_env_pins_linux_env_without_shell(
     result = run_wsl_exec_with_env(
         "ubuntu",
         "go",
-        ("clean", "-cache"),
-        {"GOCACHE": "/home/me/.cache/go-build", "GOCACHEPROG": ""},
+        ("clean", "-cache=true", "-modcache=false"),
+        {
+            "GOCACHE": "/home/me/.cache/go-build",
+            "GOCACHEPROG": "",
+        },
         {},
     )
 
@@ -113,11 +116,12 @@ def test_wsl_exec_with_env_pins_linux_env_without_shell(
             "GOCACHEPROG=",
             "go",
             "clean",
-            "-cache",
+            "-cache=true",
+            "-modcache=false",
         ]
     ]
     assert result.executable == "go"
-    assert result.arguments == ("clean", "-cache")
+    assert result.arguments == ("clean", "-cache=true", "-modcache=false")
     assert "sh" not in result.command
     assert "bash" not in result.command
 
@@ -142,6 +146,7 @@ def test_wsl_exec_refuses_missing_distribution(monkeypatch: pytest.MonkeyPatch) 
         "podman",
         "node",
         "pwsh",
+        "env",
     ],
 )
 def test_wsl_exec_blocks_shell_raw_delete_admin_and_unreviewed_lifecycle_tools(
@@ -160,7 +165,13 @@ def test_wsl_exec_with_env_cannot_wrap_forbidden_tool(
     monkeypatch.setattr(wsl_exec, "inspect_wsl", lambda environment=None: _inventory("Ubuntu"))
 
     with pytest.raises(ValueError, match="禁止直接执行"):
-        run_wsl_exec_with_env("Ubuntu", "sh", ("-c", "echo unsafe"), {"A": "1"}, {})
+        run_wsl_exec_with_env(
+            "Ubuntu",
+            "sh",
+            ("-c", "echo unsafe"),
+            {"GOCACHE": "/tmp"},
+            {},
+        )
 
 
 def test_wsl_exec_with_env_rejects_invalid_assignment(
@@ -174,7 +185,7 @@ def test_wsl_exec_with_env_rejects_invalid_assignment(
         run_wsl_exec_with_env("Ubuntu", "go", (), {"GOCACHE": "bad\x00path"}, {})
 
 
-@pytest.mark.parametrize("name", ["PATH", "LD_PRELOAD", "GOENV"])
+@pytest.mark.parametrize("name", ["PATH", "LD_PRELOAD", "GOENV", "GOFLAGS"])
 def test_wsl_exec_with_env_rejects_unreviewed_environment_names(
     monkeypatch: pytest.MonkeyPatch,
     name: str,
@@ -183,6 +194,21 @@ def test_wsl_exec_with_env_rejects_unreviewed_environment_names(
 
     with pytest.raises(ValueError, match="未审计"):
         run_wsl_exec_with_env("Ubuntu", "go", (), {name: "value"}, {})
+
+
+def test_wsl_exec_with_env_requires_gocacheprog_to_be_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(wsl_exec, "inspect_wsl", lambda environment=None: _inventory("Ubuntu"))
+
+    with pytest.raises(ValueError, match="只允许空值"):
+        run_wsl_exec_with_env(
+            "Ubuntu",
+            "go",
+            (),
+            {"GOCACHEPROG": "cache-helper"},
+            {},
+        )
 
 
 def test_wsl_exec_allows_python_module_pip_only(
