@@ -102,7 +102,7 @@ def test_inventory_separates_exact_image_safety_classes(monkeypatch: pytest.Monk
         ordinary_ref: _record(ordinary_ref),
         external_ref: _record(external_ref),
     }
-    manifest_summary = {
+    manifest_summary: dict[str, object] = {
         "Id": manifest,
         "RepoTags": ["example/list:latest"],
         "RepoDigests": [],
@@ -110,7 +110,9 @@ def test_inventory_separates_exact_image_safety_classes(monkeypatch: pytest.Monk
         "CreatedAt": "2026-08-01T00:00:00Z",
         "VirtualSize": 2048,
     }
-    rows = [{"Id": image_id} for image_id in all_ids if image_id != manifest]
+    rows: list[dict[str, object]] = [
+        {"Id": image_id} for image_id in all_ids if image_id != manifest
+    ]
     rows.append(manifest_summary)
 
     monkeypatch.setattr(images, "inspect_podman_machine_target", lambda environment=None: target)
