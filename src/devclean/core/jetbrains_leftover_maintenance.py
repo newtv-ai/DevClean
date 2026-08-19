@@ -206,7 +206,10 @@ def _inspect_selector(
 
     config = _ordinary_resolved_directory(config_root, "JetBrains 配置目录")
     system = _ordinary_resolved_directory(system_root, "JetBrains system 目录")
-    if config.name.casefold() != selector.casefold() or system.name.casefold() != selector.casefold():
+    if (
+        config.name.casefold() != selector.casefold()
+        or system.name.casefold() != selector.casefold()
+    ):
         raise ValueError("JetBrains 配置/system 目录版本标识不一致")
 
     config_identity = _exact_directory_snapshot(config, "JetBrains 配置目录")
@@ -419,10 +422,7 @@ def _now_ns(now: datetime | None) -> int:
     if now is None:
         return time.time_ns()
     value = now
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC)
-    else:
-        value = value.astimezone(UTC)
+    value = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
     return int(value.timestamp() * 1_000_000_000)
 
 
