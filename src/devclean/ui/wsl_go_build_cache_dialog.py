@@ -59,7 +59,7 @@ class _WslGoBuildCacheDialog:
         ttk.Label(
             container,
             text=(
-                "只维护 Go 自己报告的 GOCACHE，并且只执行 `go clean -cache`。"
+                "只维护 Go 自己报告的 GOCACHE,并且只执行 `go clean -cache`。"
                 "模块下载缓存 GOMODCACHE、项目文件和安装内容不属于这个入口。"
             ),
             wraplength=900,
@@ -104,16 +104,16 @@ class _WslGoBuildCacheDialog:
         ttk.Label(
             explanation,
             text=(
-                "Go 的普通 build cache 是可重建的加速状态，因此属于 "
-                "DETERMINISTIC_CANDIDATE，不需要 AI 判断。\n\n"
-                "不过 Go 自己会周期性淘汰旧缓存，官方也说明通常不需要手工清空，"
-                "所以 DevClean 不把它当成日常默认清理项；这里保留为明确的维护操作。\n\n"
-                "执行前会重新确认 Go 版本、GOCACHE 和 GOCACHEPROG，并检查 Go/gopls "
+                "Go 的普通 build cache 是可重建的加速状态,因此属于 "
+                "DETERMINISTIC_CANDIDATE,不需要 AI 判断。\n\n"
+                "不过 Go 自己会周期性淘汰旧缓存,官方也说明通常不需要手工清空,"
+                "所以 DevClean 不把它当成日常默认清理项;这里保留为明确的维护操作。\n\n"
+                "执行前会重新确认 Go 版本、GOCACHE 和 GOCACHEPROG,并检查 Go/gopls "
                 "运行状态。目标还必须属于所选 WSL 发行版自己的根文件系统。"
-                "如果设置了 GOCACHEPROG，说明存在外部缓存后端，本入口只报告、不执行。\n\n"
-                "`go clean -cache` 会清普通 build cache；Go 的 fuzz 子目录由官方单独管理，"
+                "如果设置了 GOCACHEPROG,说明存在外部缓存后端,本入口只报告、不执行。\n\n"
+                "`go clean -cache` 会清普通 build cache;Go 的 fuzz 子目录由官方单独管理,"
                 "不会被 `-cache` 清掉。本入口也不会调用 `-fuzzcache`。\n\n"
-                "WSL 中释放的是 Linux 逻辑空间，不代表 Windows 侧 VHD 文件会同步缩小。"
+                "WSL 中释放的是 Linux 逻辑空间,不代表 Windows 侧 VHD 文件会同步缩小。"
             ),
             wraplength=870,
             justify=tk.LEFT,
@@ -187,8 +187,8 @@ class _WslGoBuildCacheDialog:
             return
         if not distro.running and not messagebox.askyesno(
             "WSL Go 构建缓存维护",
-            "所选发行版当前已停止。检查 Go 需要在该发行版内执行命令，"
-            "因此可能启动它。是否继续？",
+            "所选发行版当前已停止。检查 Go 需要在该发行版内执行命令,"
+            "因此可能启动它。是否继续?",
         ):
             return
 
@@ -215,9 +215,9 @@ class _WslGoBuildCacheDialog:
             f"发行版: {inventory.distribution}\n"
             f"Go: {inventory.version_text}\n"
             f"GOCACHE: {inventory.cache_path}\n\n"
-            "DevClean 将重新确认身份和本地文件系统边界，然后把这个 GOCACHE 精确固定"
+            "DevClean 将重新确认身份和本地文件系统边界,然后把这个 GOCACHE 精确固定"
             "给 `go clean -cache`。不会执行 `-modcache`、`-testcache`、`-fuzzcache`、"
-            "裸 `go clean` 或 raw delete。继续吗？",
+            "裸 `go clean` 或 raw delete。继续吗?",
         ):
             return
 
@@ -277,13 +277,13 @@ class _WslGoBuildCacheDialog:
         self._go_inventory = inventory
         state = "检查前已运行" if inventory.distribution_was_running else "检查前已停止"
         if inventory.cache_program:
-            decision = "REPORT_ONLY | 检测到外部 GOCACHEPROG，不授予执行权限"
+            decision = "REPORT_ONLY | 检测到外部 GOCACHEPROG,不授予执行权限"
             cache_program = inventory.cache_program
-            status = "已识别 Go build cache，但外部 cache program 保持只读报告。"
+            status = "已识别 Go build cache,但外部 cache program 保持只读报告。"
         else:
-            decision = "DETERMINISTIC_CANDIDATE | 可重建，但通常低收益"
+            decision = "DETERMINISTIC_CANDIDATE | 可重建,但通常低收益"
             cache_program = "未配置"
-            status = "已确认普通 Go build cache。未自动执行，需要你明确启动维护。"
+            status = "已确认普通 Go build cache。未自动执行,需要你明确启动维护。"
         self._details.configure(
             text=(
                 f"{decision}\n"
