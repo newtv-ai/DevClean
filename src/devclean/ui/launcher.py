@@ -35,6 +35,9 @@ from devclean.ui.vscode_maintenance_dialog import open_vscode_maintenance_dialog
 from devclean.ui.windows_component_store_maintenance_dialog import (
     open_windows_component_store_maintenance_dialog,
 )
+from devclean.ui.windows_previous_install_maintenance_dialog import (
+    open_windows_previous_install_maintenance_dialog,
+)
 from devclean.ui.wsl_go_build_cache_dialog import open_wsl_go_build_cache_dialog
 from devclean.ui.wsl_go_mod_cache_dialog import open_wsl_go_mod_cache_dialog
 from devclean.ui.wsl_inventory_dialog import open_wsl_inventory_dialog
@@ -135,6 +138,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Windows 组件存储维护…",
         command=lambda: open_windows_component_store_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="以前的 Windows 安装维护…",
+        command=lambda: open_windows_previous_install_maintenance_dialog(root),
     )
     tools.add_separator()
     tools.add_command(
