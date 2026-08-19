@@ -98,7 +98,11 @@ def test_wsl_exec_with_env_pins_linux_env_without_shell(
         "ubuntu",
         "go",
         ("clean", "-cache"),
-        {"GOCACHE": "/home/me/.cache/go-build", "GOCACHEPROG": ""},
+        {
+            "GOCACHE": "/home/me/.cache/go-build",
+            "GOCACHEPROG": "",
+            "GOFLAGS": "",
+        },
         {},
     )
 
@@ -111,6 +115,7 @@ def test_wsl_exec_with_env_pins_linux_env_without_shell(
             "env",
             "GOCACHE=/home/me/.cache/go-build",
             "GOCACHEPROG=",
+            "GOFLAGS=",
             "go",
             "clean",
             "-cache",
@@ -142,6 +147,7 @@ def test_wsl_exec_refuses_missing_distribution(monkeypatch: pytest.MonkeyPatch) 
         "podman",
         "node",
         "pwsh",
+        "env",
     ],
 )
 def test_wsl_exec_blocks_shell_raw_delete_admin_and_unreviewed_lifecycle_tools(
@@ -160,7 +166,7 @@ def test_wsl_exec_with_env_cannot_wrap_forbidden_tool(
     monkeypatch.setattr(wsl_exec, "inspect_wsl", lambda environment=None: _inventory("Ubuntu"))
 
     with pytest.raises(ValueError, match="禁止直接执行"):
-        run_wsl_exec_with_env("Ubuntu", "sh", ("-c", "echo unsafe"), {"A": "1"}, {})
+        run_wsl_exec_with_env("Ubuntu", "sh", ("-c", "echo unsafe"), {"GOCACHE": "/tmp"}, {})
 
 
 def test_wsl_exec_with_env_rejects_invalid_assignment(
@@ -183,6 +189,21 @@ def test_wsl_exec_with_env_rejects_unreviewed_environment_names(
 
     with pytest.raises(ValueError, match="未审计"):
         run_wsl_exec_with_env("Ubuntu", "go", (), {name: "value"}, {})
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [("GOFLAGS", "-modcache"), ("GOCACHEPROG", "cache-helper")],
+)
+def test_wsl_exec_with_env_requires_control_overrides_to_be_empty(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    value: str,
+) -> None:
+    monkeypatch.setattr(wsl_exec, "inspect_wsl", lambda environment=None: _inventory("Ubuntu"))
+
+    with pytest.raises(ValueError, match="只允许空值"):
+        run_wsl_exec_with_env("Ubuntu", "go", (), {name: value}, {})
 
 
 def test_wsl_exec_allows_python_module_pip_only(
