@@ -41,6 +41,8 @@ A connection is executable only when all of these are true:
 
 Anything else is REPORT_ONLY. In particular, arbitrary SSH/TCP endpoints, user-created remote connections, ambiguous defaults and unmatched machine connections never receive local-cleanup authority.
 
+The machine target shown to the user is part of the reviewed object. The UI carries the exact reviewed connection name, URI, machine name, provider, rootful/rootless mode and resolved Podman executable into the mutation request. A fresh inventory must match that target before DevClean even looks for the reviewed container. This prevents a default-connection switch between review and confirmation from redirecting deletion to a different Podman store.
+
 ## Container eligibility
 
 One container is eligible for USER_REVIEW only when fresh exact inspection proves:
