@@ -141,7 +141,7 @@ def _validated_fixed_drive_root(root: Path) -> Path:
 
 
 def _shell32() -> ctypes.WinDLL:
-    system_root = os.environ.get("SystemRoot") or r"C:\Windows"
+    system_root = os.environ.get("SYSTEMROOT") or r"C:\Windows"
     path = Path(system_root) / "System32" / "shell32.dll"
     try:
         return ctypes.WinDLL(str(path), use_last_error=True)
