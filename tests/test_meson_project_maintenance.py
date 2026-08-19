@@ -149,7 +149,7 @@ def test_arbitrary_build_named_directory_without_meson_marker_has_no_authority(
     build.mkdir()
     _install_portable_identity_stubs(monkeypatch)
 
-    with pytest.raises(ValueError, match="coredata.dat"):
+    with pytest.raises(ValueError, match=r"coredata\.dat"):
         inspect_meson_build(source, build)
 
 
