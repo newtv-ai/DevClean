@@ -17,68 +17,20 @@ from devclean.core.wsl_inventory import (
 
 _FORBIDDEN_EXECUTABLES = frozenset(
     {
-        "sh",
-        "bash",
-        "dash",
-        "zsh",
-        "fish",
-        "csh",
-        "tcsh",
-        "sudo",
-        "su",
-        "doas",
-        "rm",
-        "rmdir",
-        "unlink",
-        "find",
-        "xargs",
-        "dd",
-        "truncate",
-        "shred",
-        "mount",
-        "umount",
-        "fdisk",
-        "sfdisk",
-        "parted",
-        "mkfs",
-        "systemctl",
-        "service",
-        "apt",
-        "apt-get",
-        "dnf",
-        "yum",
-        "pacman",
-        "zypper",
-        "apk",
-        "docker",
-        "podman",
-        "node",
-        "perl",
-        "ruby",
-        "php",
-        "lua",
-        "pwsh",
-        "powershell",
-        "powershell.exe",
-        "cmd",
-        "cmd.exe",
-        "wsl",
-        "wsl.exe",
-        "env",
+        "sh", "bash", "dash", "zsh", "fish", "csh", "tcsh",
+        "sudo", "su", "doas", "rm", "rmdir", "unlink", "find", "xargs",
+        "dd", "truncate", "shred", "mount", "umount", "fdisk", "sfdisk",
+        "parted", "mkfs", "systemctl", "service", "apt", "apt-get", "dnf",
+        "yum", "pacman", "zypper", "apk", "docker", "podman", "node",
+        "perl", "ruby", "php", "lua", "pwsh", "powershell", "powershell.exe",
+        "cmd", "cmd.exe", "wsl", "wsl.exe", "env",
     }
 )
 _PYTHON_NAMES = frozenset({"python", "python3"})
 _ALLOWED_PYTHON_MODULES = frozenset({"pip"})
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_ALLOWED_LINUX_ENV_OVERRIDES = frozenset(
-    {
-        "GOCACHE",
-        "GOCACHEPROG",
-        "GOMODCACHE",
-        "GOFLAGS",
-    }
-)
-_EMPTY_ONLY_LINUX_ENV_OVERRIDES = frozenset({"GOCACHEPROG", "GOFLAGS"})
+_ALLOWED_LINUX_ENV_OVERRIDES = frozenset({"GOCACHE", "GOCACHEPROG", "GOMODCACHE"})
+_EMPTY_ONLY_LINUX_ENV_OVERRIDES = frozenset({"GOCACHEPROG"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,25 +51,13 @@ def run_wsl_exec(
     *,
     timeout: int = 120,
 ) -> WslExecResult:
-    """Run one code-supplied argv command in one exact registered distribution.
-
-    This helper deliberately has no shell mode and grants no standalone cleanup
-    authority. Callers remain responsible for the vendor-specific inventory,
-    process guards, path/config checks, and mutation revalidation.
-    """
-
+    """Run one code-supplied argv command in one exact registered distribution."""
     if timeout <= 0:
         raise ValueError("WSL command timeout 必须大于 0")
     distro = _require_distribution(distribution, environment)
     tool = _validate_executable(executable)
     argv = _validate_arguments(tool, arguments)
-    return _run_validated_wsl_exec(
-        distro,
-        executable,
-        argv,
-        environment,
-        timeout=timeout,
-    )
+    return _run_validated_wsl_exec(distro, executable, argv, environment, timeout=timeout)
 
 
 def run_wsl_exec_with_env(
@@ -129,26 +69,17 @@ def run_wsl_exec_with_env(
     *,
     timeout: int = 120,
 ) -> WslExecResult:
-    """Run one audited tool with exact, allowlisted Linux env overrides.
-
-    The wrapper uses POSIX ``env NAME=value ... tool argv...`` inside the exact
-    selected distribution. Both the nested executable and its argv are validated
-    by the same boundary as :func:`run_wsl_exec`. Environment names and the few
-    control values are constrained so callers cannot alter loader/search-path or
-    inject extra Go cleanup flags through this helper.
-    """
-
+    """Run one audited tool with exact, allowlisted Linux env overrides."""
     if timeout <= 0:
         raise ValueError("WSL command timeout 必须大于 0")
     distro = _require_distribution(distribution, environment)
     tool = _validate_executable(executable)
     argv = _validate_arguments(tool, arguments)
     assignments = _validated_linux_environment(linux_environment)
-    env_argv = (*assignments, executable, *argv)
     raw = _run_validated_wsl_exec(
         distro,
         "env",
-        env_argv,
+        (*assignments, executable, *argv),
         environment,
         timeout=timeout,
     )
@@ -171,30 +102,17 @@ def _run_validated_wsl_exec(
     timeout: int,
 ) -> WslExecResult:
     wsl = wsl_executable(environment)
-    command = (
-        wsl,
-        "--distribution",
-        distro.name,
-        "--exec",
-        executable,
-        *argv,
-    )
-
+    command = (wsl, "--distribution", distro.name, "--exec", executable, *argv)
     env = dict(os.environ)
     if environment is not None:
         env.update(environment)
     try:
         completed = subprocess.run(
-            list(command),
-            check=False,
-            capture_output=True,
-            text=False,
-            timeout=timeout,
-            env=env,
+            list(command), check=False, capture_output=True, text=False,
+            timeout=timeout, env=env,
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise RuntimeError(f"无法执行 WSL tool command: {error}") from error
-
     stdout = _decode_output(completed.stdout)
     stderr = _decode_output(completed.stderr)
     if completed.returncode != 0:
@@ -203,18 +121,12 @@ def _run_validated_wsl_exec(
             f"WSL tool command 失败 (exit {completed.returncode})"
             + (f": {detail}" if detail else "")
         )
-
     after = _require_distribution(distro.name, environment)
     if after.name.casefold() != distro.name.casefold():
         raise RuntimeError("WSL distribution identity 在执行后发生变化; 无法确认结果")
-
     return WslExecResult(
-        distribution=distro.name,
-        executable=executable,
-        arguments=argv,
-        command=command,
-        stdout=stdout.strip(),
-        stderr=stderr.strip(),
+        distribution=distro.name, executable=executable, arguments=argv,
+        command=command, stdout=stdout.strip(), stderr=stderr.strip(),
     )
 
 
@@ -225,10 +137,8 @@ def _require_distribution(
     name = requested.strip()
     if not name or "\x00" in name:
         raise ValueError("WSL distribution name 无效")
-    inventory = inspect_wsl(environment)
     matches = [
-        distro
-        for distro in inventory.distributions
+        distro for distro in inspect_wsl(environment).distributions
         if distro.name.casefold() == name.casefold()
     ]
     if len(matches) != 1:
@@ -251,14 +161,9 @@ def _validate_executable(executable: str) -> str:
 
 
 def _validate_arguments(tool: str, arguments: Sequence[str]) -> tuple[str, ...]:
-    result: list[str] = []
-    for raw in arguments:
-        value = str(raw)
-        if "\x00" in value:
-            raise ValueError("WSL tool argument 包含 NUL")
-        result.append(value)
-    argv = tuple(result)
-
+    argv = tuple(str(raw) for raw in arguments)
+    if any("\x00" in value for value in argv):
+        raise ValueError("WSL tool argument 包含 NUL")
     python_family = tool in _PYTHON_NAMES or (
         tool.startswith("python3.")
         and tool.removeprefix("python3.").replace(".", "").isdigit()
