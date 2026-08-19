@@ -1,6 +1,6 @@
 """Unified Docker storage/accounting and exact maintenance dialog."""
 
-# ruff: noqa: RUF001
+# ruff: noqa: E501, RUF001
 
 from __future__ import annotations
 
