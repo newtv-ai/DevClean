@@ -106,11 +106,11 @@ class _WslUvMaintenanceDialog:
             explanation,
             text=(
                 "Astral 将 `uv cache prune` 定义为可周期运行的安全维护: 它只移除"
-                "不再使用的 cache entries，以及可按需重建的 centralized project environments.\n\n"
-                "uv 自己会给修改 cache 的操作加锁，并在其他 uv 命令运行时等待. "
-                "DevClean 保留这套 vendor 并发保护，不用 `--force` 绕过锁.\n\n"
-                "这条规则是 DETERMINISTIC_CANDIDATE，不送 AI. 清理后未来可能需要重新"
-                "下载或重建部分缓存内容. 在 WSL 2 中，Linux 逻辑空间的释放也不等于"
+                "不再使用的 cache entries,以及可按需重建的 centralized project environments.\n\n"
+                "uv 自己会给修改 cache 的操作加锁,并在其他 uv 命令运行时等待. "
+                "DevClean 保留这套 vendor 并发保护,不用 `--force` 绕过锁.\n\n"
+                "这条规则是 DETERMINISTIC_CANDIDATE,不送 AI. 清理后未来可能需要重新"
+                "下载或重建部分缓存内容. 在 WSL 2 中,Linux 逻辑空间的释放也不等于"
                 "Windows 侧虚拟磁盘文件会同步缩小."
             ),
             wraplength=850,
@@ -209,7 +209,7 @@ class _WslUvMaintenanceDialog:
             f"发行版: {inventory.distribution}\n"
             f"uv: {inventory.version_text}\n"
             f"cache: {inventory.cache_path}\n\n"
-            "DevClean 将重新确认这些身份，然后固定该 cache 路径执行 "
+            "DevClean 将重新确认这些身份,然后固定该 cache 路径执行 "
             "`uv cache prune`. 不会执行 `clean`, `--force` 或 `--ci`. 继续吗?",
         ):
             return
