@@ -22,8 +22,8 @@ _ENV = {
     "DEVCLEAN_TEST_WINDOWS": "1",
     "DEVCLEAN_WINDOWS_POWERSHELL": r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
     "DEVCLEAN_DELIVERY_OPTIMIZATION_MODULE": (
-        r"C:\Windows\System32\WindowsPowerShell\v1.0\Modules\DeliveryOptimization\"
-        r"DeliveryOptimization.psd1"
+        "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules\\DeliveryOptimization\\"
+        "DeliveryOptimization.psd1"
     ),
 }
 _NOW = datetime(2026, 8, 19, 12, 0, tzinfo=UTC)
@@ -206,26 +206,8 @@ def test_inventory_rejects_duplicate_file_ids(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(do_cache, "_is_process_elevated", lambda: True)
     payload = {
         "Items": [
-            {
-                "FileId": "same",
-                "FileSize": 10,
-                "FileSizeInCache": 10,
-                "Status": "Caching",
-                "Priority": "Background",
-                "ExpireOn": None,
-                "IsPinned": False,
-                "Caller": "Store",
-            },
-            {
-                "FileId": "SAME",
-                "FileSize": 10,
-                "FileSizeInCache": 10,
-                "Status": "Caching",
-                "Priority": "Background",
-                "ExpireOn": None,
-                "IsPinned": False,
-                "Caller": "Store",
-            },
+            {"FileId": "same", "FileSize": 10, "FileSizeInCache": 10, "Status": "Caching", "Priority": "Background", "ExpireOn": None, "IsPinned": False, "Caller": "Store"},
+            {"FileId": "SAME", "FileSize": 10, "FileSizeInCache": 10, "Status": "Caching", "Priority": "Background", "ExpireOn": None, "IsPinned": False, "Caller": "Store"},
         ]
     }
     monkeypatch.setattr(
