@@ -58,7 +58,6 @@ def _package(
     avd_names: tuple[str, ...] = (),
     supported: bool = True,
 ) -> AndroidSdkPackageEntry:
-    installed = root / Path(location.replace("/", str(Path("/")).replace("/", "/")))
     installed = root.joinpath(*location.split("/"))
     return AndroidSdkPackageEntry(
         sdk_root=root,
@@ -208,6 +207,7 @@ def test_avd_config_relative_system_dir_correlates_against_all_known_sdk_roots(
         encoding="utf-8",
     )
     monkeypatch.setattr(sdk_packages, "_source_avd_content_roots", lambda environment: (content,))
+    monkeypatch.setattr(sdk_packages, "_source_avd_registry_roots", lambda environment: ())
 
     references, complete, reason = sdk_packages._inventory_avd_references(
         (sdk_a, sdk_b),
@@ -231,12 +231,80 @@ def test_unreadable_or_missing_avd_config_fails_closed(
     content = tmp_path / "Broken.avd"
     content.mkdir()
     monkeypatch.setattr(sdk_packages, "_source_avd_content_roots", lambda environment: (content,))
+    monkeypatch.setattr(sdk_packages, "_source_avd_registry_roots", lambda environment: ())
 
     references, complete, reason = sdk_packages._inventory_avd_references((tmp_path / "Sdk",), None)
 
     assert not references
     assert not complete
     assert "config.ini" in reason
+
+
+def test_registry_descriptor_failure_makes_avd_proof_incomplete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = tmp_path / ".android" / "avd"
+    registry.mkdir(parents=True)
+    (registry / "Broken.ini").write_text("target=android-35\n", encoding="utf-8")
+    monkeypatch.setattr(sdk_packages, "_source_avd_content_roots", lambda environment: ())
+    monkeypatch.setattr(sdk_packages, "_source_avd_registry_roots", lambda environment: (registry,))
+
+    references, complete, reason = sdk_packages._inventory_avd_references((tmp_path / "Sdk",), None)
+
+    assert not references
+    assert not complete
+    assert "path/path.rel" in reason
+
+
+def test_registry_direct_avd_directory_is_discovered_even_if_shared_helper_misses_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sdk = tmp_path / "Sdk"
+    sdk.mkdir()
+    registry = tmp_path / ".android" / "avd"
+    content = registry / "Pixel_API_35.avd"
+    content.mkdir(parents=True)
+    (content / "config.ini").write_text(
+        "AvdId=Pixel_API_35\nimage.sysdir.1=system-images/android-35/google_apis/x86_64/\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sdk_packages, "_source_avd_content_roots", lambda environment: ())
+    monkeypatch.setattr(sdk_packages, "_source_avd_registry_roots", lambda environment: (registry,))
+
+    references, complete, reason = sdk_packages._inventory_avd_references((sdk,), None)
+
+    assert complete
+    assert not reason
+    assert len(references) == 1
+    assert references[0].avd_name == "Pixel_API_35"
+
+
+def test_registry_path_rel_maps_from_android_user_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sdk = tmp_path / "Sdk"
+    sdk.mkdir()
+    android_home = tmp_path / ".android"
+    registry = android_home / "avd"
+    content = android_home / "custom" / "Pixel.avd"
+    registry.mkdir(parents=True)
+    content.mkdir(parents=True)
+    (registry / "Pixel.ini").write_text("path.rel=custom/Pixel.avd\n", encoding="utf-8")
+    (content / "config.ini").write_text(
+        "AvdId=Pixel\nimage.sysdir.1=system-images/android-35/default/x86_64/\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sdk_packages, "_source_avd_content_roots", lambda environment: ())
+    monkeypatch.setattr(sdk_packages, "_source_avd_registry_roots", lambda environment: (registry,))
+
+    references, complete, reason = sdk_packages._inventory_avd_references((sdk,), None)
+
+    assert complete
+    assert not reason
+    assert references[0].content_root == content.resolve()
 
 
 def test_duplicate_avd_image_key_fails_closed(tmp_path: Path) -> None:
@@ -258,6 +326,7 @@ def test_inventory_root_without_sdkmanager_is_report_only(
     root.mkdir()
     monkeypatch.setattr(sdk_packages, "_source_sdk_roots", lambda environment: (root,))
     monkeypatch.setattr(sdk_packages, "_source_avd_content_roots", lambda environment: ())
+    monkeypatch.setattr(sdk_packages, "_source_avd_registry_roots", lambda environment: ())
     monkeypatch.setattr(sdk_packages, "is_local_fixed_path", lambda path: True)
     monkeypatch.setattr(sdk_packages, "_find_sdkmanager", lambda sdk_root: None)
 
