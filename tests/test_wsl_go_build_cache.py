@@ -110,9 +110,7 @@ def test_inventory_marks_external_cache_program_report_only(
         )
 
     monkeypatch.setattr(wsl_go, "run_wsl_exec", fake_exec)
-
     inventory = inventory_wsl_go_build_cache("Ubuntu", {})
-
     assert inventory.cache_program == "cache-helper"
     assert not inventory.executable
 
@@ -145,12 +143,11 @@ def test_inventory_rejects_unsafe_or_invalid_go_env(
         return _result(distribution, executable, arguments, output)
 
     monkeypatch.setattr(wsl_go, "run_wsl_exec", fake_exec)
-
     with pytest.raises(RuntimeError):
         inventory_wsl_go_build_cache("Ubuntu", {})
 
 
-def test_clean_revalidates_scope_idle_and_pins_exact_gocache(
+def test_clean_revalidates_scope_idle_and_pins_all_clean_flags(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     inventory = WslGoBuildCacheInventory(
@@ -197,31 +194,31 @@ def test_clean_revalidates_scope_idle_and_pins_exact_gocache(
         env_calls.append(
             (distribution, arguments, dict(linux_environment or {}), timeout)
         )
-        return _result(
-            distribution,
-            executable,
-            arguments,
-            "",
-        )
+        return _result(distribution, executable, arguments, "")
 
     monkeypatch.setattr(wsl_go, "run_wsl_exec_with_env", fake_env_exec)
-
-    result = clean_wsl_go_build_cache(inventory, {})
+    clean_wsl_go_build_cache(inventory, {})
 
     assert scope_calls == [("Ubuntu", "/home/me/.cache/go-build")]
     assert env_calls == [
         (
             "Ubuntu",
-            ("clean", "-cache"),
+            (
+                "clean",
+                "-i=false",
+                "-r=false",
+                "-cache=true",
+                "-testcache=false",
+                "-modcache=false",
+                "-fuzzcache=false",
+            ),
             {
                 "GOCACHE": "/home/me/.cache/go-build",
                 "GOCACHEPROG": "",
-                "GOFLAGS": "",
             },
             900,
         )
     ]
-    assert "-modcache" not in " ".join(result.command)
 
 
 def test_clean_refuses_external_cache_program_before_mutation(
@@ -247,7 +244,6 @@ def test_clean_refuses_external_cache_program_before_mutation(
         raise AssertionError("mutation should not run")
 
     monkeypatch.setattr(wsl_go, "run_wsl_exec_with_env", unexpected)
-
     with pytest.raises(RuntimeError, match="GOCACHEPROG"):
         clean_wsl_go_build_cache(inventory, {})
     assert not called
@@ -286,7 +282,6 @@ def test_clean_refuses_when_go_or_gopls_is_running(
             process_line + "\n",
         ),
     )
-
     with pytest.raises(RuntimeError, match="appears to be running"):
         clean_wsl_go_build_cache(inventory, {})
 
@@ -326,7 +321,6 @@ def test_clean_refuses_non_root_filesystem_before_vendor_mutation(
         raise AssertionError("vendor mutation should not run")
 
     monkeypatch.setattr(wsl_go, "run_wsl_exec_with_env", unexpected)
-
     with pytest.raises(RuntimeError, match="mounted filesystem"):
         clean_wsl_go_build_cache(inventory, {})
     assert not called
@@ -354,6 +348,5 @@ def test_clean_refuses_identity_change_before_mutation(
         "inventory_wsl_go_build_cache",
         lambda distribution, environment=None: changed,
     )
-
     with pytest.raises(RuntimeError, match="changed before clean"):
         clean_wsl_go_build_cache(expected, {})
