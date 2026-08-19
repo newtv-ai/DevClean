@@ -71,7 +71,9 @@ def prune_wsl_pnpm_store(
 
     fresh = inventory_wsl_pnpm_store(expected.distribution, environment)
     if _inventory_identity(fresh) != _inventory_identity(expected):
-        raise RuntimeError("WSL pnpm identity/store changed before prune; please inspect again")
+        raise RuntimeError(
+            "WSL pnpm identity/store changed before prune; please inspect again"
+        )
 
     _require_pnpm_idle(fresh.distribution, environment)
     scoped = run_wsl_exec(
@@ -83,7 +85,9 @@ def prune_wsl_pnpm_store(
     )
     scoped_path = _validated_store_path(scoped.stdout, "scoped pnpm store path")
     if scoped_path != fresh.active_store_path:
-        raise RuntimeError("pnpm did not confirm the exact selected store path; prune stopped safely")
+        raise RuntimeError(
+            "pnpm did not confirm the exact selected store path; prune stopped safely"
+        )
 
     result = run_wsl_exec(
         fresh.distribution,
@@ -131,7 +135,9 @@ def _validated_store_path(output: str, source: str) -> str:
         raise RuntimeError(f"{source} returned a NUL-containing path")
     path = PurePosixPath(value)
     if not path.is_absolute() or value == "/":
-        raise RuntimeError(f"{source} returned an unsafe/non-absolute path: {value!r}")
+        raise RuntimeError(
+            f"{source} returned an unsafe/non-absolute path: {value!r}"
+        )
     return str(path)
 
 
@@ -146,7 +152,11 @@ def _store_config_root(active_store_path: str) -> str:
 
 
 def _single_line(output: str, source: str) -> str:
-    lines = [line.strip().strip('"').strip("'") for line in output.splitlines() if line.strip()]
+    lines = [
+        line.strip().strip('"').strip("'")
+        for line in output.splitlines()
+        if line.strip()
+    ]
     if len(lines) != 1 or not lines[0]:
         raise RuntimeError(f"{source} did not return exactly one non-empty line")
     return lines[0]
@@ -165,10 +175,14 @@ def _require_pnpm_idle(
             timeout=30,
         )
     except RuntimeError as error:
-        raise RuntimeError("Cannot confirm WSL pnpm process state; prune stopped safely") from error
+        raise RuntimeError(
+            "Cannot confirm WSL pnpm process state; prune stopped safely"
+        ) from error
 
     if any(_looks_like_pnpm_process(line) for line in result.stdout.splitlines()):
-        raise RuntimeError("pnpm appears to be running in this WSL distro; wait before pruning store")
+        raise RuntimeError(
+            "pnpm appears to be running in this WSL distro; wait before pruning store"
+        )
 
 
 def _looks_like_pnpm_process(line: str) -> bool:
