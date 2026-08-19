@@ -21,7 +21,8 @@ Current Podman documentation establishes:
 - `podman system connection list --format json` exposes connection name, URI, `IsMachine`, default state and read/write state.
 - rootful and rootless connections for a machine are separate stores and switching rootful changes which containers/images/volumes are visible.
 - `podman ps`/`container inspect` expose exact container identity and state.
-- `podman rm <container>` removes the specified container; `--force` widens semantics to running/paused/unknown containers and is excluded.
+- Podman has multiple container states, including ordinary terminal/pre-run states and transitional/error states. Unknown or newly introduced states cannot be assumed removable.
+- `podman rm <container>` removes the specified container; `--force` widens semantics to running/paused/unknown or otherwise unusable containers and is excluded.
 - `--volumes` removes associated anonymous volumes and is excluded.
 - `podman system df` is useful only as logical container-store accounting; Podman itself warns image reclaimable accounting can be inaccurate because of shared layers.
 - `podman system prune` is broad: stopped containers, networks, dangling images/build cache and optional volumes can be affected, so DevClean does not expose it.
@@ -47,10 +48,13 @@ One container is eligible for USER_REVIEW only when fresh exact inspection prove
 - full immutable container ID is present;
 - `State.Running=false`;
 - `State.Paused=false`;
-- status is not an active/unknown state;
+- status is one explicitly audited safe terminal/pre-run value: `configured`, `created`, `exited`, or `stopped`;
+- transitional, active, unknown, or otherwise unrecognized values such as `stopping`, `removing`, `initialized`, `running`, `paused`, `unknown`, or future values fail closed;
 - the container is not an infra container;
 - the container is not attached to a pod;
 - exact identity fields used for the user's review (ID, name, image identity, creation time, state, pod binding and volume names) remain unchanged immediately before mutation.
+
+The positive status whitelist is intentional. A blacklist would make a future Podman state removable merely because DevClean had never heard of it.
 
 Pod members are protected in this first lane because pod topology is a separate lifecycle object. A future pod-specific audit may add exact pod actions.
 
