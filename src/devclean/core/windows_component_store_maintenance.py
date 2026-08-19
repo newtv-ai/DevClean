@@ -18,6 +18,7 @@ from devclean.platform.windows.volumes import is_local_fixed_path
 
 _ANALYZE_TIMEOUT_SECONDS = 15 * 60
 _CLEANUP_TIMEOUT_SECONDS = 2 * 60 * 60
+_WINDOWS = os.name == "nt"
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +69,7 @@ def inventory_windows_component_store(
 ) -> ComponentStoreInventory:
     """Read the online Windows component-store report without mutation."""
 
-    if os.name != "nt":
+    if not _WINDOWS:
         raise RuntimeError("Windows 组件存储维护仅支持 Windows")
 
     executable = dism_executable(environment)
@@ -97,32 +98,33 @@ def inventory_windows_component_store(
 
 
 def cleanup_windows_component_store(
+    expected: ComponentStoreReport,
     environment: Mapping[str, str] | None = None,
 ) -> ComponentStoreCleanupResult:
     """Run exact manual StartComponentCleanup after fresh USER_REVIEW gates."""
 
-    if os.name != "nt":
+    if not _WINDOWS:
         raise RuntimeError("Windows 组件存储维护仅支持 Windows")
     if not is_process_elevated():
         raise PermissionError("需要以管理员身份运行 DevClean；不会自动提升权限")
-
-    executable = dism_executable(environment)
-    initial_identity = _dism_identity(executable)
-    initial = _analyze_component_store(initial_identity, environment)
-    if not initial.cleanup_recommended:
-        raise ValueError("DISM 当前没有建议组件存储清理；拒绝强制执行")
-
+    if not expected.cleanup_recommended:
+        raise ValueError("用户确认的 DISM 报告没有建议组件存储清理")
     if dism_activity_running(environment):
         raise RuntimeError("检测到现有 DISM/DismHost 活动；请等待系统维护完成后再试")
 
+    executable = dism_executable(environment)
     current_identity = _dism_identity(executable)
-    if current_identity != initial.tool_identity:
+    if current_identity != expected.tool_identity:
         raise RuntimeError("DISM 可执行文件身份在清理前发生变化；拒绝继续")
+
+    # One fresh vendor analysis immediately before mutation binds the user's
+    # reviewed report to the current online image without running two expensive
+    # analyses back-to-back inside the same cleanup call.
     current = _analyze_component_store(current_identity, environment)
     if (
-        current.tool_identity != initial.tool_identity
-        or current.dism_version != initial.dism_version
-        or current.image_version != initial.image_version
+        current.tool_identity != expected.tool_identity
+        or current.dism_version != expected.dism_version
+        or current.image_version != expected.image_version
     ):
         raise RuntimeError("DISM/Windows 映像身份在清理前发生变化；请重新检查")
     if not current.cleanup_recommended:
@@ -181,7 +183,7 @@ def tasklist_executable(environment: Mapping[str, str] | None = None) -> Path:
 def is_process_elevated() -> bool:
     """Return current-process elevation without requesting elevation."""
 
-    if os.name != "nt":
+    if not _WINDOWS:
         return False
     try:
         shell32 = ctypes.windll.shell32  # type: ignore[attr-defined]
@@ -193,7 +195,7 @@ def is_process_elevated() -> bool:
 def dism_activity_running(environment: Mapping[str, str] | None = None) -> bool:
     """Fail closed if another DISM/DismHost process is visible or state is unknown."""
 
-    if os.name != "nt":
+    if not _WINDOWS:
         return True
     command = [str(tasklist_executable(environment)), "/FO", "CSV", "/NH"]
     try:
@@ -250,8 +252,6 @@ def parse_component_store_report(
         r"(?mi)^Component Store Cleanup Recommended\s*:\s*(Yes|No)\s*$",
         "cleanup recommendation",
     ).casefold()
-    if recommendation_text not in {"yes", "no"}:
-        raise RuntimeError("DISM cleanup recommendation is ambiguous")
 
     actual_size_text = _optional_match(
         output,
@@ -328,8 +328,7 @@ def _required_match(output: str, pattern: str, label: str) -> str:
     matches = re.findall(pattern, output)
     if len(matches) != 1:
         raise RuntimeError(f"DISM {label} 输出缺失或不唯一")
-    value = matches[0]
-    return str(value)
+    return str(matches[0])
 
 
 def _optional_match(output: str, pattern: str) -> str | None:
