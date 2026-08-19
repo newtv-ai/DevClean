@@ -18,6 +18,9 @@ from devclean.ui.git_repository_maintenance_dialog import (
     open_git_repository_maintenance_dialog,
 )
 from devclean.ui.go_maintenance_dialog import open_go_maintenance_dialog
+from devclean.ui.jetbrains_leftover_maintenance_dialog import (
+    open_jetbrains_leftover_maintenance_dialog,
+)
 from devclean.ui.meson_project_maintenance_dialog import open_meson_project_maintenance_dialog
 from devclean.ui.nuget_maintenance_dialog import open_nuget_maintenance_dialog
 from devclean.ui.ollama_model_maintenance_dialog import open_ollama_model_maintenance_dialog
@@ -67,6 +70,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="VS Code 存储维护…",
         command=lambda: open_vscode_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="JetBrains 过期版本存储维护…",
+        command=lambda: open_jetbrains_leftover_maintenance_dialog(root),
     )
     tools.add_separator()
     tools.add_command(
