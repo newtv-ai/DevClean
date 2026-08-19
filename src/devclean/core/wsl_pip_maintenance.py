@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 
 from devclean.core.wsl_exec import WslExecResult, run_wsl_exec
 from devclean.core.wsl_inventory import WslDistribution, inspect_wsl
+from devclean.core.wsl_path_scope import require_wsl_root_filesystem_path
 
 _PIP_ENTRYPOINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("python3", ("-m", "pip")),
@@ -85,6 +86,11 @@ def purge_wsl_pip_cache(
         raise RuntimeError("WSL pip identity/cache path changed before purge; please inspect again")
 
     _require_pip_idle(fresh.distribution, environment)
+    require_wsl_root_filesystem_path(
+        fresh.distribution,
+        fresh.cache_path,
+        environment,
+    )
     result = _run_pip(
         fresh.distribution,
         fresh.entrypoint,
