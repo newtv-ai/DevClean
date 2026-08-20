@@ -20,7 +20,7 @@ def _environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEMP", r"C:\Users\person\AppData\Local\Temp")
 
 
-def test_ai_cannot_delete_vivaldi_profile_or_cache_storage(
+def test_ai_cannot_delete_vivaldi_profile_or_diagnostic_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -36,32 +36,44 @@ def test_ai_cannot_delete_vivaldi_profile_or_cache_storage(
             r"C:\Users\person\AppData\Local\Vivaldi\User Data\Default"
             r"\Extensions\abc\manifest.json"
         ),
+        (
+            r"C:\Users\person\AppData\Local\Vivaldi\User Data"
+            r"\Crashpad\reports\7b93c6b0-0001.dmp"
+        ),
     )
     baseline = load_rules()
     before = baseline.ai_rule_count
     updated = add_ai_verdicts(
         baseline,
-        [(path, RuleDecision.DELETE, "looks large") for path in protected],
+        [(path, RuleDecision.DELETE, "looks old or large") for path in protected],
     )
     for path in protected:
         assert updated.decision_for(path) is None
     assert updated.ai_rule_count == before
 
 
-def test_user_delete_of_vivaldi_history_does_not_become_generic_rule(
+def test_user_delete_of_vivaldi_history_or_crash_dump_is_not_generic(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _environment(tmp_path, monkeypatch)
     history = r"C:\Users\person\AppData\Local\Vivaldi\User Data\Default\History"
+    crash = (
+        r"C:\Users\person\AppData\Local\Vivaldi\User Data"
+        r"\Crashpad\reports\7b93c6b0-0001.dmp"
+    )
     updated = add_user_verdicts(
         load_rules(),
-        [(history, RuleDecision.DELETE, "用户想清空浏览历史")],
+        [
+            (history, RuleDecision.DELETE, "用户想清空浏览历史"),
+            (crash, RuleDecision.DELETE, "用户认为旧崩溃文件可以删除"),
+        ],
     )
     assert updated.decision_for(history) is None
+    assert updated.decision_for(crash) is None
 
 
-def test_ai_can_learn_vivaldi_owned_http_cache_decision(
+def test_ai_can_learn_http_cache_but_not_vivaldi_crashpad_deletion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -70,8 +82,16 @@ def test_ai_can_learn_vivaldi_owned_http_cache_decision(
         r"C:\Users\person\AppData\Local\Vivaldi\User Data"
         r"\Default\Cache\Cache_Data\f_001"
     )
+    crash = (
+        r"C:\Users\person\AppData\Local\Vivaldi\User Data"
+        r"\Crashpad\reports\7b93c6b0-0001.dmp"
+    )
     updated = add_ai_verdicts(
         load_rules(),
-        [(cache_file, RuleDecision.DELETE, "regenerable Vivaldi cache")],
+        [
+            (cache_file, RuleDecision.DELETE, "regenerable Vivaldi cache"),
+            (crash, RuleDecision.DELETE, "old diagnostic dump"),
+        ],
     )
     assert updated.decision_for(cache_file) is RuleDecision.DELETE
+    assert updated.decision_for(crash) is None
