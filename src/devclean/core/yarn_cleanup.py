@@ -1,10 +1,10 @@
 """Audited Yarn Classic and modern Yarn storage semantics for Windows cleanup.
 
-Yarn's machine cache is regenerable, but modern project-local ``.yarn/cache``
-can be an offline mirror committed for Zero-Installs. Project metadata, patches,
-releases, SDK integrations, and Yarn's global content-addressable store therefore
-stay protected. Whole-tree cleanup authority is limited to exact machine cache
-roots discovered from Yarn itself or explicit source-backed test hooks.
+Yarn caches are source-identifiable, but current vendor cleanup surfaces are not a
+safe substitute for DevClean's former raw whole-tree rules. Classic whole-cache
+cleaning widens from ``cache dir`` to its parent cache root; modern cache cleaning
+is project/configuration-sensitive and global mirror cleanup can trigger plugin
+hooks. Machine caches therefore remain visible but protected from generic delete.
 """
 
 from __future__ import annotations
@@ -29,9 +29,6 @@ from devclean.core._application_cleanup_impl import (
     RebuildCost,
     effective_idle_days,
 )
-
-_MIB = 1024**2
-_MACHINE_CACHE_IDLE_DAYS = 30.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,27 +73,17 @@ def _rule(
 
 _YARN_CLASSIC_CACHE_RULE = _rule(
     "yarn-classic-global-cache",
-    DecisionOwner.TOOL,
+    DecisionOwner.KEEP,
     RebuildCost.MEDIUM,
-    "Yarn Classic global package cache",
+    "Yarn Classic global package cache; generic raw deletion removed",
     root_key="YARN_CLASSIC_CACHE",
-    idle_days=_MACHINE_CACHE_IDLE_DAYS,
-    min_reclaim_bytes=64 * _MIB,
-    requires_process_closed=True,
-    size_sensitive_idle=False,
-    allow_whole_tree=True,
 )
 _YARN_GLOBAL_CACHE_RULE = _rule(
     "yarn-modern-global-cache",
-    DecisionOwner.TOOL,
+    DecisionOwner.KEEP,
     RebuildCost.MEDIUM,
-    "Yarn modern machine-global package cache",
+    "Yarn modern machine/global package cache; vendor lifecycle needs project-aware review",
     root_key="YARN_GLOBAL_CACHE",
-    idle_days=_MACHINE_CACHE_IDLE_DAYS,
-    min_reclaim_bytes=64 * _MIB,
-    requires_process_closed=True,
-    size_sensitive_idle=False,
-    allow_whole_tree=True,
 )
 _YARN_GLOBAL_FOLDER_RULE = _rule(
     "yarn-modern-global-state",
@@ -178,7 +165,7 @@ def yarn_roots(environment: Mapping[str, str] | None = None) -> YarnRootSet:
             global_caches.append(candidate / "cache")
 
     # Yarn Classic's Windows cache has historically lived here. Runtime discovery
-    # via ``yarn cache dir`` remains authoritative when Yarn is installed.
+    # via ``yarn cache dir`` remains authoritative for identity when Yarn is installed.
     localappdata = env.get("localappdata")
     if localappdata:
         default_classic = PureWindowsPath(localappdata) / "Yarn" / "Cache"
@@ -202,11 +189,7 @@ def yarn_scan_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[PureWindowsPath, ...]:
     roots = yarn_roots(environment)
-    return tuple(
-        dict.fromkeys(
-            (*roots.classic_cache_roots, *roots.global_folder_roots)
-        )
-    )
+    return tuple(dict.fromkeys((*roots.classic_cache_roots, *roots.global_folder_roots)))
 
 
 def match_yarn_rule(
@@ -235,24 +218,19 @@ def match_yarn_rule(
 def yarn_audited_tool_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
-    roots = yarn_roots(environment)
-    found: list[tuple[PureWindowsPath, ApplicationCleanupRule]] = []
-    seen: set[str] = set()
-    for root in roots.classic_cache_roots:
-        _append_tool_root(found, seen, root, _YARN_CLASSIC_CACHE_RULE)
-    for root in roots.global_cache_roots:
-        _append_tool_root(found, seen, root, _YARN_GLOBAL_CACHE_RULE)
-    return tuple(found)
+    """Return no generic delete roots; Yarn cleanup needs a dedicated vendor lane."""
+
+    del environment
+    return ()
 
 
 def whole_tree_yarn_rule(
     path: str | os.PathLike[str],
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationCleanupRule | None:
-    target = _impl._normalize(path)
-    for root, rule in yarn_audited_tool_roots(environment):
-        if target == _impl._normalize(root):
-            return rule
+    """Raw whole-tree Yarn cache deletion is deliberately not authorized."""
+
+    del path, environment
     return None
 
 
@@ -272,11 +250,7 @@ def evaluate_yarn_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
     if rule.owner is DecisionOwner.KEEP:
         return ApplicationPolicyDecision(
             rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
@@ -292,6 +266,8 @@ def evaluate_yarn_path(
             _impl._age_bucket(idle, rule.user_age_buckets),
         )
 
+    # Keep the generic evaluator shape for compatibility if a future source-backed
+    # TOOL rule is added, but no current Yarn cache rule enters this branch.
     threshold = effective_idle_days(rule, logical_size)
     running = process_running
     if running is None and rule.requires_process_closed:
@@ -416,19 +392,6 @@ def _append_root_match(
         return
     owner_weight = 3 if rule.owner is DecisionOwner.KEEP else 1
     matches.append((len(normalized_root), owner_weight * 1000 - index, rule))
-
-
-def _append_tool_root(
-    found: list[tuple[PureWindowsPath, ApplicationCleanupRule]],
-    seen: set[str],
-    root: PureWindowsPath,
-    rule: ApplicationCleanupRule,
-) -> None:
-    key = _impl._normalize(root)
-    if not key or key in seen:
-        return
-    seen.add(key)
-    found.append((root, rule))
 
 
 def _append_absolute(found: list[PureWindowsPath], value: str) -> None:
