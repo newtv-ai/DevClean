@@ -1,0 +1,55 @@
+name: Temporary age-based review patch
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: agent/age-based-review-reaudit-2026-08
+          persist-credentials: true
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.6"
+          python-version: "3.13"
+      - name: Sync locked environment
+        run: uv sync --frozen
+      - name: Apply age-based authority correction
+        run: uv run --frozen python .github/temporary-age-based-review-patch.py
+      - name: Remove temporary patch machinery
+        shell: pwsh
+        run: |
+          git rm -f .github/temporary-age-based-review-patch.py .github/workflows/temporary-age-based-review-patch.yml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Format and validate final tree
+        shell: pwsh
+        run: |
+          uv lock --check
+          uv sync --frozen
+          uv pip check
+          uv run --frozen ruff check --fix src/devclean/core/triage.py tests/test_generic_review_routing.py
+          uv run --frozen ruff format src/devclean/core/triage.py tests/test_generic_review_routing.py
+          uv run --frozen ruff check src scripts tests
+          uv run --frozen python -m mypy
+          uv run --frozen pytest
+      - name: Commit final correction
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove raw age-based deletion authority"
+          git push origin HEAD:agent/age-based-review-reaudit-2026-08
