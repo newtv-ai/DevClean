@@ -86,6 +86,7 @@ A clean CI run on a stale stacked base is not enough. Positive audit and impleme
 | Windows Recycle Bin | exact per-drive Shell API USER_REVIEW; no raw `$Recycle.Bin` and never all-drive widening |
 | Delivery Optimization cache | exact FileId vendor maintenance; expired unpinned `Caching` item deterministic candidate, retained unpinned `Caching` item USER_REVIEW, pinned/active/unknown protected |
 | Windows crash dumps | exact CrashControl large/small, LiveKernelReports root/component, and WER LocalDumps `.dmp` files USER_REVIEW with handle-bound exact deletion; WER queue/archive report stores REPORT_ONLY |
+| Generic Windows temp/age roots | REPORT_ONLY discovery; raw mtime/age never creates deletion authority, while narrower source-owned application/Windows lanes remain eligible |
 | Task Manager live-kernel dumps | exact current-user Known Folder-derived `LiveKernelDumps` direct `.dmp` files USER_REVIEW; mixed `%LOCALAPPDATA%\Temp` user-mode dumps excluded |
 | WSL distribution inventory | exact registered/running distro inventory only; distro/rootfs/VHD lifecycle protected |
 | WSL pip cache | exact distro + vendor `pip cache` behind root-filesystem locality proof |

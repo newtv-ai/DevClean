@@ -101,7 +101,7 @@ def test_generic_filename_cache_and_development_hints_are_protected(tmp_path: Pa
         _assert_protected(_triage(path))
 
 
-def test_recent_age_based_root_is_kept_without_asking_user(tmp_path: Path) -> None:
+def test_legacy_age_based_root_is_protected_regardless_of_mtime(tmp_path: Path) -> None:
     root = tmp_path / "known-temp"
     root.mkdir()
     known = KnownCleanupRoot(
@@ -114,9 +114,7 @@ def test_recent_age_based_root_is_kept_without_asking_user(tmp_path: Path) -> No
     old = root / "old.tmp"
 
     _assert_protected(_triage(recent, age_days=0, known_roots=(known,)))
-    old_item = _triage(old, age_days=3, known_roots=(known,))
-    assert old_item.lane is ReviewLane.DETERMINISTIC_CANDIDATE
-    assert app.is_direct_cleanup_eligible(old_item)
+    _assert_protected(_triage(old, age_days=365, known_roots=(known,)))
 
 
 def test_legacy_manual_review_root_is_protected_even_from_old_sidecar(tmp_path: Path) -> None:
@@ -235,3 +233,47 @@ def test_packaged_scan_roots_no_longer_delegate_broad_raw_paths_to_manual_review
         for root in rules.scan.known_cleanup_roots
     )
     assert rules.delete.classification.inferred_ai_review_categories == frozenset()
+
+
+def test_explicit_temp_root_never_gains_raw_age_authority(tmp_path: Path) -> None:
+    rules = default_rules()
+    temp_root = tmp_path / "Temp"
+    temp_root.mkdir()
+    path = temp_root / "very-old.tmp"
+    item = triage_file(
+        _file_record(path, age_days=365),
+        delete_config=rules.delete.classification,
+        keep_config=rules.keep.classification,
+        now=_NOW,
+        temp_root=temp_root,
+    )
+    _assert_protected(item)
+    assert "temp_root" in item.tags
+
+
+def test_legacy_age_root_child_directory_is_not_whole_tree_candidate(tmp_path: Path) -> None:
+    rules = default_rules()
+    root = tmp_path / "Temp"
+    child = root / "old-session"
+    child.mkdir(parents=True)
+    known = KnownCleanupRoot(
+        path=root,
+        category=CleanupCategory.USER_TEMP,
+        policy=CleanupPolicy.AGE_BASED_REVIEW,
+        label="Legacy temp",
+    )
+    item = triage_directory(
+        _directory_record(child, root=root),
+        delete_config=rules.delete.classification,
+        keep_config=rules.keep.classification,
+        known_roots=(known,),
+    )
+    assert item is None
+
+
+def test_packaged_scan_roots_have_no_age_based_authority() -> None:
+    rules = default_rules()
+    assert not any(
+        CleanupPolicy(root.policy) is CleanupPolicy.AGE_BASED_REVIEW
+        for root in rules.scan.known_cleanup_roots
+    )

@@ -80,7 +80,7 @@
         "%TEMP%"
       ],
       "category": "USER_TEMP",
-      "policy": "AGE_BASED_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "当前用户临时文件"
     },
     {
@@ -93,7 +93,7 @@
         "%SYSTEMROOT%\\SystemTemp"
       ],
       "category": "USER_TEMP",
-      "policy": "AGE_BASED_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "Windows 临时文件"
     },
     {
@@ -105,7 +105,7 @@
         "%LOCALAPPDATA%\\CrashDumps"
       ],
       "category": "CRASH_DUMPS",
-      "policy": "AGE_BASED_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "当前用户崩溃转储"
     },
     {
