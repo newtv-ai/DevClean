@@ -32,7 +32,7 @@ jobs:
           $text = Get-Content .github/workflows/patch-opera-system-cache-temp.yml -Raw
           $match = [regex]::Match($text, "(?s)@'\r?\n(.*?)\r?\n\s*'@ \| uv run --frozen python -")
           if (-not $match.Success) { throw "Could not extract embedded Python patch" }
-          $match.Groups[1].Value | uv run --frozen python -
+          $match.Groups[1].Value | uv run --frozen python -c "import sys, textwrap; sys.stdout.write(textwrap.dedent(sys.stdin.read()))" | uv run --frozen python -
       - name: Format and validate
         shell: pwsh
         run: |
@@ -44,12 +44,13 @@ jobs:
           uv run --frozen ruff check src scripts tests
           uv run --frozen mypy src scripts tests
           uv run --frozen pytest -q
-      - name: Commit correction and remove temporary workflows
+      - name: Commit correction and remove temporary files
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/patch-opera-system-cache-temp.yml .github/workflows/patch-opera-system-cache-pr-temp.yml
+          Get-ChildItem docs/opera-system-cache-pr-note*.tmp -ErrorAction SilentlyContinue | ForEach-Object { git rm $_.FullName }
           git add src/devclean/core/opera_cleanup.py tests/test_opera_cleanup.py tests/test_opera_rule_authority.py docs/opera-system-cache-authority-audit.md docs/storage-audit-status.md
           git commit -m "Remove broad Opera System Cache deletion authority"
           git push origin HEAD:agent/opera-system-cache-authority-audit-2026-08
