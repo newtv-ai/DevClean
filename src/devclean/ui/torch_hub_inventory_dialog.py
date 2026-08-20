@@ -204,14 +204,16 @@ class _TorchHubInventoryDialog:
             return
         if not inventory.scannable:
             self._status.set(
-                "根目录是重解析/云边界，DevClean 拒绝穿越。" + _warnings_text(inventory)
+                "根目录是重解析/云边界，DevClean 拒绝穿越。"
+                + _warnings_text(inventory)
             )
             return
         self._status.set(
             f"只读统计 {len(inventory.entries)} 个顶层对象、"
             f"{inventory.total_file_count} 个普通文件、"
             f"{_format_bytes(inventory.total_logical_bytes)} 逻辑大小。"
-            "这些数字不是删除候选，也不等于可回收物理空间。" + _warnings_text(inventory)
+            "这些数字不是删除候选，也不等于可回收物理空间。"
+            + _warnings_text(inventory)
         )
 
     def _show_selected(self, _event: tk.Event[tk.Misc]) -> None:

@@ -151,7 +151,9 @@ class _WslGoBuildCacheDialog:
         inspect_state = tk.NORMAL if not busy and self._wsl_inventory is not None else tk.DISABLED
         self._inspect_button.configure(state=inspect_state)
         clean_allowed = (
-            not busy and self._go_inventory is not None and self._go_inventory.executable
+            not busy
+            and self._go_inventory is not None
+            and self._go_inventory.executable
         )
         self._clean_button.configure(state=tk.NORMAL if clean_allowed else tk.DISABLED)
 
@@ -185,7 +187,8 @@ class _WslGoBuildCacheDialog:
             return
         if not distro.running and not messagebox.askyesno(
             "WSL Go 构建缓存维护",
-            "所选发行版当前已停止。检查 Go 需要在该发行版内执行命令,因此可能启动它。是否继续?",
+            "所选发行版当前已停止。检查 Go 需要在该发行版内执行命令,"
+            "因此可能启动它。是否继续?",
         ):
             return
 

@@ -188,7 +188,9 @@ def test_cleanup_refuses_existing_dism_activity_before_vendor_mutation(
     monkeypatch.setattr(
         component_store,
         "_run_command",
-        lambda *args, **kwargs: pytest.fail("cleanup must not run during existing DISM activity"),
+        lambda *args, **kwargs: pytest.fail(
+            "cleanup must not run during existing DISM activity"
+        ),
     )
 
     with pytest.raises(RuntimeError, match="DISM/DismHost"):
@@ -243,7 +245,9 @@ def test_cleanup_refuses_if_fresh_analysis_no_longer_recommends_cleanup(
     monkeypatch.setattr(
         component_store,
         "_run_command",
-        lambda *args, **kwargs: pytest.fail("cleanup must not run after recommendation changed"),
+        lambda *args, **kwargs: pytest.fail(
+            "cleanup must not run after recommendation changed"
+        ),
     )
 
     with pytest.raises(RuntimeError, match="已不再建议"):
@@ -360,7 +364,9 @@ def test_dism_activity_check_fails_closed_on_process_query_error(
         ),
     )
 
-    assert component_store.dism_activity_running({"DEVCLEAN_TASKLIST_EXE": "tasklist-test"})
+    assert component_store.dism_activity_running(
+        {"DEVCLEAN_TASKLIST_EXE": "tasklist-test"}
+    )
 
 
 def test_dism_activity_check_detects_dismhost(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -377,7 +383,9 @@ def test_dism_activity_check_detects_dismhost(monkeypatch: pytest.MonkeyPatch) -
         ),
     )
 
-    assert component_store.dism_activity_running({"DEVCLEAN_TASKLIST_EXE": "tasklist-test"})
+    assert component_store.dism_activity_running(
+        {"DEVCLEAN_TASKLIST_EXE": "tasklist-test"}
+    )
 
 
 def test_dism_identity_rejects_reparse_or_non_local_executable(

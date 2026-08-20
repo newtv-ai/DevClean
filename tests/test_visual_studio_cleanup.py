@@ -45,11 +45,23 @@ def _layout(tmp_path: Path) -> tuple[dict[str, str], Path, Path, Path]:
 
 
 def _roslyn_cache(environment: dict[str, str]) -> Path:
-    return Path(environment["LOCALAPPDATA"]) / "Microsoft" / "VisualStudio" / "Roslyn" / "Cache"
+    return (
+        Path(environment["LOCALAPPDATA"])
+        / "Microsoft"
+        / "VisualStudio"
+        / "Roslyn"
+        / "Cache"
+    )
 
 
 def _web_tools(environment: dict[str, str], selector: str = "17.0_deadbeef") -> Path:
-    return Path(environment["LOCALAPPDATA"]) / "Microsoft" / "VisualStudio" / selector / "WebTools"
+    return (
+        Path(environment["LOCALAPPDATA"])
+        / "Microsoft"
+        / "VisualStudio"
+        / selector
+        / "WebTools"
+    )
 
 
 def test_visual_studio_component_caches_are_discovered(tmp_path: Path) -> None:

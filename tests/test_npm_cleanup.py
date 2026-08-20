@@ -35,8 +35,12 @@ def _env() -> dict[str, str]:
 
 def test_npm_default_windows_roots_are_resolved() -> None:
     roots = npm_roots(_env())
-    assert roots.cache_roots == (PureWindowsPath(r"C:\Users\alice\AppData\Local\npm-cache"),)
-    assert roots.prefix_roots == (PureWindowsPath(r"C:\Users\alice\AppData\Roaming\npm"),)
+    assert roots.cache_roots == (
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\npm-cache"),
+    )
+    assert roots.prefix_roots == (
+        PureWindowsPath(r"C:\Users\alice\AppData\Roaming\npm"),
+    )
     assert roots.user_config_files == (PureWindowsPath(r"C:\Users\alice\.npmrc"),)
     assert roots.external_logs_roots == ()
 

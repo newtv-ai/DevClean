@@ -12,12 +12,13 @@ def _package_ids(source: str, tmp_path: Path) -> set[str]:
     root = tmp_path / "project"
     script = root / "app" / "build.gradle.kts"
     return {
-        reference.package_id for reference in project_refs._parse_script_text(root, script, source)
+        reference.package_id
+        for reference in project_refs._parse_script_text(root, script, source)
     }
 
 
 def test_literal_android_sdk_references_map_to_exact_sdkmanager_packages(tmp_path: Path) -> None:
-    source = r"""
+    source = r'''
 android {
     compileSdk = 35
     buildToolsVersion = "35.0.0"
@@ -29,7 +30,7 @@ android {
         }
     }
 }
-"""
+'''
 
     assert _package_ids(source, tmp_path) == {
         "platforms;android-35",
@@ -42,7 +43,7 @@ android {
 def test_groovy_compile_sdk_version_and_settings_plugin_release_are_positive_evidence(
     tmp_path: Path,
 ) -> None:
-    source = r"""
+    source = r'''
 android {
     compileSdkVersion "android-34"
     compileSdk {
@@ -51,7 +52,7 @@ android {
         }
     }
 }
-"""
+'''
 
     assert _package_ids(source, tmp_path) == {
         "platforms;android-34",
@@ -60,7 +61,7 @@ android {
 
 
 def test_dynamic_values_are_not_guessed_into_package_ids(tmp_path: Path) -> None:
-    source = r"""
+    source = r'''
 android {
     compileSdk = libs.versions.compileSdk.get().toInt()
     buildToolsVersion = versions.buildTools
@@ -71,7 +72,7 @@ android {
         }
     }
 }
-"""
+'''
 
     assert not _package_ids(source, tmp_path)
 
@@ -79,7 +80,7 @@ android {
 def test_comments_unrelated_blocks_and_string_examples_do_not_create_evidence(
     tmp_path: Path,
 ) -> None:
-    source = r"""
+    source = r'''
 // compileSdk = 99
 /* buildToolsVersion = "99.0.0" */
 val example = "compileSdk = 98; ndkVersion = '98.0.0'"
@@ -91,7 +92,7 @@ foo {
 android {
     compileSdk = 35 // ndkVersion = "99.0.0"
 }
-"""
+'''
 
     assert _package_ids(source, tmp_path) == {"platforms;android-35"}
 
@@ -106,7 +107,7 @@ def test_scan_reads_only_selected_gradle_files_and_reports_installed_literals(
     app.mkdir(parents=True)
     generated.mkdir()
     (root / "settings.gradle.kts").write_text(
-        "pluginManagement { repositories { google() } }\n",
+        'pluginManagement { repositories { google() } }\n',
         encoding="utf-8",
     )
     (app / "build.gradle.kts").write_text(
@@ -114,7 +115,7 @@ def test_scan_reads_only_selected_gradle_files_and_reports_installed_literals(
         encoding="utf-8",
     )
     (generated / "build.gradle.kts").write_text(
-        "android { compileSdk = 99 }\n",
+        'android { compileSdk = 99 }\n',
         encoding="utf-8",
     )
 

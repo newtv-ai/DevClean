@@ -39,7 +39,9 @@ def _env() -> dict[str, str]:
 
 def test_vivaldi_default_user_data_root_is_discovered() -> None:
     roots = vivaldi_roots(_env())
-    assert PureWindowsPath(r"C:\Users\alice\AppData\Local\Vivaldi\User Data") in roots.data_roots
+    assert PureWindowsPath(
+        r"C:\Users\alice\AppData\Local\Vivaldi\User Data"
+    ) in roots.data_roots
 
 
 def test_vivaldi_chromium_cache_user_data_and_crash_boundaries() -> None:
@@ -100,13 +102,10 @@ def test_vivaldi_crash_reports_stay_protected_regardless_of_age_or_size() -> Non
     )
     assert decision is not None
     assert decision.action is PolicyAction.KEEP_PROTECTED
-    assert (
-        whole_tree_application_rule(
-            r"C:\Users\alice\AppData\Local\Vivaldi\User Data\Crashpad\reports",
-            _env(),
-        )
-        is None
-    )
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Local\Vivaldi\User Data\Crashpad\reports",
+        _env(),
+    ) is None
 
 
 def test_vivaldi_standalone_user_data_root_is_detected_from_install_layout(

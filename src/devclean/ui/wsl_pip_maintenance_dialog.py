@@ -179,7 +179,8 @@ class _WslPipMaintenanceDialog:
             return
         if not distro.running and not messagebox.askyesno(
             "WSL pip 缓存维护",
-            "所选发行版当前已停止. 检查 pip 需要在该发行版内执行命令, 因此可能启动它. 是否继续?",
+            "所选发行版当前已停止. 检查 pip 需要在该发行版内执行命令, "
+            "因此可能启动它. 是否继续?",
         ):
             return
 

@@ -234,7 +234,8 @@ def recycle_exact_object(
 
     source_path = _ordinary_absolute_path(source, "source")
     is_directory = bool(
-        expected.attributes is not None and expected.attributes & _FILE_ATTRIBUTE_DIRECTORY
+        expected.attributes is not None
+        and expected.attributes & _FILE_ATTRIBUTE_DIRECTORY
     )
     root_handle, root_final = _open_boundary(boundary)
     try:
@@ -300,7 +301,9 @@ def _shell_delete_to_recycle_bin(path: str) -> None:
     # The Shell expects a double-null-terminated list even for one entry.
     operation.pFrom = ctypes.c_wchar_p(path + "\0\0")
     operation.pTo = None
-    operation.fFlags = _FOF_ALLOWUNDO | _FOF_NOCONFIRMATION | _FOF_SILENT | _FOF_NOERRORUI
+    operation.fFlags = (
+        _FOF_ALLOWUNDO | _FOF_NOCONFIRMATION | _FOF_SILENT | _FOF_NOERRORUI
+    )
     operation.fAnyOperationsAborted = 0
     operation.hNameMappings = None
     operation.lpszProgressTitle = None
@@ -368,7 +371,9 @@ def purge_exact_directory_tree(
             _require_handle_in_boundary(handle, root_final, allow_equal=False)
             _require_final_path(handle, root_path)
             state = _TreePurgeState()
-            completed = _purge_tree_contents(root_path, state, on_progress, is_cancelled)
+            completed = _purge_tree_contents(
+                root_path, state, on_progress, is_cancelled
+            )
             if completed:
                 _set_delete_disposition(handle, root_path)
                 state.directories_removed += 1
@@ -473,7 +478,9 @@ def _open_exact_directory(
         share_mode,
         None,
         _OPEN_EXISTING,
-        _FILE_FLAG_BACKUP_SEMANTICS | _FILE_FLAG_OPEN_REPARSE_POINT | _FILE_FLAG_OPEN_NO_RECALL,
+        _FILE_FLAG_BACKUP_SEMANTICS
+        | _FILE_FLAG_OPEN_REPARSE_POINT
+        | _FILE_FLAG_OPEN_NO_RECALL,
         None,
     )
     if handle == _INVALID_HANDLE_VALUE:
@@ -506,7 +513,9 @@ def _open_exact_directory_for_mutation(path: str) -> wintypes.HANDLE:
         _MUTATION_SHARE_MODE,
         None,
         _OPEN_EXISTING,
-        _FILE_FLAG_BACKUP_SEMANTICS | _FILE_FLAG_OPEN_REPARSE_POINT | _FILE_FLAG_OPEN_NO_RECALL,
+        _FILE_FLAG_BACKUP_SEMANTICS
+        | _FILE_FLAG_OPEN_REPARSE_POINT
+        | _FILE_FLAG_OPEN_NO_RECALL,
         None,
     )
     if handle == _INVALID_HANDLE_VALUE:
@@ -657,7 +666,9 @@ def _open_leaf_for_delete(path: str) -> wintypes.HANDLE:
         _MUTATION_SHARE_MODE,
         None,
         _OPEN_EXISTING,
-        _FILE_FLAG_BACKUP_SEMANTICS | _FILE_FLAG_OPEN_REPARSE_POINT | _FILE_FLAG_OPEN_NO_RECALL,
+        _FILE_FLAG_BACKUP_SEMANTICS
+        | _FILE_FLAG_OPEN_REPARSE_POINT
+        | _FILE_FLAG_OPEN_NO_RECALL,
         None,
     )
     if handle == _INVALID_HANDLE_VALUE:
@@ -821,7 +832,9 @@ def _directory_snapshot_from_file_snapshot(
     )
 
 
-def _directory_source_name_state(path: str, expected: ExactDirectorySnapshot) -> tuple[bool, bool]:
+def _directory_source_name_state(
+    path: str, expected: ExactDirectorySnapshot
+) -> tuple[bool, bool]:
     metadata = _read_optional_metadata(path)
     if metadata is None:
         return (True, False)
@@ -841,7 +854,9 @@ def _require_final_path(handle: wintypes.HANDLE, expected_path: str) -> None:
         raise ExactCleanupError("opened object's final path no longer matches the plan")
 
 
-def _metadata_matches(metadata: FileSystemMetadata | None, expected: ExactFileSnapshot) -> bool:
+def _metadata_matches(
+    metadata: FileSystemMetadata | None, expected: ExactFileSnapshot
+) -> bool:
     if metadata is None:
         return False
     return (

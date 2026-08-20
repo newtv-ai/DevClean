@@ -266,7 +266,9 @@ class _JetBrainsLeftoverMaintenanceDialog:
     def _render(self) -> None:
         self._tree.delete(*self._tree.get_children())
         for index, item in enumerate(self._inventories):
-            installed = "是" if item.installed else "否" if item.installed is False else "不确定"
+            installed = (
+                "是" if item.installed else "否" if item.installed is False else "不确定"
+            )
             state = "厂商过期候选" if item.cleanup_supported else item.reason
             self._tree.insert(
                 "",

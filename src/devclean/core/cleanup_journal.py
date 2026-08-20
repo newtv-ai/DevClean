@@ -279,7 +279,9 @@ class CleanupJournal:
                             "scan_root": intent.scan_root,
                             "category": intent.category,
                             "logical_size": snapshot.logical_size,
-                            "volume_serial_u64": _encode_volume_serial(snapshot.volume_serial),
+                            "volume_serial_u64": _encode_volume_serial(
+                                snapshot.volume_serial
+                            ),
                             "file_id": snapshot.file_id,
                             "file_id_kind": snapshot.file_id_kind,
                             "link_count": snapshot.link_count,
@@ -291,10 +293,14 @@ class CleanupJournal:
                                 intent.scan_root_snapshot.volume_serial
                             ),
                             "root_file_id": intent.scan_root_snapshot.file_id,
-                            "root_file_id_kind": (intent.scan_root_snapshot.file_id_kind),
+                            "root_file_id_kind": (
+                                intent.scan_root_snapshot.file_id_kind
+                            ),
                             "root_attributes": intent.scan_root_snapshot.attributes,
                             "root_reparse_tag": intent.scan_root_snapshot.reparse_tag,
-                            "root_creation_time_ns": (intent.scan_root_snapshot.creation_time_ns),
+                            "root_creation_time_ns": (
+                                intent.scan_root_snapshot.creation_time_ns
+                            ),
                             "root_last_write_time_ns": (
                                 intent.scan_root_snapshot.last_write_time_ns
                             ),
@@ -374,7 +380,11 @@ class CleanupJournal:
                 ActionState.UNKNOWN,
                 ActionState.PURGE_PENDING,
             }
-            state = BatchState.NEEDS_REVIEW if states & ambiguous else BatchState.COMPLETED
+            state = (
+                BatchState.NEEDS_REVIEW
+                if states & ambiguous
+                else BatchState.COMPLETED
+            )
             connection.execute(
                 "UPDATE cleanup_batches SET state = ?, updated_at = ? WHERE batch_id = ?",
                 (state.value, _now(), batch_id),
@@ -515,8 +525,12 @@ def _row_to_action(row: sqlite3.Row) -> JournalAction:
         file_id=str(row["root_file_id"]),
         file_id_kind=str(row["root_file_id_kind"]),
         link_count=1,
-        attributes=(int(row["root_attributes"]) if row["root_attributes"] is not None else None),
-        reparse_tag=(int(row["root_reparse_tag"]) if row["root_reparse_tag"] is not None else None),
+        attributes=(
+            int(row["root_attributes"]) if row["root_attributes"] is not None else None
+        ),
+        reparse_tag=(
+            int(row["root_reparse_tag"]) if row["root_reparse_tag"] is not None else None
+        ),
         creation_time_ns=int(row["root_creation_time_ns"]),
         last_write_time_ns=int(row["root_last_write_time_ns"]),
     )

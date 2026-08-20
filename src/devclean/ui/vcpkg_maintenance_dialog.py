@@ -39,7 +39,9 @@ class _VcpkgMaintenanceDialog:
         self._window.title("vcpkg 存储维护")
         self._window.geometry("980x660")
         self._window.minsize(840, 560)
-        self._events: queue.Queue[_InventoryEvent | _CleanupEvent | Exception] = queue.Queue()
+        self._events: queue.Queue[
+            _InventoryEvent | _CleanupEvent | Exception
+        ] = queue.Queue()
         self._status = tk.StringVar(value="请选择 vcpkg 根目录。")
         self._root_text = tk.StringVar(value="")
         self._inventory: VcpkgStorageInventory | None = None
@@ -107,7 +109,9 @@ class _VcpkgMaintenanceDialog:
             state=tk.DISABLED,
         )
         self._clean_button.pack(side=tk.RIGHT, padx=(8, 0))
-        ttk.Button(footer, text="关闭", command=self._window.destroy).pack(side=tk.RIGHT)
+        ttk.Button(footer, text="关闭", command=self._window.destroy).pack(
+            side=tk.RIGHT
+        )
 
         self._window.after(100, self._poll)
 
@@ -225,7 +229,9 @@ class _VcpkgMaintenanceDialog:
             )
             self._busy = False
             root = (
-                self._inventory.root if self._inventory is not None else Path(self._root_text.get())
+                self._inventory.root
+                if self._inventory is not None
+                else Path(self._root_text.get())
             )
             self._start_inventory(root)
         self._window.after(100, self._poll)

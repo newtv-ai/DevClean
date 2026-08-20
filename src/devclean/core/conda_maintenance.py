@@ -87,7 +87,9 @@ def inventory_conda_storage(
                 logical_bytes=size,
                 exists=exists,
                 recommended=size >= _RECOMMEND_BYTES,
-                reason=("Conda 官方 tarball/index cache 可安全清理; extracted packages 保留不动"),
+                reason=(
+                    "Conda 官方 tarball/index cache 可安全清理; extracted packages 保留不动"
+                ),
             )
         )
     return CondaStorageInventory(tuple(entries))
@@ -122,7 +124,8 @@ def clean_conda_package_cache(
     if info_result.returncode != 0:
         detail = _combined_output(info_result.stdout, info_result.stderr)
         raise RuntimeError(
-            f"conda info --json 失败 (退出码 {info_result.returncode}): {detail or 'no output'}"
+            f"conda info --json 失败 (退出码 {info_result.returncode}): "
+            f"{detail or 'no output'}"
         )
     confirmed = _confirmed_package_caches(info_result.stdout)
     if target not in {_impl._normalize(path) for path in confirmed}:
@@ -211,7 +214,9 @@ def _directory_bytes(root: Path) -> int:
 
 
 def _combined_output(stdout: str | None, stderr: str | None) -> str:
-    return "\n".join(chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip())
+    return "\n".join(
+        chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip()
+    )
 
 
 __all__ = [

@@ -77,8 +77,12 @@ class _UnityUpmMaintenanceDialog:
 
         legend = ttk.Frame(container)
         legend.pack(fill=tk.X, pady=(0, 7))
-        ttk.Label(legend, text="Unity 自管：只统计，不与厂商 LRU/缓存策略竞争").pack(side=tk.LEFT)
-        ttk.Label(legend, text="你来决定：只有旧版 packages，可手动选择").pack(side=tk.RIGHT)
+        ttk.Label(legend, text="Unity 自管：只统计，不与厂商 LRU/缓存策略竞争").pack(
+            side=tk.LEFT
+        )
+        ttk.Label(legend, text="你来决定：只有旧版 packages，可手动选择").pack(
+            side=tk.RIGHT
+        )
 
         self._rows = ttk.Frame(container)
         self._rows.pack(fill=tk.BOTH, expand=True)
@@ -267,7 +271,8 @@ class _UnityUpmMaintenanceDialog:
             lane = _lane_label(entry.lane)
             active = " · 当前有效" if entry.active else ""
             title = (
-                f"{lane}{active} · {_kind_label(entry.kind)} · {_format_bytes(entry.logical_bytes)}"
+                f"{lane}{active} · {_kind_label(entry.kind)} · "
+                f"{_format_bytes(entry.logical_bytes)}"
             )
             row = ttk.LabelFrame(self._rows, text=title, padding=8)
             row.grid(row=index, column=0, sticky="ew", pady=(0, 6))

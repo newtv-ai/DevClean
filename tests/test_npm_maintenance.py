@@ -123,7 +123,9 @@ def test_inventory_uses_vendor_cache_root_and_separates_cache_classes(
         "make-fetch-happen:key-a",
         "make-fetch-happen:key-b",
     )
-    assert inventory.npx_entries == (NpmNpxEntry("abc123", npx_entry, "package-a@1.0.0", 23, 1),)
+    assert inventory.npx_entries == (
+        NpmNpxEntry("abc123", npx_entry, "package-a@1.0.0", 23, 1),
+    )
     pinned_calls = [call for call in calls if call[0][0] == "cache"]
     assert pinned_calls
     assert all(call[1]["NPM_CONFIG_CACHE"] == str(root) for call in pinned_calls)

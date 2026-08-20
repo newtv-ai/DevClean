@@ -31,7 +31,9 @@ from devclean.core._application_cleanup_impl import (
 )
 
 _MIB = 1024**2
-_AVD_PROCESS_NAME_REGEX = r"(?i)^(?:emulator(?:64)?(?:-[^.]*)?|qemu-system-[^.]+)\.exe$"
+_AVD_PROCESS_NAME_REGEX = (
+    r"(?i)^(?:emulator(?:64)?(?:-[^.]*)?|qemu-system-[^.]+)\.exe$"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -318,7 +320,11 @@ def match_android_avd_rule(
         cache = content / "cache.img"
         overlay = content / "cache.img.qcow2"
         if normalized == _impl._normalize(cache):
-            rule = _AVD_COUPLED_CACHE_RULE if _path_exists(overlay) else _AVD_TEMP_PARTITION_RULE
+            rule = (
+                _AVD_COUPLED_CACHE_RULE
+                if _path_exists(overlay)
+                else _AVD_TEMP_PARTITION_RULE
+            )
             _append_match(matches, normalized, content, rule, 0)
         elif normalized == _impl._normalize(overlay):
             _append_match(matches, normalized, content, _AVD_CACHE_OVERLAY_RULE, 0)
@@ -382,9 +388,15 @@ def evaluate_android_avd_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
+    idle = (
+        None
+        if observed is None
+        else max(0.0, (current - observed).total_seconds() / 86_400)
+    )
     if rule.owner is DecisionOwner.KEEP:
-        return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
+        return ApplicationPolicyDecision(
+            rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
+        )
     if rule.owner is DecisionOwner.USER:
         return ApplicationPolicyDecision(
             rule,

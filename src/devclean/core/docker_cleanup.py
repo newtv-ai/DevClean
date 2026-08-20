@@ -89,7 +89,9 @@ def docker_roots(environment: Mapping[str, str] | None = None) -> DockerRootSet:
     localappdata = env.get("localappdata")
     appdata = env.get("appdata")
 
-    desktop_data = PureWindowsPath(localappdata) / "Docker" / "wsl" if localappdata else None
+    desktop_data = (
+        PureWindowsPath(localappdata) / "Docker" / "wsl" if localappdata else None
+    )
     explicit_config = _absolute_path(env.get("docker_config"))
     cli_config = explicit_config
     if cli_config is None and userprofile:
@@ -151,7 +153,11 @@ def evaluate_docker_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
+    idle = (
+        None
+        if observed is None
+        else max(0.0, (current - observed).total_seconds() / 86_400)
+    )
     return ApplicationPolicyDecision(
         rule,
         PolicyAction.KEEP_PROTECTED,

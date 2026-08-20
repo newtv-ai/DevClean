@@ -203,8 +203,9 @@ def inventory_unity_upm_storage(
         )
 
         candidate_lfs = root.path / "git-lfs"
-        active_lfs = layout.git_lfs_enabled and _normalized(candidate_lfs) == _normalized(
-            layout.active_git_lfs
+        active_lfs = (
+            layout.git_lfs_enabled
+            and _normalized(candidate_lfs) == _normalized(layout.active_git_lfs)
         )
         add(
             UnityUpmStorageKind.GIT_LFS,
@@ -347,7 +348,8 @@ def _discover_layout(environment: Mapping[str, str] | None) -> _UpmLayout:
         active_origin = UnityUpmRootOrigin.DEFAULT
     else:
         raise ValueError(
-            "无法确定 Unity UPM 全局缓存根: 缺少 LOCALAPPDATA 且没有 cacheRoot/UPM_CACHE_ROOT 覆盖"
+            "无法确定 Unity UPM 全局缓存根: 缺少 LOCALAPPDATA 且没有 cacheRoot/"
+            "UPM_CACHE_ROOT 覆盖"
         )
 
     root_candidates: list[tuple[Path, UnityUpmRootOrigin, bool]] = [

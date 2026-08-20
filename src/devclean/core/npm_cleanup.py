@@ -31,7 +31,8 @@ from devclean.core._application_cleanup_impl import (
 
 _MIB = 1024**2
 _NPM_EXTERNAL_LOG_PATTERN = (
-    "{????-??-??T??_??_??_???Z-debug-?.log,????-??-??T??_??_??_???Z-debug.log}"
+    "{????-??-??T??_??_??_???Z-debug-?.log,"
+    "????-??-??T??_??_??_???Z-debug.log}"
 )
 
 
@@ -239,7 +240,9 @@ def npm_roots(environment: Mapping[str, str] | None = None) -> NpmRootSet:
     appdata = env.get("appdata")
     profile = env.get("userprofile")
 
-    default_cache = PureWindowsPath(localappdata) / "npm-cache" if localappdata else None
+    default_cache = (
+        PureWindowsPath(localappdata) / "npm-cache" if localappdata else None
+    )
     default_prefix = PureWindowsPath(appdata) / "npm" if appdata else None
     default_user_config = PureWindowsPath(profile) / ".npmrc" if profile else None
 
@@ -392,7 +395,11 @@ def evaluate_npm_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
+    idle = (
+        None
+        if observed is None
+        else max(0.0, (current - observed).total_seconds() / 86_400)
+    )
 
     if rule.owner is DecisionOwner.KEEP:
         return ApplicationPolicyDecision(

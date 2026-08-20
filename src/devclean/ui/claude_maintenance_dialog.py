@@ -181,7 +181,9 @@ class _ClaudeMaintenanceDialog:
             self._busy = False
             self._sync_buttons()
             error = (
-                payload if isinstance(payload, Exception) else ClaudeMaintenanceError(str(payload))
+                payload
+                if isinstance(payload, Exception)
+                else ClaudeMaintenanceError(str(payload))
             )
             messagebox.showerror("Claude plugin prune", str(error), parent=self._window)
             self._status.set("Claude plugin prune 未执行。")

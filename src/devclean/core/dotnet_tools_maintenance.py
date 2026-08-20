@@ -102,7 +102,9 @@ def uninstall_dotnet_global_tool(
 
     inventory = inventory_dotnet_global_tools(environment, runner=runner)
     requested = package_id.strip().casefold()
-    matches = tuple(tool for tool in inventory.tools if tool.package_id.casefold() == requested)
+    matches = tuple(
+        tool for tool in inventory.tools if tool.package_id.casefold() == requested
+    )
     if len(matches) != 1:
         raise ValueError(f"not an installed .NET global tool: {package_id}")
     tool = matches[0]
@@ -166,7 +168,11 @@ def _run_dotnet(
 def _parse_global_tool_list(stdout: str | None) -> tuple[DotnetGlobalTool, ...]:
     lines = [line.strip() for line in (stdout or "").splitlines() if line.strip()]
     separator = next(
-        (index for index, line in enumerate(lines) if len(line) >= 3 and set(line) == {"-"}),
+        (
+            index
+            for index, line in enumerate(lines)
+            if len(line) >= 3 and set(line) == {"-"}
+        ),
         None,
     )
     if separator is None:
@@ -181,7 +187,9 @@ def _parse_global_tool_list(stdout: str | None) -> tuple[DotnetGlobalTool, ...]:
         package_id = fields[0]
         version = fields[1]
         commands = tuple(
-            command.strip() for command in " ".join(fields[2:]).split(",") if command.strip()
+            command.strip()
+            for command in " ".join(fields[2:]).split(",")
+            if command.strip()
         )
         if not commands:
             raise RuntimeError("dotnet global-tool row has no command")
@@ -219,7 +227,9 @@ def _directory_bytes(root: Path | None) -> int:
 
 
 def _combined_output(stdout: str | None, stderr: str | None) -> str:
-    return "\n".join(chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip())
+    return "\n".join(
+        chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip()
+    )
 
 
 def _casefold_env(environment: Mapping[str, str] | None) -> dict[str, str]:

@@ -459,7 +459,9 @@ def _required_string(payload: dict[str, object], key: str, label: str) -> str:
     return value.strip()
 
 
-def _required_string_any(payload: dict[str, object], keys: tuple[str, ...], label: str) -> str:
+def _required_string_any(
+    payload: dict[str, object], keys: tuple[str, ...], label: str
+) -> str:
     for key in keys:
         value = payload.get(key)
         if isinstance(value, str) and value.strip():

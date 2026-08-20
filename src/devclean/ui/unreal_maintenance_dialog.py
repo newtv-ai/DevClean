@@ -240,7 +240,8 @@ class _UnrealMaintenanceDialog:
             recommendation = "建议运行维护" if inventory.recommended else "当前不默认建议运行"
             engine_count = len(inventory.engines)
             self._status.set(
-                f"找到 {engine_count} 个 Unreal Engine, 已知相关存储约 {total}. {recommendation}."
+                f"找到 {engine_count} 个 Unreal Engine, 已知相关存储约 {total}. "
+                f"{recommendation}."
             )
 
 

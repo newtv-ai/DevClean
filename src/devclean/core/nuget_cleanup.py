@@ -155,7 +155,9 @@ def nuget_roots(environment: Mapping[str, str] | None = None) -> NuGetRootSet:
             "nuget_plugins_cache_path",
         ),
         local_key="plugins-cache",
-        default=(PureWindowsPath(local) / "NuGet" / "plugins-cache" if local else None),
+        default=(
+            PureWindowsPath(local) / "NuGet" / "plugins-cache" if local else None
+        ),
     )
 
     config_paths: list[PureWindowsPath] = []
@@ -234,7 +236,11 @@ def evaluate_nuget_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
+    idle = (
+        None
+        if observed is None
+        else max(0.0, (current - observed).total_seconds() / 86_400)
+    )
     return ApplicationPolicyDecision(
         rule,
         PolicyAction.KEEP_PROTECTED,

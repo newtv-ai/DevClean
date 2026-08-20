@@ -31,7 +31,11 @@ def _entry(
     kind: UnityUpmStorageKind,
     path: Path,
 ) -> upm.UnityUpmStorageEntry:
-    return next(item for item in inventory.entries if item.kind is kind and item.path == path)
+    return next(
+        item
+        for item in inventory.entries
+        if item.kind is kind and item.path == path
+    )
 
 
 def test_default_unity6_global_cache_is_vendor_managed(tmp_path: Path) -> None:

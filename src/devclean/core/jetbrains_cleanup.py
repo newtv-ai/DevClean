@@ -428,9 +428,15 @@ def evaluate_jetbrains_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
+    idle = (
+        None
+        if observed is None
+        else max(0.0, (current - observed).total_seconds() / 86_400)
+    )
     if rule.owner is DecisionOwner.KEEP:
-        return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
+        return ApplicationPolicyDecision(
+            rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
+        )
     if rule.owner is DecisionOwner.USER:
         return ApplicationPolicyDecision(
             rule,
@@ -549,7 +555,10 @@ def _append_property_file(
 ) -> None:
     properties = _read_path_properties(path, userprofile)
     _append_explicit_paths(
-        {kind: properties.get(property_name) for property_name, kind in _PATH_PROPERTIES.items()},
+        {
+            kind: properties.get(property_name)
+            for property_name, kind in _PATH_PROPERTIES.items()
+        },
         configs,
         systems,
         plugins,
@@ -590,7 +599,7 @@ def _expand_property_path(value: str, userprofile: str | None) -> str | None:
 
 def _vm_property(command_line: str, property_name: str) -> str | None:
     pattern = re.compile(
-        rf"""(?:^|\s)-D{re.escape(property_name)}=(?:"([^"]+)"|'([^']+)'|([^\s]+))""",
+        rf'''(?:^|\s)-D{re.escape(property_name)}=(?:"([^"]+)"|'([^']+)'|([^\s]+))''',
         re.IGNORECASE,
     )
     match = pattern.search(command_line)

@@ -90,13 +90,10 @@ def ollama_roots(environment: Mapping[str, str] | None = None) -> OllamaRootSet:
         return OllamaRootSet((), (), ())
 
     home = PureWindowsPath(userprofile) / ".ollama"
-    model_root = (
-        _first_absolute(
-            env.get("devclean_ollama_models"),
-            env.get("ollama_models"),
-        )
-        or home / "models"
-    )
+    model_root = _first_absolute(
+        env.get("devclean_ollama_models"),
+        env.get("ollama_models"),
+    ) or home / "models"
     return OllamaRootSet(
         home_roots=(home,),
         model_roots=(model_root,),
@@ -154,7 +151,11 @@ def evaluate_ollama_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
+    idle = (
+        None
+        if observed is None
+        else max(0.0, (current - observed).total_seconds() / 86_400)
+    )
     action = (
         PolicyAction.USER_DECISION
         if rule.owner is DecisionOwner.USER

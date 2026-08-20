@@ -211,20 +211,14 @@ def test_cursor_whole_tree_delete_is_exact_cache_only() -> None:
     rule = whole_tree_application_rule(cache, _env())
     assert rule is not None
     assert rule.owner is DecisionOwner.TOOL
-    assert (
-        whole_tree_application_rule(
-            r"C:\Users\alice\AppData\Roaming\Cursor",
-            _env(),
-        )
-        is None
-    )
-    assert (
-        whole_tree_application_rule(
-            r"C:\Users\alice\AppData\Roaming\Cursor\User",
-            _env(),
-        )
-        is None
-    )
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Cursor",
+        _env(),
+    ) is None
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Cursor\User",
+        _env(),
+    ) is None
 
 
 def test_catalog_exposes_only_audited_cursor_cache_subtrees(tmp_path: Path) -> None:

@@ -173,12 +173,7 @@ def test_sdkmanager_hosting_package_and_outside_location_are_protected(
     packages = sdk_packages._parse_installed_packages(
         _installed_output(
             [
-                (
-                    "cmdline-tools;13.0",
-                    "13",
-                    "Android SDK Command-line Tools",
-                    "cmdline-tools/13.0",
-                ),
+                ("cmdline-tools;13.0", "13", "Android SDK Command-line Tools", "cmdline-tools/13.0"),
                 ("extras;vendor;outside", "1", "Outside", "../outside"),
             ]
         ),
@@ -207,7 +202,8 @@ def test_avd_config_relative_system_dir_correlates_against_all_known_sdk_roots(
     content = tmp_path / "Pixel.avd"
     content.mkdir()
     (content / "config.ini").write_text(
-        "AvdId=Pixel_API_35\nimage.sysdir.1=system-images/android-35/google_apis/x86_64/\n",
+        "AvdId=Pixel_API_35\n"
+        "image.sysdir.1=system-images/android-35/google_apis/x86_64/\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(sdk_packages, "_source_avd_content_roots", lambda environment: (content,))
@@ -356,9 +352,7 @@ def test_uninstall_revalidates_root_package_and_uses_only_exact_vendor_command(
     before = _root_inventory(root, (package,), manager=manager)
     after = _root_inventory(root, (), manager=manager)
     inventories = iter((before, before, after))
-    monkeypatch.setattr(
-        sdk_packages, "_inventory_exact_root", lambda sdk_root, environment: next(inventories)
-    )
+    monkeypatch.setattr(sdk_packages, "_inventory_exact_root", lambda sdk_root, environment: next(inventories))
     monkeypatch.setattr(sdk_packages, "android_sdk_process_running", lambda: False)
     monkeypatch.setattr(sdk_packages, "_android_runtime_process_running", lambda: False)
     monkeypatch.setattr(sdk_packages, "clear_android_sdk_process_cache", lambda: None)
@@ -418,9 +412,7 @@ def test_uninstall_refuses_new_avd_reference_before_mutation(
         protected_reason="system image 正被 1 个 AVD 配置引用：Pixel",
     )
     changed = _root_inventory(root, (changed_package,), manager=manager)
-    monkeypatch.setattr(
-        sdk_packages, "_inventory_exact_root", lambda sdk_root, environment: changed
-    )
+    monkeypatch.setattr(sdk_packages, "_inventory_exact_root", lambda sdk_root, environment: changed)
     monkeypatch.setattr(sdk_packages, "android_sdk_process_running", lambda: False)
     monkeypatch.setattr(sdk_packages, "_android_runtime_process_running", lambda: False)
     monkeypatch.setattr(sdk_packages, "clear_android_sdk_process_cache", lambda: None)

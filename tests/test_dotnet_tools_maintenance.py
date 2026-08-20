@@ -73,7 +73,9 @@ def test_inventory_parses_vendor_list_and_total_storage(tmp_path: Path) -> None:
     assert inventory.logical_bytes == 35
     assert inventory.tools == (
         maintenance.DotnetGlobalTool("dotnetsay", "1.0.0", ("dotnetsay",)),
-        maintenance.DotnetGlobalTool("dotnet-foo", "2.4.1", ("dotnet-foo", "foo-helper")),
+        maintenance.DotnetGlobalTool(
+            "dotnet-foo", "2.4.1", ("dotnet-foo", "foo-helper")
+        ),
     )
 
 

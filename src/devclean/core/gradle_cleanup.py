@@ -265,8 +265,14 @@ def evaluate_gradle_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
-    return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
+    idle = (
+        None
+        if observed is None
+        else max(0.0, (current - observed).total_seconds() / 86_400)
+    )
+    return ApplicationPolicyDecision(
+        rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
+    )
 
 
 @lru_cache(maxsize=1)
@@ -357,7 +363,11 @@ def _dynamic_report_roots_for(
         elif _VERSION_DIR_RE.fullmatch(name):
             snapshot = _SNAPSHOT_VERSION_RE.search(name) is not None
             rule = _dynamic_cache_rule(
-                ("gradle-snapshot-version-cache" if snapshot else "gradle-release-version-cache"),
+                (
+                    "gradle-snapshot-version-cache"
+                    if snapshot
+                    else "gradle-release-version-cache"
+                ),
                 name,
                 rebuild_cost=RebuildCost.HIGH,
                 label=(
@@ -418,7 +428,7 @@ def _gradle_user_home_from_command_line(command_line: str) -> str | None:
     if system:
         return system
     pattern = re.compile(
-        r"""(?:^|\s)(?:--gradle-user-home|-g)(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))""",
+        r'''(?:^|\s)(?:--gradle-user-home|-g)(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))''',
         re.IGNORECASE,
     )
     match = pattern.search(command_line)
@@ -429,7 +439,7 @@ def _gradle_user_home_from_command_line(command_line: str) -> str | None:
 
 def _system_property_value(command_line: str, key: str) -> str | None:
     pattern = re.compile(
-        rf"""(?:^|\s)-D{re.escape(key)}=(?:"([^"]+)"|'([^']+)'|([^\s]+))""",
+        rf'''(?:^|\s)-D{re.escape(key)}=(?:"([^"]+)"|'([^']+)'|([^\s]+))''',
         re.IGNORECASE,
     )
     match = pattern.search(command_line)

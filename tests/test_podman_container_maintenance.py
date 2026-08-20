@@ -45,7 +45,11 @@ def _container(
     is_infra: bool = False,
 ) -> PodmanContainerEntry:
     executable = (
-        status in _SAFE_TEST_STATUSES and not running and not paused and not pod_id and not is_infra
+        status in _SAFE_TEST_STATUSES
+        and not running
+        and not paused
+        and not pod_id
+        and not is_infra
     )
     return PodmanContainerEntry(
         container_id=container_id,
@@ -307,9 +311,7 @@ def test_remove_uses_only_exact_rm_without_force_or_volumes(
     before = podman.PodmanContainerInventory(target, (expected,), "before")
     after = podman.PodmanContainerInventory(target, (), "after")
     inventories = iter((before, before, after))
-    monkeypatch.setattr(
-        podman, "inspect_podman_containers", lambda environment=None: next(inventories)
-    )
+    monkeypatch.setattr(podman, "inspect_podman_containers", lambda environment=None: next(inventories))
     commands: list[tuple[str, ...]] = []
 
     def fake_run(
@@ -373,9 +375,7 @@ def test_remove_refuses_identity_change(monkeypatch: pytest.MonkeyPatch) -> None
             podman.PodmanContainerInventory(target, (changed,), "before2"),
         )
     )
-    monkeypatch.setattr(
-        podman, "inspect_podman_containers", lambda environment=None: next(inventories)
-    )
+    monkeypatch.setattr(podman, "inspect_podman_containers", lambda environment=None: next(inventories))
     monkeypatch.setattr(
         podman,
         "_run_podman",

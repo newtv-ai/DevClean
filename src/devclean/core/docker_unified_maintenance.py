@@ -216,7 +216,9 @@ def _pinned_environment(
     environment: Mapping[str, str] | None,
 ) -> dict[str, str]:
     pinned = (
-        {} if environment is None else {str(key): str(value) for key, value in environment.items()}
+        {}
+        if environment is None
+        else {str(key): str(value) for key, value in environment.items()}
     )
     # Prefer an immutable endpoint binding over a mutable context name. An empty
     # DOCKER_CONTEXT deliberately masks any inherited process setting.

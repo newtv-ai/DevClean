@@ -196,7 +196,9 @@ def _run_conan(
         raise RuntimeError(f"无法执行 Conan CLI: {error}") from error
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(f"Conan CLI 执行失败 (退出码 {result.returncode}): {detail}")
+        raise RuntimeError(
+            f"Conan CLI 执行失败 (退出码 {result.returncode}): {detail}"
+        )
     return result
 
 

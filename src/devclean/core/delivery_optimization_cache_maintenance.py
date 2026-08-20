@@ -177,9 +177,7 @@ def delete_delivery_optimization_cache_file(
     if not expected.deletion_supported:
         raise ValueError(expected.reason or "该 Delivery Optimization 条目当前不可删除")
     if not _is_process_elevated():
-        raise PermissionError(
-            "删除 Delivery Optimization 缓存需要管理员进程；DevClean 不会自动提权"
-        )
+        raise PermissionError("删除 Delivery Optimization 缓存需要管理员进程；DevClean 不会自动提权")
 
     initial = inventory_delivery_optimization_cache(environment, now=now)
     _require_same_tools(expected_inventory, initial)
@@ -247,7 +245,8 @@ def _entry_from_payload(
         decision_class = "DETERMINISTIC_CANDIDATE"
         deletion_supported = elevated
         reason = (
-            "未 pin 且已到达 Delivery Optimization 自己的 ExpireOn；属于 vendor-expired cache"
+            "未 pin 且已到达 Delivery Optimization 自己的 ExpireOn；"
+            "属于 vendor-expired cache"
             if elevated
             else "vendor-expired cache，但当前 DevClean 未以管理员身份运行；只报告"
         )
@@ -300,9 +299,7 @@ def _require_same_entry(
         or current.pinned != expected.pinned
         or current.caller != expected.caller
     ):
-        raise RuntimeError(
-            "Delivery Optimization FileId/status/pin/expiry/cache identity 已变化；请重新检查"
-        )
+        raise RuntimeError("Delivery Optimization FileId/status/pin/expiry/cache identity 已变化；请重新检查")
 
 
 def _exact_entry(
@@ -311,9 +308,7 @@ def _exact_entry(
 ) -> DeliveryOptimizationEntry:
     matches = [entry for entry in entries if entry.file_id.casefold() == file_id.casefold()]
     if len(matches) != 1:
-        raise RuntimeError(
-            f"无法唯一确认 Delivery Optimization FileId {file_id!r}: found={len(matches)}"
-        )
+        raise RuntimeError(f"无法唯一确认 Delivery Optimization FileId {file_id!r}: found={len(matches)}")
     return matches[0]
 
 
@@ -355,7 +350,11 @@ def _file_identity(path: Path, label: str) -> WindowsFileIdentity:
         raise RuntimeError(f"{label} 不是普通文件: {candidate}")
     if not is_local_fixed_path(candidate):
         raise RuntimeError(f"{label} 不在本地固定磁盘: {candidate}")
-    if metadata.volume_serial is None or metadata.file_id is None or metadata.file_id_kind is None:
+    if (
+        metadata.volume_serial is None
+        or metadata.file_id is None
+        or metadata.file_id_kind is None
+    ):
         raise RuntimeError(f"{label} 没有稳定文件身份")
     return WindowsFileIdentity(
         path=candidate,

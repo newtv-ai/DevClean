@@ -166,9 +166,7 @@ def test_inventory_fails_closed_when_external_reference_proof_is_incomplete(
     image_id = _id("a")
     monkeypatch.setattr(images, "inspect_podman_machine_target", lambda environment=None: target)
     monkeypatch.setattr(images, "_image_list_rows", lambda target, environment: [{"Id": image_id}])
-    monkeypatch.setattr(
-        images, "_filtered_image_ids", lambda target, filter_value, environment: set()
-    )
+    monkeypatch.setattr(images, "_filtered_image_ids", lambda target, filter_value, environment: set())
     monkeypatch.setattr(
         images,
         "_inspect_regular_images",
@@ -194,9 +192,7 @@ def test_inventory_fails_closed_when_external_reference_proof_is_incomplete(
     assert "incomplete" in inventory.images[0].reason
 
 
-def test_container_reference_parser_requires_full_image_ids(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_container_reference_parser_requires_full_image_ids(monkeypatch: pytest.MonkeyPatch) -> None:
     target = _target()
     valid = _id("a")
 
@@ -226,9 +222,7 @@ def test_container_reference_parser_requires_full_image_ids(
     assert "1 个条目" in reason
 
 
-def test_filtered_image_query_is_exact_and_connection_pinned(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_filtered_image_query_is_exact_and_connection_pinned(monkeypatch: pytest.MonkeyPatch) -> None:
     target = _target()
     image_id = _id("a")
     seen: list[tuple[str, ...]] = []

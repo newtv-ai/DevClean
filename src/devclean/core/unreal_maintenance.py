@@ -99,7 +99,8 @@ def inventory_unreal_storage(
             UnrealStorageKind.ZEN_DATA,
             Path(localappdata) / "UnrealEngine" / "Common" / "Zen" / "Data",
             note=(
-                "Zen data can contain local DDC and cooked output; never raw-delete this directory"
+                "Zen data can contain local DDC and cooked output; never raw-delete "
+                "this directory"
             ),
         )
 
@@ -222,7 +223,9 @@ def _discover_engines(
             candidates.append(_editor_for_engine_root(root))
 
     if environment is None:
-        located = shutil.which("UnrealEditor-Cmd.exe" if os.name == "nt" else "UnrealEditor-Cmd")
+        located = shutil.which(
+            "UnrealEditor-Cmd.exe" if os.name == "nt" else "UnrealEditor-Cmd"
+        )
         if located:
             candidates.append(Path(located))
 
@@ -322,7 +325,9 @@ def _run_unreal(
         raise RuntimeError(f"无法执行 UnrealEditor-Cmd: {error}") from error
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(f"Unreal DDCCleanup 失败 (退出码 {result.returncode}): {detail}")
+        raise RuntimeError(
+            f"Unreal DDCCleanup 失败 (退出码 {result.returncode}): {detail}"
+        )
     return result
 
 

@@ -150,7 +150,9 @@ def visual_studio_roots(
         roslyn_caches = (parent / "Roslyn" / "Cache",)
         local_packages = (parent / "Packages",)
 
-    servicehub_logs = (PureWindowsPath(temp) / "servicehub" / "logs",) if temp else ()
+    servicehub_logs = (
+        (PureWindowsPath(temp) / "servicehub" / "logs",) if temp else ()
+    )
     return VisualStudioRootSet(
         tuple(component_caches),
         roslyn_caches,
@@ -216,7 +218,11 @@ def evaluate_visual_studio_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
+    idle = (
+        None
+        if observed is None
+        else max(0.0, (current - observed).total_seconds() / 86_400)
+    )
     if rule.owner is DecisionOwner.KEEP:
         return ApplicationPolicyDecision(
             rule,
@@ -255,8 +261,14 @@ def visual_studio_audited_tool_roots(
             (root, _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE)
             for root in roots.component_model_cache_roots
         ),
-        *tuple((root, _VISUAL_STUDIO_ROSLYN_CACHE_RULE) for root in roots.roslyn_cache_roots),
-        *tuple((root, _VISUAL_STUDIO_SERVICEHUB_LOG_RULE) for root in roots.servicehub_log_roots),
+        *tuple(
+            (root, _VISUAL_STUDIO_ROSLYN_CACHE_RULE)
+            for root in roots.roslyn_cache_roots
+        ),
+        *tuple(
+            (root, _VISUAL_STUDIO_SERVICEHUB_LOG_RULE)
+            for root in roots.servicehub_log_roots
+        ),
     )
 
 

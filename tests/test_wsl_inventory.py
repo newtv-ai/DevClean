@@ -158,5 +158,6 @@ def test_wsl_list_failure_surfaces_vendor_error(
 
 def test_configured_wsl_executable_is_respected() -> None:
     assert (
-        wsl_inventory.wsl_executable({"DEVCLEAN_WSL_EXE": "C:/Tools/wsl.exe"}) == "C:/Tools/wsl.exe"
+        wsl_inventory.wsl_executable({"DEVCLEAN_WSL_EXE": "C:/Tools/wsl.exe"})
+        == "C:/Tools/wsl.exe"
     )

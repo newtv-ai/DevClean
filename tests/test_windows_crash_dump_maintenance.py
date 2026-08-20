@@ -104,7 +104,9 @@ def test_live_kernel_default_root_accepts_only_root_and_one_component_level(
     monkeypatch.setattr(winreg, "OpenKey", missing_live_key)
     monkeypatch.setattr(crash_dumps, "is_local_fixed_path", lambda path: True)
 
-    locations, warnings = crash_dumps._discover_live_kernel_locations({"systemroot": str(tmp_path)})
+    locations, warnings = crash_dumps._discover_live_kernel_locations(
+        {"systemroot": str(tmp_path)}
+    )
 
     assert not warnings
     assert len(locations) == 2
@@ -316,13 +318,17 @@ def test_path_resolution_accepts_only_audited_variable_shapes() -> None:
         env,
     ) == Path(r"C:\Users\test\AppData\Local\CrashDumps")
     assert crash_dumps._resolve_local_dump_path(r"%TEMP%\CrashDumps", env) is None
-    assert crash_dumps._resolve_local_dump_path(r"D:\CrashDumps", env) == Path(r"D:\CrashDumps")
+    assert crash_dumps._resolve_local_dump_path(r"D:\CrashDumps", env) == Path(
+        r"D:\CrashDumps"
+    )
 
 
 def test_live_kernel_path_resolution_requires_documented_nt_dos_form() -> None:
     env = {"systemroot": r"C:\Windows", "windir": r"C:\Windows"}
 
-    assert crash_dumps._resolve_live_kernel_path(None, env) == Path(r"C:\Windows\LiveKernelReports")
+    assert crash_dumps._resolve_live_kernel_path(None, env) == Path(
+        r"C:\Windows\LiveKernelReports"
+    )
     assert crash_dumps._resolve_live_kernel_path(
         r"\??\D:\LiveDumps",
         env,

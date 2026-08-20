@@ -316,7 +316,9 @@ class _UnityAssetStoreMaintenanceDialog:
                 if root.exists
                 else "不存在"
             )
-            root_lines.append(f"{_origin_label(root.origin)}: {root.path} — {state}")
+            root_lines.append(
+                f"{_origin_label(root.origin)}: {root.path} — {state}"
+            )
         self._roots_label.configure(
             text="\n".join(root_lines) if root_lines else "未找到可确认的缓存根。"
         )

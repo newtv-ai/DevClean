@@ -236,7 +236,11 @@ def prune_cypress_binary_cache(
         if remaining_by_version.get(retained.version) != retained:
             raise RuntimeError("Cypress prune 后当前 CLI 版本 cache 被移除或发生变化; 不报告成功")
 
-    unexpected = [item.version for item in after.versions if item.version != after.package_version]
+    unexpected = [
+        item.version
+        for item in after.versions
+        if item.version != after.package_version
+    ]
     if unexpected:
         joined = ", ".join(sorted(unexpected, key=str.casefold))
         raise RuntimeError(f"Cypress prune 后仍出现非当前版本 cache: {joined}")
@@ -291,11 +295,7 @@ def _resolve_cypress_tool(
         search_path = folded.get("path")
         candidates = ("cypress.cmd", "cypress.exe", "cypress") if os.name == "nt" else ("cypress",)
         resolved = next(
-            (
-                candidate
-                for name in candidates
-                if (candidate := shutil.which(name, path=search_path))
-            ),
+            (candidate for name in candidates if (candidate := shutil.which(name, path=search_path))),
             None,
         )
         if resolved is None:
@@ -324,9 +324,7 @@ def _cache_path(
 ) -> Path:
     result = _run_cypress(tool, ("cache", "path"), environment, timeout=45)
     _require_success(result, "cypress cache path")
-    lines = [
-        line.strip().strip('"').strip("'") for line in result.stdout.splitlines() if line.strip()
-    ]
+    lines = [line.strip().strip('"').strip("'") for line in result.stdout.splitlines() if line.strip()]
     if len(lines) != 1:
         raise RuntimeError("cypress cache path 没有返回唯一路径")
     raw = lines[0]

@@ -130,13 +130,10 @@ def test_windsurf_cache_storage_is_user_owned_persistent_data() -> None:
     )
     assert decision is not None
     assert decision.action is PolicyAction.KEEP_PROTECTED
-    assert (
-        whole_tree_application_rule(
-            r"C:\Users\alice\AppData\Roaming\Windsurf\Service Worker\CacheStorage",
-            _env(),
-        )
-        is None
-    )
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Windsurf\Service Worker\CacheStorage",
+        _env(),
+    ) is None
 
 
 def test_windsurf_cascade_memories_and_plans_are_user_owned() -> None:
@@ -213,27 +210,18 @@ def test_windsurf_whole_tree_delete_is_exact_cache_only() -> None:
     rule = whole_tree_application_rule(cache, _env())
     assert rule is not None
     assert rule.owner is DecisionOwner.TOOL
-    assert (
-        whole_tree_application_rule(
-            r"C:\Users\alice\AppData\Roaming\Windsurf",
-            _env(),
-        )
-        is None
-    )
-    assert (
-        whole_tree_application_rule(
-            r"C:\Users\alice\.codeium\windsurf",
-            _env(),
-        )
-        is None
-    )
-    assert (
-        whole_tree_application_rule(
-            r"C:\Users\alice\.windsurf\plans",
-            _env(),
-        )
-        is None
-    )
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Windsurf",
+        _env(),
+    ) is None
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\.codeium\windsurf",
+        _env(),
+    ) is None
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\.windsurf\plans",
+        _env(),
+    ) is None
 
 
 def test_catalog_upgrades_only_audited_windsurf_cache_subtrees(tmp_path: Path) -> None:

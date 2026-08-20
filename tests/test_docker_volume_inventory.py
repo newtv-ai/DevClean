@@ -59,7 +59,10 @@ def _container(
 ) -> dict[str, object]:
     return {
         "Id": container_id,
-        "Mounts": [{"Type": "volume", "Name": name} for name in volume_names],
+        "Mounts": [
+            {"Type": "volume", "Name": name}
+            for name in volume_names
+        ],
     }
 
 

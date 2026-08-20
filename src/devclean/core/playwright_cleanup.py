@@ -44,7 +44,9 @@ _PLAYWRIGHT_BROWSER_REGISTRY_RULE = ApplicationCleanupRule(
     label="Playwright downloaded browser registry; lifecycle is managed by Playwright",
 )
 
-PLAYWRIGHT_RULES: tuple[ApplicationCleanupRule, ...] = (_PLAYWRIGHT_BROWSER_REGISTRY_RULE,)
+PLAYWRIGHT_RULES: tuple[ApplicationCleanupRule, ...] = (
+    _PLAYWRIGHT_BROWSER_REGISTRY_RULE,
+)
 
 
 def playwright_roots(
@@ -66,7 +68,12 @@ def playwright_roots(
         else:
             profile = env.get("userprofile")
             if profile:
-                registry = PureWindowsPath(profile) / "AppData" / "Local" / "ms-playwright"
+                registry = (
+                    PureWindowsPath(profile)
+                    / "AppData"
+                    / "Local"
+                    / "ms-playwright"
+                )
 
     return PlaywrightRootSet(
         browser_registry_roots=() if registry is None else (registry,),
@@ -109,7 +116,11 @@ def evaluate_playwright_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
+    idle = (
+        None
+        if observed is None
+        else max(0.0, (current - observed).total_seconds() / 86_400)
+    )
     return ApplicationPolicyDecision(
         rule,
         PolicyAction.KEEP_PROTECTED,

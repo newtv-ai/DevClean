@@ -96,7 +96,10 @@ def unity_editor_running() -> bool:
 
     if os.name != "nt":
         return False
-    script = "$p=Get-Process -Name Unity -ErrorAction SilentlyContinue; if ($p) { 'RUNNING' }"
+    script = (
+        "$p=Get-Process -Name Unity -ErrorAction SilentlyContinue; "
+        "if ($p) { 'RUNNING' }"
+    )
     try:
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
@@ -122,7 +125,8 @@ def _validated_project_root(project_root: Path) -> Path:
     version_file = settings / "ProjectVersion.txt"
     if not assets.is_dir() or not settings.is_dir() or not version_file.is_file():
         raise ValueError(
-            "所选目录不是可确认的 Unity 项目根目录: 需要 Assets、ProjectSettings/ProjectVersion.txt"
+            "所选目录不是可确认的 Unity 项目根目录: 需要 Assets、ProjectSettings/"
+            "ProjectVersion.txt"
         )
     return root
 

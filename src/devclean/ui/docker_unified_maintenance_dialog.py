@@ -85,14 +85,10 @@ class _DockerUnifiedMaintenanceDialog:
         self._build_containers_tab(notebook)
         self._build_volumes_tab(notebook)
 
-        ttk.Label(root, textvariable=self._status, wraplength=1130, justify=tk.LEFT).pack(
-            anchor=tk.W, pady=(8, 0)
-        )
+        ttk.Label(root, textvariable=self._status, wraplength=1130, justify=tk.LEFT).pack(anchor=tk.W, pady=(8, 0))
         footer = ttk.Frame(root)
         footer.pack(fill=tk.X, pady=(10, 0))
-        self._refresh_button = ttk.Button(
-            footer, text="检查/刷新全部", command=self._start_inventory
-        )
+        self._refresh_button = ttk.Button(footer, text="检查/刷新全部", command=self._start_inventory)
         self._refresh_button.pack(side=tk.RIGHT, padx=(8, 0))
         ttk.Button(footer, text="关闭", command=self._window.destroy).pack(side=tk.RIGHT)
 
@@ -135,9 +131,7 @@ class _DockerUnifiedMaintenanceDialog:
 
         classic = ttk.Frame(frame)
         classic.pack(fill=tk.X, pady=(0, 8))
-        ttk.Label(classic, text="Classic builder cache", font=("Segoe UI", 10, "bold")).pack(
-            side=tk.LEFT
-        )
+        ttk.Label(classic, text="Classic builder cache", font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT)
         self._classic_prune_button = ttk.Button(
             classic,
             text=f"清理超过 {_RETENTION_HOURS // 24} 天的 classic cache…",
@@ -148,9 +142,7 @@ class _DockerUnifiedMaintenanceDialog:
 
         ttk.Label(frame, text="Buildx builders", font=("Segoe UI", 10, "bold")).pack(anchor=tk.W)
         columns = ("name", "driver", "nodes", "aged", "records", "decision")
-        self._buildx_tree = ttk.Treeview(
-            frame, columns=columns, show="headings", selectmode="browse"
-        )
+        self._buildx_tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse")
         headings = (
             ("name", "Builder", 180),
             ("driver", "Driver", 120),
@@ -187,9 +179,7 @@ class _DockerUnifiedMaintenanceDialog:
             justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(0, 6))
         columns = ("name", "size", "containers", "decision")
-        self._image_tree = ttk.Treeview(
-            frame, columns=columns, show="headings", selectmode="browse"
-        )
+        self._image_tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse")
         for column, title, width in (
             ("name", "Tag / Image ID", 340),
             ("size", "逻辑大小", 120),
@@ -223,9 +213,7 @@ class _DockerUnifiedMaintenanceDialog:
             justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(0, 6))
         columns = ("name", "status", "writable", "rootfs", "volumes", "decision")
-        self._container_tree = ttk.Treeview(
-            frame, columns=columns, show="headings", selectmode="browse"
-        )
+        self._container_tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse")
         for column, title, width in (
             ("name", "容器", 180),
             ("status", "状态", 90),
@@ -288,9 +276,7 @@ class _DockerUnifiedMaintenanceDialog:
         if self._busy:
             return
         self._set_busy(True)
-        self._status.set(
-            "正在绑定当前本机 Docker endpoint，并读取 storage / build cache / image / container / volume…"
-        )
+        self._status.set("正在绑定当前本机 Docker endpoint，并读取 storage / build cache / image / container / volume…")
 
         def work() -> None:
             try:
@@ -317,9 +303,7 @@ class _DockerUnifiedMaintenanceDialog:
         if inventory is None or len(selected) != 1:
             return None
         container_id = selected[0]
-        matches = [
-            entry for entry in inventory.containers.containers if entry.container_id == container_id
-        ]
+        matches = [entry for entry in inventory.containers.containers if entry.container_id == container_id]
         return matches[0] if len(matches) == 1 else None
 
     def _selected_buildx_cache(self) -> BuildxCacheInventory | None:
@@ -552,9 +536,7 @@ class _DockerUnifiedMaintenanceDialog:
                 values=(row.kind, row.total, row.active, row.size, row.reclaimable),
             )
 
-        cache_by_name = {
-            cache_entry.builder.name: cache_entry for cache_entry in inventory.buildx_cache
-        }
+        cache_by_name = {cache_entry.builder.name: cache_entry for cache_entry in inventory.buildx_cache}
         for index, builder in enumerate(inventory.builders):
             cache = cache_by_name.get(builder.name)
             nodes = ", ".join(f"{node.name}@{node.endpoint}" for node in builder.nodes) or "—"
@@ -583,7 +565,9 @@ class _DockerUnifiedMaintenanceDialog:
 
         for image_entry in inventory.images.images:
             label = image_entry.repo_tags[0] if image_entry.repo_tags else image_entry.image_id[:20]
-            decision = "USER_REVIEW" if image_entry.executable else f"保护：{image_entry.reason}"
+            decision = (
+                "USER_REVIEW" if image_entry.executable else f"保护：{image_entry.reason}"
+            )
             self._image_tree.insert(
                 "",
                 tk.END,
@@ -598,10 +582,14 @@ class _DockerUnifiedMaintenanceDialog:
 
         for container_entry in inventory.containers.containers:
             decision = (
-                "USER_REVIEW" if container_entry.executable else f"保护：{container_entry.reason}"
+                "USER_REVIEW"
+                if container_entry.executable
+                else f"保护：{container_entry.reason}"
             )
             volumes = (
-                ", ".join(container_entry.volume_names) if container_entry.volume_names else "—"
+                ", ".join(container_entry.volume_names)
+                if container_entry.volume_names
+                else "—"
             )
             self._container_tree.insert(
                 "",
@@ -631,9 +619,7 @@ class _DockerUnifiedMaintenanceDialog:
                 ),
             )
 
-        buildx_note = (
-            f"；Buildx 检查失败：{inventory.buildx_error}" if inventory.buildx_error else ""
-        )
+        buildx_note = f"；Buildx 检查失败：{inventory.buildx_error}" if inventory.buildx_error else ""
         self._status.set(
             "检查完成："
             f"{len(inventory.images.images)} images / "

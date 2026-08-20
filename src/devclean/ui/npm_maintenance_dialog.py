@@ -288,8 +288,14 @@ class _NpmMaintenanceDialog:
         threading.Thread(target=work, name="DevClean-npm-npx-remove", daemon=True).start()
 
     def _selection_changed(self, _event: tk.Event[tk.Misc] | None) -> None:
-        can_remove = not self._busy and self._inventory is not None and bool(self._tree.selection())
-        self._remove_npx_button.configure(state=tk.NORMAL if can_remove else tk.DISABLED)
+        can_remove = (
+            not self._busy
+            and self._inventory is not None
+            and bool(self._tree.selection())
+        )
+        self._remove_npx_button.configure(
+            state=tk.NORMAL if can_remove else tk.DISABLED
+        )
 
     def _poll(self) -> None:
         if not self._window.winfo_exists():

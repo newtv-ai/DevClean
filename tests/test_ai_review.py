@@ -72,7 +72,9 @@ def _item(path: str, *, size: int = 10) -> TriageItem:
     )
 
 
-def _response(package: AiReviewPackage, rows: list[dict[str, str]]) -> str:
+def _response(
+    package: AiReviewPackage, rows: list[dict[str, str]]
+) -> str:
     return json.dumps(
         {
             "schema_version": 1,
@@ -171,7 +173,8 @@ def test_similar_file_group_is_explicit_and_covered_by_package_digest() -> None:
     instructions = package.payload()["instructions"]
     assert isinstance(instructions, list)
     assert any(
-        isinstance(instruction, str) and "uniformly to all members" in instruction
+        isinstance(instruction, str)
+        and "uniformly to all members" in instruction
         for instruction in instructions
     )
 
@@ -232,7 +235,8 @@ def test_export_index_survives_restart_and_forgets_consumed_session(
     assert recalled is not None
     assert recalled.candidate_paths == paths
     assert recalled.candidate_members == {
-        candidate_id: (path,) for candidate_id, path in paths.items()
+        candidate_id: (path,)
+        for candidate_id, path in paths.items()
     }
 
     ai_sessions.forget_export(session)
@@ -289,25 +293,35 @@ def test_grouped_restart_import_expands_contextual_answer_to_every_member(
     assert session == package.review_session_id
     assert complete is True
     assert recovered == {
-        path: ("DELETE", "这些日志超过 30 天未使用并且可以安全删除") for path in paths
+        path: ("DELETE", "这些日志超过 30 天未使用并且可以安全删除")
+        for path in paths
     }
 
     baseline = load_rules()
-    baseline_exact = sum(rule.match is RuleMatch.EXACT_PATH for rule in baseline.delete.rules)
+    baseline_exact = sum(
+        rule.match is RuleMatch.EXACT_PATH
+        for rule in baseline.delete.rules
+    )
     baseline_templates = {
-        rule.value for rule in baseline.delete.rules if rule.match is RuleMatch.PATH_GLOB
+        rule.value
+        for rule in baseline.delete.rules
+        if rule.match is RuleMatch.PATH_GLOB
     }
     updated = add_ai_verdicts(
         baseline,
-        [(path, RuleDecision(verdict), reason) for path, (verdict, reason) in recovered.items()],
+        [
+            (path, RuleDecision(verdict), reason)
+            for path, (verdict, reason) in recovered.items()
+        ],
     )
     assert all(updated.decision_for(path) is RuleDecision.DELETE for path in paths)
-    assert (
-        sum(rule.match is RuleMatch.EXACT_PATH for rule in updated.delete.rules)
-        == baseline_exact + 2
-    )
+    assert sum(
+        rule.match is RuleMatch.EXACT_PATH for rule in updated.delete.rules
+    ) == baseline_exact + 2
     assert {
-        rule.value for rule in updated.delete.rules if rule.match is RuleMatch.PATH_GLOB
+        rule.value
+        for rule in updated.delete.rules
+        if rule.match is RuleMatch.PATH_GLOB
     } == baseline_templates
 
 
@@ -353,4 +367,7 @@ def test_grouped_same_run_import_expands_to_every_member() -> None:
     assert app._expanded_live_verdicts(
         imported,
         {entry.candidate_id: paths},
-    ) == tuple((path, "KEEP", "这些文件属于同一组并且都应保留") for path in paths)
+    ) == tuple(
+        (path, "KEEP", "这些文件属于同一组并且都应保留")
+        for path in paths
+    )

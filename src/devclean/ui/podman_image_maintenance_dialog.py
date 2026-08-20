@@ -89,9 +89,7 @@ class _PodmanImageMaintenanceDialog:
         self._target_label.pack(anchor=tk.W, pady=(8, 0))
         self._proof_label = ttk.Label(root, text="", wraplength=1110, justify=tk.LEFT)
         self._proof_label.pack(anchor=tk.W, pady=(4, 0))
-        ttk.Label(root, textvariable=self._status, wraplength=1110, justify=tk.LEFT).pack(
-            anchor=tk.W, pady=(5, 0)
-        )
+        ttk.Label(root, textvariable=self._status, wraplength=1110, justify=tk.LEFT).pack(anchor=tk.W, pady=(5, 0))
 
         footer = ttk.Frame(root)
         footer.pack(fill=tk.X, pady=(10, 0))
@@ -178,9 +176,7 @@ class _PodmanImageMaintenanceDialog:
         ):
             return
         self._set_busy(True)
-        self._status.set(
-            "正在重新验证 machine、镜像身份、child 和全部 container 引用，然后执行精确 image rm…"
-        )
+        self._status.set("正在重新验证 machine、镜像身份、child 和全部 container 引用，然后执行精确 image rm…")
 
         def work() -> None:
             try:

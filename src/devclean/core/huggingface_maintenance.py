@@ -254,7 +254,9 @@ def preview_huggingface_repo_removal(
     )
     preview = _parse_rm_preview(payload, repo.cache_id)
     if preview.repos != 1 or preview.revisions != len(repo.revisions):
-        raise RuntimeError("hf cache rm dry-run 范围与用户审核 repo 不一致; 拒绝执行")
+        raise RuntimeError(
+            "hf cache rm dry-run 范围与用户审核 repo 不一致; 拒绝执行"
+        )
     return preview
 
 
@@ -327,7 +329,9 @@ def preview_huggingface_revision_removal(
     preview = _parse_rm_preview(payload, revision.commit_hash)
     expected_repos = 1 if len(repo.revisions) == 1 else 0
     if preview.repos != expected_repos or preview.revisions != 1:
-        raise RuntimeError("hf cache rm dry-run 范围与用户审核 revision 不一致; 拒绝执行")
+        raise RuntimeError(
+            "hf cache rm dry-run 范围与用户审核 revision 不一致; 拒绝执行"
+        )
     return preview
 
 
@@ -402,9 +406,7 @@ def preview_huggingface_hub_prune(
     )
     if payload is None:
         if detached:
-            raise RuntimeError(
-                "hf cache prune 未返回 dry-run JSON, 但 inventory 存在 detached revision"
-            )
+            raise RuntimeError("hf cache prune 未返回 dry-run JSON, 但 inventory 存在 detached revision")
         return HuggingFaceHubPrunePreview(0, 0, "0 B", ())
     mapping = _require_json_mapping(payload, "hf cache prune --dry-run")
     if mapping.get("dry_run") is not True:

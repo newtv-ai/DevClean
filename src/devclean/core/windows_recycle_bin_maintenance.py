@@ -98,7 +98,10 @@ def empty_windows_recycle_bin(
         raise RuntimeError("回收站驱动器边界已变化；请重新检查")
 
     current = _inventory_one(root)
-    if current.logical_bytes != expected.logical_bytes or current.item_count != expected.item_count:
+    if (
+        current.logical_bytes != expected.logical_bytes
+        or current.item_count != expected.item_count
+    ):
         raise RuntimeError("回收站内容在确认后发生变化；请重新检查并再次确认")
 
     _empty_recycle_bin(root)

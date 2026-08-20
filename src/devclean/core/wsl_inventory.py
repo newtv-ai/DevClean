@@ -46,8 +46,13 @@ def inspect_wsl(
     )
     if running_result.returncode != 0:
         detail = _decoded_error(running_result)
-        raise RuntimeError("WSL 无法确认 running distributions" + (f": {detail}" if detail else ""))
-    running_names = {name.casefold() for name in _distribution_names(running_result.stdout)}
+        raise RuntimeError(
+            "WSL 无法确认 running distributions"
+            + (f": {detail}" if detail else "")
+        )
+    running_names = {
+        name.casefold() for name in _distribution_names(running_result.stdout)
+    }
 
     version_result = _run_wsl_allow_status(
         executable,
@@ -56,7 +61,9 @@ def inspect_wsl(
         timeout=30,
     )
     version_text = (
-        _decode_output(version_result.stdout).strip() if version_result.returncode == 0 else ""
+        _decode_output(version_result.stdout).strip()
+        if version_result.returncode == 0
+        else ""
     )
 
     status_result = _run_wsl_allow_status(
@@ -66,11 +73,14 @@ def inspect_wsl(
         timeout=30,
     )
     status_text = (
-        _decode_output(status_result.stdout).strip() if status_result.returncode == 0 else ""
+        _decode_output(status_result.stdout).strip()
+        if status_result.returncode == 0
+        else ""
     )
 
     distributions = tuple(
-        WslDistribution(name=name, running=name.casefold() in running_names) for name in names
+        WslDistribution(name=name, running=name.casefold() in running_names)
+        for name in names
     )
     return WslInventory(
         executable=executable,
@@ -151,7 +161,8 @@ def _run_wsl(
     if result.returncode != 0:
         detail = _decoded_error(result)
         raise RuntimeError(
-            f"WSL CLI 失败 (exit {result.returncode})" + (f": {detail}" if detail else "")
+            f"WSL CLI 失败 (exit {result.returncode})"
+            + (f": {detail}" if detail else "")
         )
     return result
 

@@ -150,7 +150,8 @@ class PrivateDirectoryAudit:
                 or entry.ace_type != _ACCESS_ALLOWED_ACE_TYPE
                 or not entry.grants_full_control
                 or entry.inherited
-                or entry.ace_flags & (_OBJECT_INHERIT_ACE | _CONTAINER_INHERIT_ACE)
+                or entry.ace_flags
+                & (_OBJECT_INHERIT_ACE | _CONTAINER_INHERIT_ACE)
                 != (_OBJECT_INHERIT_ACE | _CONTAINER_INHERIT_ACE)
             ):
                 return False
@@ -326,7 +327,9 @@ def _validated_file(path: Path) -> Path:
     if not ordinary_file.is_absolute():
         raise ValueError("private file path must be absolute")
     if not is_local_fixed_path(ordinary_file):
-        raise ValueError("private file must be on a fixed local volume with no reparse ancestors")
+        raise ValueError(
+            "private file must be on a fixed local volume with no reparse ancestors"
+        )
     metadata = read_file_metadata(ordinary_file)
     if metadata.is_directory:
         raise ValueError("private file path must reference an ordinary file")
@@ -357,7 +360,9 @@ def _set_windows_private_file_dacl(ordinary_file: Path, current_sid: str) -> Non
     _set_windows_private_acl(ordinary_file, sddl, require_directory=False)
 
 
-def _set_windows_private_acl(path: Path, sddl: str, *, require_directory: bool) -> None:
+def _set_windows_private_acl(
+    path: Path, sddl: str, *, require_directory: bool
+) -> None:
     advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     convert_descriptor = advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW
@@ -423,7 +428,8 @@ def _set_windows_private_acl(path: Path, sddl: str, *, require_directory: bool) 
                 set_security(
                     handle,
                     _SE_FILE_OBJECT,
-                    _DACL_SECURITY_INFORMATION | _PROTECTED_DACL_SECURITY_INFORMATION,
+                    _DACL_SECURITY_INFORMATION
+                    | _PROTECTED_DACL_SECURITY_INFORMATION,
                     None,
                     None,
                     dacl,
@@ -438,7 +444,9 @@ def _set_windows_private_acl(path: Path, sddl: str, *, require_directory: bool) 
         kernel32.LocalFree(descriptor)
 
 
-def _audit_windows_private_directory(directory: Path, current_sid: str) -> PrivateDirectoryAudit:
+def _audit_windows_private_directory(
+    directory: Path, current_sid: str
+) -> PrivateDirectoryAudit:
     audit = _read_windows_private_acl(
         directory,
         current_sid,
@@ -455,7 +463,9 @@ def _audit_windows_private_directory(directory: Path, current_sid: str) -> Priva
     )
 
 
-def _audit_windows_private_file(ordinary_file: Path, current_sid: str) -> PrivateFileAudit:
+def _audit_windows_private_file(
+    ordinary_file: Path, current_sid: str
+) -> PrivateFileAudit:
     audit = _read_windows_private_acl(
         ordinary_file,
         current_sid,
@@ -567,12 +577,16 @@ def _enumerate_acl(dacl: wintypes.LPVOID) -> tuple[DirectoryAceAudit, ...]:
         header = ctypes.cast(raw_ace, ctypes.POINTER(_AceHeader)).contents
         if header.ace_size < 8:
             raise ValueError("directory DACL contains a truncated ACE")
-        access_mask = ctypes.c_uint32.from_address(address + ctypes.sizeof(_AceHeader)).value
+        access_mask = ctypes.c_uint32.from_address(
+            address + ctypes.sizeof(_AceHeader)
+        ).value
         sid: str | None = None
         if header.ace_type in {_ACCESS_ALLOWED_ACE_TYPE, _ACCESS_DENIED_ACE_TYPE}:
             if header.ace_size < 12:
                 raise ValueError("directory DACL contains a truncated access ACE")
-            sid = _sid_to_string(wintypes.LPVOID(address + ctypes.sizeof(_AceHeader) + 4))
+            sid = _sid_to_string(
+                wintypes.LPVOID(address + ctypes.sizeof(_AceHeader) + 4)
+            )
         entries.append(
             DirectoryAceAudit(
                 sid=sid,
@@ -584,7 +598,9 @@ def _enumerate_acl(dacl: wintypes.LPVOID) -> tuple[DirectoryAceAudit, ...]:
     return tuple(entries)
 
 
-def _open_path_handle(path: Path, *, write_dac: bool, require_directory: bool) -> int:
+def _open_path_handle(
+    path: Path, *, write_dac: bool, require_directory: bool
+) -> int:
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     create_file = kernel32.CreateFileW
     create_file.argtypes = (

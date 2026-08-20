@@ -60,7 +60,10 @@ def _payload(
         "State": {"Status": status, "Running": running},
         "SizeRw": size_rw,
         "SizeRootFs": 999,
-        "Mounts": [{"Type": "volume", "Name": volume_name} for volume_name in volume_names],
+        "Mounts": [
+            {"Type": "volume", "Name": volume_name}
+            for volume_name in volume_names
+        ],
     }
 
 

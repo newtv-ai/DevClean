@@ -149,7 +149,10 @@ def cleanup_windows_component_store(
     if after_identity != current.tool_identity:
         raise RuntimeError("DISM 可执行文件身份在清理后发生变化；无法确认后置状态")
     after = _analyze_component_store(after_identity, environment)
-    if after.dism_version != current.dism_version or after.image_version != current.image_version:
+    if (
+        after.dism_version != current.dism_version
+        or after.image_version != current.image_version
+    ):
         raise RuntimeError("清理后 DISM/Windows 映像身份发生变化；无法确认后置状态")
 
     return ComponentStoreCleanupResult(
@@ -280,7 +283,11 @@ def _dism_identity(path: Path) -> DismExecutableIdentity:
         raise RuntimeError(f"无法读取 DISM 可执行文件身份: {candidate}") from error
     if metadata.is_directory or metadata.is_reparse_point:
         raise RuntimeError(f"DISM 路径不是普通可执行文件: {candidate}")
-    if metadata.volume_serial is None or metadata.file_id is None or metadata.file_id_kind is None:
+    if (
+        metadata.volume_serial is None
+        or metadata.file_id is None
+        or metadata.file_id_kind is None
+    ):
         raise RuntimeError("DISM 可执行文件没有稳定文件身份")
     if not is_local_fixed_path(candidate):
         raise RuntimeError("DISM 可执行文件不在本地固定磁盘")

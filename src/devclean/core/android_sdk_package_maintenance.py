@@ -197,7 +197,9 @@ def uninstall_android_sdk_package(
     if after_inventory.sdk_root_identity != fresh.sdk_root_identity:
         raise RuntimeError("Android SDK 根身份在卸载后发生变化；无法确认后置状态")
     if any(package.package_id == selected.package_id for package in after_inventory.packages):
-        raise RuntimeError(f"sdkmanager 返回成功，但 package 仍被列为已安装: {selected.package_id}")
+        raise RuntimeError(
+            f"sdkmanager 返回成功，但 package 仍被列为已安装: {selected.package_id}"
+        )
     after = _path_bytes(selected.installed_path)
     return AndroidSdkUninstallResult(
         sdk_root=fresh.sdk_root,
@@ -373,7 +375,8 @@ def _parse_installed_packages(
 
         avd_names = (
             _matching_avd_names(installed_path, avds)
-            if package_id.casefold().startswith(_SYSTEM_IMAGE_PREFIX) and installed_path is not None
+            if package_id.casefold().startswith(_SYSTEM_IMAGE_PREFIX)
+            and installed_path is not None
             else ()
         )
         protected_reason = _protected_package_reason(
@@ -449,7 +452,9 @@ def _inventory_avd_references(
             if before != after:
                 raise RuntimeError("config.ini 在读取期间发生变化")
             raw_dirs = tuple(
-                value for key in ("image.sysdir.1", "image.sysdir.2") if (value := values.get(key))
+                value
+                for key in ("image.sysdir.1", "image.sysdir.2")
+                if (value := values.get(key))
             )
             if not raw_dirs:
                 raise RuntimeError("config.ini 缺少 image.sysdir.1/2")
@@ -615,9 +620,7 @@ def _require_same_root(expected: AndroidSdkRootInventory, current: AndroidSdkRoo
         raise RuntimeError("Android SDK 根或 sdkmanager 身份在用户确认后发生变化")
 
 
-def _require_same_package(
-    expected: AndroidSdkPackageEntry, current: AndroidSdkPackageEntry
-) -> None:
+def _require_same_package(expected: AndroidSdkPackageEntry, current: AndroidSdkPackageEntry) -> None:
     if (
         current.package_id != expected.package_id
         or current.version != expected.version
@@ -626,9 +629,7 @@ def _require_same_package(
         or current.installed_identity != expected.installed_identity
         or current.avd_names != expected.avd_names
     ):
-        raise RuntimeError(
-            "Android SDK package identity/version/Location/AVD 引用已变化；请重新检查"
-        )
+        raise RuntimeError("Android SDK package identity/version/Location/AVD 引用已变化；请重新检查")
 
 
 def _exact_package(

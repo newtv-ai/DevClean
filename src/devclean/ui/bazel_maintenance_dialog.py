@@ -232,7 +232,9 @@ class _BazelMaintenanceDialog:
     def _render(self, inventory: BazelWorkspaceInventory) -> None:
         self._workspace.set(str(inventory.workspace))
         recommendation = (
-            "建议运行普通 clean" if inventory.recommended_clean else "当前不默认建议运行普通 clean"
+            "建议运行普通 clean"
+            if inventory.recommended_clean
+            else "当前不默认建议运行普通 clean"
         )
         self._details.configure(
             text=(

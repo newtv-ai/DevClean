@@ -86,11 +86,15 @@ class RuleEditor:
 
         actions = ttk.Frame(self._window, padding=12)
         actions.pack(fill=tk.X)
-        ttk.Button(actions, text="保存并应用", command=self._save).pack(side=tk.RIGHT)
+        ttk.Button(actions, text="保存并应用", command=self._save).pack(
+            side=tk.RIGHT
+        )
         ttk.Button(actions, text="从磁盘重新载入", command=self._reload).pack(
             side=tk.RIGHT, padx=(0, 8)
         )
-        ttk.Button(actions, text="打开规则文件夹", command=self._open_folder).pack(side=tk.LEFT)
+        ttk.Button(actions, text="打开规则文件夹", command=self._open_folder).pack(
+            side=tk.LEFT
+        )
         ttk.Button(
             actions,
             text="恢复默认配置",

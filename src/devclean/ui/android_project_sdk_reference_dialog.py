@@ -42,9 +42,7 @@ class _AndroidProjectSdkReferenceDialog:
 
         root = ttk.Frame(self._window, padding=12)
         root.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(root, text="Android 项目 SDK 显式引用检查", font=("Segoe UI", 13, "bold")).pack(
-            anchor=tk.W
-        )
+        ttk.Label(root, text="Android 项目 SDK 显式引用检查", font=("Segoe UI", 13, "bold")).pack(anchor=tk.W)
         ttk.Label(
             root,
             text=(
@@ -76,12 +74,8 @@ class _AndroidProjectSdkReferenceDialog:
 
         project_row = ttk.Frame(root)
         project_row.pack(fill=tk.X, pady=(0, 8))
-        ttk.Label(project_row, textvariable=self._project, wraplength=900, justify=tk.LEFT).pack(
-            side=tk.LEFT, fill=tk.X, expand=True
-        )
-        self._choose_button = ttk.Button(
-            project_row, text="选择项目目录…", command=self._choose_project
-        )
+        ttk.Label(project_row, textvariable=self._project, wraplength=900, justify=tk.LEFT).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._choose_button = ttk.Button(project_row, text="选择项目目录…", command=self._choose_project)
         self._choose_button.pack(side=tk.RIGHT)
 
         columns = ("kind", "value", "package", "installed", "file", "line")
@@ -100,9 +94,7 @@ class _AndroidProjectSdkReferenceDialog:
 
         self._warnings = tk.Text(root, height=6, wrap="word", state=tk.DISABLED)
         self._warnings.pack(fill=tk.X, pady=(8, 0))
-        ttk.Label(root, textvariable=self._status, wraplength=1130, justify=tk.LEFT).pack(
-            anchor=tk.W, pady=(8, 0)
-        )
+        ttk.Label(root, textvariable=self._status, wraplength=1130, justify=tk.LEFT).pack(anchor=tk.W, pady=(8, 0))
 
         footer = ttk.Frame(root)
         footer.pack(fill=tk.X, pady=(10, 0))
@@ -148,9 +140,7 @@ class _AndroidProjectSdkReferenceDialog:
         if self._busy or project_root is None:
             return
         self._set_busy(True)
-        self._status.set(
-            "正在静态读取项目 build/settings 脚本，并通过 sdkmanager 核对当前已安装 package…"
-        )
+        self._status.set("正在静态读取项目 build/settings 脚本，并通过 sdkmanager 核对当前已安装 package…")
 
         def work() -> None:
             try:
@@ -196,9 +186,7 @@ class _AndroidProjectSdkReferenceDialog:
 
         for index, reference in enumerate(event.scan.references):
             matches = installed.get(reference.package_id.casefold(), [])
-            installed_text = (
-                "；".join(matches) if matches else "未在当前已识别 SDK 中发现精确 package"
-            )
+            installed_text = "；".join(matches) if matches else "未在当前已识别 SDK 中发现精确 package"
             try:
                 relative = reference.source_file.relative_to(reference.project_root)
                 source = str(relative)

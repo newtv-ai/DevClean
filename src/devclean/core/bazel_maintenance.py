@@ -108,7 +108,11 @@ def clean_bazel_workspace(
     )
 
     try:
-        after = _directory_bytes(inventory.output_base) if inventory.output_base.is_dir() else 0
+        after = (
+            _directory_bytes(inventory.output_base)
+            if inventory.output_base.is_dir()
+            else 0
+        )
     except OSError:
         after = 0
     return BazelCleanResult(
@@ -219,7 +223,9 @@ def _run_bazel(
         raise RuntimeError(f"Cannot execute Bazel CLI: {error}") from error
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(f"Bazel CLI failed (exit {result.returncode}): {detail}")
+        raise RuntimeError(
+            f"Bazel CLI failed (exit {result.returncode}): {detail}"
+        )
     return result
 
 

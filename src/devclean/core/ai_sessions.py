@@ -46,7 +46,8 @@ def remember_export(
     ):
         return
     members = candidate_members or {
-        candidate_id: (path,) for candidate_id, path in candidate_paths.items()
+        candidate_id: (path,)
+        for candidate_id, path in candidate_paths.items()
     }
     if (
         set(members) != set(candidate_paths)
@@ -66,7 +67,10 @@ def remember_export(
         "nonce": nonce,
         "package_digest": package_digest,
         "paths": candidate_paths,
-        "members": {candidate_id: list(group) for candidate_id, group in members.items()},
+        "members": {
+            candidate_id: list(group)
+            for candidate_id, group in members.items()
+        },
     }
     ordered = sorted(
         sessions.items(),
@@ -74,7 +78,11 @@ def remember_export(
     )
     while ordered and (
         len(ordered) > _MAX_EXPORT_SESSIONS
-        or sum(_record_path_count(record) for _key, record in ordered) > _MAX_EXPORTED_PATHS
+        or sum(
+            _record_path_count(record)
+            for _key, record in ordered
+        )
+        > _MAX_EXPORTED_PATHS
     ):
         ordered.pop(0)
     _write(dict(ordered))
@@ -108,7 +116,8 @@ def recall_export(session_id: str) -> ExportSession | None:
     if len(candidate_paths) != len(paths) or not candidate_paths:
         return None
     candidate_members: dict[str, tuple[str, ...]] = {
-        candidate_id: (path,) for candidate_id, path in candidate_paths.items()
+        candidate_id: (path,)
+        for candidate_id, path in candidate_paths.items()
     }
     if raw_members is not None:
         if not isinstance(raw_members, dict) or set(raw_members) != set(candidate_paths):
@@ -124,9 +133,13 @@ def recall_export(session_id: str) -> ExportSession | None:
             ):
                 return None
             parsed_members[candidate_id] = tuple(raw_group)
-        if len({path for group in parsed_members.values() for path in group}) != sum(
-            len(group) for group in parsed_members.values()
-        ):
+        if len(
+            {
+                path
+                for group in parsed_members.values()
+                for path in group
+            }
+        ) != sum(len(group) for group in parsed_members.values()):
             return None
         candidate_members = parsed_members
     return ExportSession(
@@ -156,7 +169,11 @@ def _index_path() -> Path:
 def _record_path_count(record: dict[str, object]) -> int:
     members = record.get("members")
     if isinstance(members, dict):
-        return sum(len(group) for group in members.values() if isinstance(group, list))
+        return sum(
+            len(group)
+            for group in members.values()
+            if isinstance(group, list)
+        )
     paths = record.get("paths")
     return len(paths) if isinstance(paths, dict) else 0
 
