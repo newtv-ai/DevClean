@@ -181,7 +181,7 @@ def test_incomplete_fresh_scan_fails_closed(
         require_application_whole_tree_policy(root, (_known(root, _rule()),))
 
 
-def test_configured_non_application_root_keeps_existing_directory_semantics(
+def test_configured_vendor_root_without_application_rule_fails_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -190,11 +190,12 @@ def test_configured_non_application_root_keeps_existing_directory_semantics(
     root = tmp_path / "Windows.old"
 
     def must_not_scan(*_args: object, **_kwargs: object) -> object:
-        raise AssertionError("configured roots must not enter application policy scan")
+        raise AssertionError("static vendor roots must fail before application policy scan")
 
     monkeypatch.setattr(policy, "scan_roots", must_not_scan)
 
-    assert require_application_whole_tree_policy(root, (_known(root, None),)) is None
+    with pytest.raises(WholeTreePolicyRefusal, match="static vendor-managed"):
+        require_application_whole_tree_policy(root, (_known(root, None),))
 
 
 def test_non_mtime_rule_without_native_evaluator_fails_closed(

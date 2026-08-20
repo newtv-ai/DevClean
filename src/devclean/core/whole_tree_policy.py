@@ -21,7 +21,7 @@ from devclean.core.application_cleanup import (
     effective_idle_days,
     evaluate_application_path,
 )
-from devclean.core.cleanup_catalog import KnownCleanupRoot, known_root_for_path
+from devclean.core.cleanup_catalog import CleanupPolicy, KnownCleanupRoot, known_root_for_path
 from devclean.scanner.filesystem import ScanOptions, ScanRecordKind, scan_roots
 
 
@@ -53,6 +53,10 @@ def require_application_whole_tree_policy(
         return None
     rule = known.application_rule
     if rule is None:
+        if known.policy is CleanupPolicy.VENDOR_MANAGED:
+            raise WholeTreePolicyRefusal(
+                "static vendor-managed roots do not carry whole-tree mutation authority"
+            )
         return None
     if rule.owner is not DecisionOwner.TOOL or not rule.allow_whole_tree:
         raise WholeTreePolicyRefusal(
@@ -103,22 +107,16 @@ def _require_fresh_tree_floor(
     observed: datetime,
 ) -> None:
     if evidence.logical_bytes < rule.min_reclaim_bytes:
-        raise WholeTreePolicyRefusal(
-            f"{rule.label} is below its minimum reclaim threshold"
-        )
+        raise WholeTreePolicyRefusal(f"{rule.label} is below its minimum reclaim threshold")
     threshold = effective_idle_days(rule, evidence.logical_bytes)
     if threshold is None:
-        raise WholeTreePolicyRefusal(
-            "application whole-tree idle threshold is unavailable"
-        )
+        raise WholeTreePolicyRefusal("application whole-tree idle threshold is unavailable")
     idle_days = max(
         0.0,
         (datetime.now(UTC) - observed).total_seconds() / 86_400,
     )
     if idle_days < threshold:
-        raise WholeTreePolicyRefusal(
-            f"{rule.label} was used too recently for whole-tree cleanup"
-        )
+        raise WholeTreePolicyRefusal(f"{rule.label} was used too recently for whole-tree cleanup")
 
 
 def _fresh_tree_evidence(path: Path) -> WholeTreePolicyEvidence:
