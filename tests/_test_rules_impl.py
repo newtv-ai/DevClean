@@ -33,6 +33,9 @@ def test_packaged_rule_documents_are_current_and_round_trip() -> None:
 
     assert rules.scan.delete_root_ids == set()
     assert len(rules.scan.known_cleanup_roots) >= 30
+    assert rules.delete.rules == ()
+    assert rules.keep.rules == ()
+    assert rules.ai_rule_count == 0
     assert MAX_DECISION_RULES == 100_000
     assert parse_rule_documents(*render_rule_documents(rules)) == rules
 
@@ -149,6 +152,111 @@ def test_existing_sidecar_uses_packaged_data_only_to_rebuild_missing_backup(
     assert load_rules() == original
 
 
+def test_legacy_packaged_decisions_are_removed_without_erasing_new_user_rules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "DevClean-data"))
+    clean_defaults = default_rules()
+    clean_documents = render_rule_documents(clean_defaults)
+    legacy_delete = DecisionRule(
+        rule_id="legacy-packaged-delete",
+        group="ai_import",
+        match=RuleMatch.EXACT_PATH,
+        value=r"C:\Users\legacy\machine-specific-cache.bin",
+        source="AI_IMPORT",
+        reason="accidentally shipped machine decision",
+        updated_at="2026-07-27T00:00:00+00:00",
+    )
+    user_delete = DecisionRule(
+        rule_id="real-user-delete",
+        group="user_decision",
+        match=RuleMatch.EXACT_PATH,
+        value=r"D:\user-selected\disposable.bin",
+        source="USER_DECISION",
+        reason="created after installation",
+        updated_at="2026-08-20T00:00:00+00:00",
+    )
+    legacy = UserRules(
+        scan=clean_defaults.scan,
+        delete=replace(clean_defaults.delete, rules=(legacy_delete,)),
+        keep=clean_defaults.keep,
+    )
+    legacy_documents = render_rule_documents(legacy)
+
+    from devclean.core import user_rules as module
+
+    module.rules_dir().mkdir(parents=True, exist_ok=True)
+    for path, document in zip(
+        (module.scan_rules_path(), module.delete_rules_path(), module.keep_rules_path()),
+        render_rule_documents(
+            UserRules(
+                scan=legacy.scan,
+                delete=replace(legacy.delete, rules=(legacy_delete, user_delete)),
+                keep=legacy.keep,
+            )
+        ),
+        strict=True,
+    ):
+        path.write_text(document, encoding="utf-8")
+    with zipfile.ZipFile(module.default_backup_path(), "w") as archive:
+        for name, document in zip(
+            (SCAN_RULES_NAME, DELETE_RULES_NAME, KEEP_RULES_NAME),
+            legacy_documents,
+            strict=True,
+        ):
+            archive.writestr(name, document.encode("utf-8"))
+
+    monkeypatch.setattr(module, "_packaged_documents", lambda: clean_documents)
+    migrated = load_rules()
+
+    assert legacy_delete not in migrated.delete.rules
+    assert user_delete in migrated.delete.rules
+    assert migrated.decision_for(user_delete.value) is RuleDecision.DELETE
+    with zipfile.ZipFile(default_backup_path()) as archive:
+        assert archive.read(DELETE_RULES_NAME).decode("utf-8") == clean_documents[1]
+
+
+def test_restore_defaults_prefers_current_packaged_templates_over_stale_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "DevClean-data"))
+    clean = default_rules()
+    clean_documents = render_rule_documents(clean)
+    stale_rule = DecisionRule(
+        rule_id="stale-default-delete",
+        group="ai_import",
+        match=RuleMatch.EXACT_PATH,
+        value=r"C:\stale-default.bin",
+        source="AI_IMPORT",
+    )
+    stale = UserRules(
+        scan=clean.scan,
+        delete=replace(clean.delete, rules=(stale_rule,)),
+        keep=clean.keep,
+    )
+    stale_documents = render_rule_documents(stale)
+
+    from devclean.core import user_rules as module
+
+    module.rules_dir().mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(module.default_backup_path(), "w") as archive:
+        for name, document in zip(
+            (SCAN_RULES_NAME, DELETE_RULES_NAME, KEEP_RULES_NAME),
+            stale_documents,
+            strict=True,
+        ):
+            archive.writestr(name, document.encode("utf-8"))
+    monkeypatch.setattr(module, "_packaged_documents", lambda: clean_documents)
+
+    restored = restore_default_rules()
+
+    assert restored.delete.rules == ()
+    assert restored.keep.rules == ()
+    assert restored.ai_rule_count == 0
+    with zipfile.ZipFile(default_backup_path()) as archive:
+        assert archive.read(DELETE_RULES_NAME).decode("utf-8") == clean_documents[1]
+
+
 def test_ai_rules_port_user_profile_and_reuse_dated_path_shapes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -186,13 +294,8 @@ def test_ai_rules_port_user_profile_and_reuse_dated_path_shapes(
         delete=updated.delete,
         keep=updated.keep,
     )
-    other_user_tomorrow = tomorrow.replace(
-        r"C:\Users\alice", r"C:\Users\bob"
-    )
-    assert (
-        other_user_rules.decision_for(other_user_tomorrow)
-        is RuleDecision.DELETE
-    )
+    other_user_tomorrow = tomorrow.replace(r"C:\Users\alice", r"C:\Users\bob")
+    assert other_user_rules.decision_for(other_user_tomorrow) is RuleDecision.DELETE
 
 
 def test_conventional_local_temp_rule_survives_redirected_temp(
@@ -214,8 +317,7 @@ def test_conventional_local_temp_rule_survives_redirected_temp(
     assert updated.decision_for(target) is RuleDecision.DELETE
     assert any(
         rule.match is RuleMatch.EXACT_PATH
-        and rule.value.casefold()
-        == r"%LOCALAPPDATA%\Temp\cache\answer.bin".casefold()
+        and rule.value.casefold() == r"%LOCALAPPDATA%\Temp\cache\answer.bin".casefold()
         for rule in updated.delete.rules
     )
     updated = add_ai_verdicts(
@@ -230,8 +332,7 @@ def test_conventional_local_temp_rule_survives_redirected_temp(
     )
     assert any(
         rule.match is RuleMatch.EXACT_PATH
-        and rule.value.casefold()
-        == r"%TEMP%\cache\redirected.bin".casefold()
+        and rule.value.casefold() == r"%TEMP%\cache\redirected.bin".casefold()
         for rule in updated.delete.rules
     )
 
@@ -246,15 +347,11 @@ def test_conventional_local_temp_rule_survives_redirected_temp(
         keep=updated.keep,
     )
     assert (
-        other_user_rules.decision_for(
-            r"C:\Users\bob\AppData\Local\Temp\cache\answer.bin"
-        )
+        other_user_rules.decision_for(r"C:\Users\bob\AppData\Local\Temp\cache\answer.bin")
         is RuleDecision.DELETE
     )
     assert (
-        other_user_rules.decision_for(
-            r"E:\other-redirected-temp\cache\redirected.bin"
-        )
+        other_user_rules.decision_for(r"E:\other-redirected-temp\cache\redirected.bin")
         is RuleDecision.DELETE
     )
 
@@ -287,8 +384,7 @@ def test_ai_rules_replace_encoded_foreign_username_and_dynamic_hash(
         for rule in (*updated.delete.rules, *updated.keep.rules)
     )
     assert any(
-        "%USERNAME%" in rule.value
-        and rule.match is RuleMatch.PATH_GLOB
+        "%USERNAME%" in rule.value and rule.match is RuleMatch.PATH_GLOB
         for rule in updated.keep.rules
     )
 
@@ -309,9 +405,7 @@ def test_dynamic_number_does_not_get_duplicated_as_a_fake_suffix(
 
     baseline = load_rules()
     baseline_templates = {
-        rule.value
-        for rule in baseline.delete.rules
-        if rule.match is RuleMatch.PATH_GLOB
+        rule.value for rule in baseline.delete.rules if rule.match is RuleMatch.PATH_GLOB
     }
     updated = add_ai_verdicts(
         baseline,
@@ -319,11 +413,7 @@ def test_dynamic_number_does_not_get_duplicated_as_a_fake_suffix(
     )
 
     assert updated.decision_for(next_generated) is RuleDecision.DELETE
-    templates = {
-        rule.value
-        for rule in updated.delete.rules
-        if rule.match is RuleMatch.PATH_GLOB
-    }
+    templates = {rule.value for rule in updated.delete.rules if rule.match is RuleMatch.PATH_GLOB}
     expected = r"%LOCALAPPDATA%\browser\safe browsing\urlsoceng.store.4_*"
     assert expected in templates
     assert templates - baseline_templates == {expected}
@@ -367,9 +457,7 @@ def test_age_dependent_delete_is_portable_but_not_generalized(
         for rule in (*updated.delete.rules, *updated.keep.rules)
         if rule.match is RuleMatch.PATH_GLOB
     } == baseline_templates
-    assert all(
-        "person" not in rule.value.casefold() for rule in updated.delete.rules
-    )
+    assert all("person" not in rule.value.casefold() for rule in updated.delete.rules)
 
     updated = add_ai_verdicts(
         updated,

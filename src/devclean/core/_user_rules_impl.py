@@ -44,9 +44,7 @@ _DOCUMENT_TYPES: Final = {
     DELETE_RULES_NAME: "devclean.delete_rules",
     KEEP_RULES_NAME: "devclean.keep_rules",
 }
-_CONTRACT_KEYS: Final = frozenset(
-    {"contract_version", "output_format", "instructions"}
-)
+_CONTRACT_KEYS: Final = frozenset({"contract_version", "output_format", "instructions"})
 _SCAN_TOP_LEVEL_KEYS: Final = frozenset(
     {
         "schema_version",
@@ -112,9 +110,7 @@ _DECISION_RULE_KEYS: Final = frozenset(
         "updated_at",
     }
 )
-_THRESHOLD_KEYS: Final = frozenset(
-    {"old_temp_days", "large_file_bytes", "stale_metadata_days"}
-)
+_THRESHOLD_KEYS: Final = frozenset({"old_temp_days", "large_file_bytes", "stale_metadata_days"})
 _DELETE_CLASSIFICATION_KEYS: Final = frozenset(
     {
         "development_cache_segments",
@@ -210,11 +206,7 @@ class ScanRules:
 
     @property
     def skip_directory_names(self) -> tuple[str, ...]:
-        return tuple(
-            name
-            for names in self.skip_directory_groups.values()
-            for name in names
-        )
+        return tuple(name for names in self.skip_directory_groups.values() for name in names)
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,8 +329,7 @@ class _DecisionMatcher:
         if folded in self.exact_paths:
             return True
         if any(
-            folded == prefix
-            or folded.startswith(prefix.rstrip(os.sep) + os.sep)
+            folded == prefix or folded.startswith(prefix.rstrip(os.sep) + os.sep)
             for prefix in self.path_prefixes
         ):
             return True
@@ -363,12 +354,8 @@ class UserRules:
     _ai_rule_count: int = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "_delete_matcher", _DecisionMatcher.compile(self.delete.rules)
-        )
-        object.__setattr__(
-            self, "_keep_matcher", _DecisionMatcher.compile(self.keep.rules)
-        )
+        object.__setattr__(self, "_delete_matcher", _DecisionMatcher.compile(self.delete.rules))
+        object.__setattr__(self, "_keep_matcher", _DecisionMatcher.compile(self.keep.rules))
         object.__setattr__(
             self,
             "_ai_rule_count",
@@ -422,53 +409,111 @@ def default_rules() -> UserRules:
 def load_rules(*, create_missing: bool = True) -> UserRules:
     """Load the three current-format documents.
 
-    Missing files are copied from the packaged templates once.  Complete
-    activity files are always read from ``DevClean-data`` beside the program.
-    If only the visible default backup was deleted, rebuilding it from the
-    packaged templates is best-effort and can never block activity-rule loading.
+    Active sidecar files stay authoritative. Packaged templates are consulted
+    best-effort on normal launches so the visible default backup tracks the
+    *current executable* rather than whichever DevClean version first created
+    the data directory. Missing activity files prefer the current packaged
+    template and fall back to the sidecar backup only when packaged resources
+    are temporarily unavailable.
+
+    One historical release accidentally shipped machine-specific learned
+    decisions inside the packaged DELETE/KEEP templates. When an old sidecar
+    backup proves that an unchanged active decision came from that packaged
+    baseline, remove only that exact inherited entry. User/AI rules created
+    later, or edited since installation, are not present byte-for-byte in the
+    old backup and are preserved.
     """
 
     paths = (scan_rules_path(), delete_rules_path(), keep_rules_path())
-    if create_missing:
-        rules_dir().mkdir(parents=True, exist_ok=True)
-        missing = tuple(path for path in paths if not path.is_file())
-        backup_source: tuple[str, str, str] | None = None
-        if missing:
-            defaults = (
-                _default_backup_documents()
-                if default_backup_path().is_file()
-                else _packaged_documents()
-            )
-            backup_source = defaults
-            for path, text in zip(paths, defaults, strict=True):
-                if not path.is_file():
-                    _atomic_write(path, text)
-        if not default_backup_path().is_file():
-            with suppress(
-                ImportError, OSError, RuleConfigError, UnicodeError
-            ):
-                _ensure_default_backup(
-                    backup_source or _packaged_documents()
-                )
-            # The three activity files remain authoritative and usable. Restore
-            # stays unavailable only when the packaged copy itself cannot be
-            # read or the sidecar directory cannot be written.
+    if not create_missing:
+        return parse_rule_documents(*read_rule_documents())
+
+    rules_dir().mkdir(parents=True, exist_ok=True)
+    packaged: tuple[str, str, str] | None = None
+    with suppress(ImportError, OSError, RuleConfigError, UnicodeError):
+        packaged = _packaged_documents()
+
+    missing = tuple(path for path in paths if not path.is_file())
+    if missing:
+        defaults: tuple[str, str, str] | None = packaged
+        if defaults is None and default_backup_path().is_file():
+            defaults = _default_backup_documents()
+        if defaults is None:
+            # Preserve the previous clear failure when neither current packaged
+            # resources nor a valid sidecar default backup can supply a missing
+            # required document.
+            defaults = _packaged_documents()
+        for path, document in zip(paths, defaults, strict=True):
+            if not path.is_file():
+                _atomic_write(path, document)
+
+    if packaged is not None and default_backup_path().is_file():
+        with suppress(ImportError, OSError, RuleConfigError, UnicodeError):
+            _migrate_legacy_packaged_decisions(packaged)
+
+    if packaged is not None:
+        with suppress(ImportError, OSError, RuleConfigError, UnicodeError):
+            _ensure_default_backup(packaged)
+
     return parse_rule_documents(*read_rule_documents())
 
 
 def restore_default_rules() -> UserRules:
-    """Restore all three active files from the visible sidecar backup."""
+    """Restore active files from the current executable's packaged defaults.
 
-    defaults = _default_backup_documents()
+    The visible sidecar ZIP remains a fallback for a damaged/unavailable
+    resource package, but an old ZIP must never pin "restore defaults" to a
+    previous DevClean release.
+    """
+
+    try:
+        defaults = _packaged_documents()
+    except (ImportError, OSError, RuleConfigError, UnicodeError):
+        defaults = _default_backup_documents()
     restored = parse_rule_documents(*defaults)
     rules_dir().mkdir(parents=True, exist_ok=True)
-    for path, text in zip(
+    for path, document in zip(
         (scan_rules_path(), delete_rules_path(), keep_rules_path()),
         defaults,
         strict=True,
     ):
-        _atomic_write(path, text)
+        _atomic_write(path, document)
+    with suppress(ImportError, OSError, RuleConfigError, UnicodeError):
+        _ensure_default_backup(defaults)
     return restored
+
+
+def _migrate_legacy_packaged_decisions(
+    packaged: tuple[str, str, str],
+) -> None:
+    """Remove only unchanged decision entries proven to come from old defaults."""
+
+    current_defaults = parse_rule_documents(*packaged)
+    if current_defaults.delete.rules or current_defaults.keep.rules:
+        # This migration is deliberately tied to the neutral-default contract.
+        # If a future release intentionally ships decision entries, do not infer
+        # that older sidecar entries are contamination.
+        return
+
+    legacy_defaults = parse_rule_documents(*_default_backup_documents())
+    legacy_delete = frozenset(legacy_defaults.delete.rules)
+    legacy_keep = frozenset(legacy_defaults.keep.rules)
+    if not legacy_delete and not legacy_keep:
+        return
+
+    active = parse_rule_documents(*read_rule_documents())
+    delete_rules = tuple(rule for rule in active.delete.rules if rule not in legacy_delete)
+    keep_rules = tuple(rule for rule in active.keep.rules if rule not in legacy_keep)
+    if delete_rules == active.delete.rules and keep_rules == active.keep.rules:
+        return
+
+    save_rules(
+        UserRules(
+            scan=active.scan,
+            delete=replace(active.delete, rules=delete_rules),
+            keep=replace(active.keep, rules=keep_rules),
+        )
+    )
 
 
 def read_rule_documents(*, errors: str = "strict") -> tuple[str, str, str]:
@@ -504,9 +549,7 @@ def render_rule_documents(rules: UserRules) -> tuple[str, str, str]:
         "schema_version": SCHEMA_VERSION,
         "document_type": _DOCUMENT_TYPES[SCAN_RULES_NAME],
         "_help": rules.scan.metadata.help_text,
-        "_ai_editing_contract": _metadata_contract_document(
-            rules.scan.metadata
-        ),
+        "_ai_editing_contract": _metadata_contract_document(rules.scan.metadata),
         "include_user_profile": rules.scan.include_user_profile,
         "include_known_cleanup_roots": rules.scan.include_known_cleanup_roots,
         "review_sample_per_category": rules.scan.review_sample_per_category,
@@ -514,8 +557,7 @@ def render_rule_documents(rules: UserRules) -> tuple[str, str, str]:
         "excluded_paths": list(rules.scan.excluded_paths),
         "delete_root_ids": sorted(rules.scan.delete_root_ids),
         "skip_directory_groups": {
-            group: list(names)
-            for group, names in rules.scan.skip_directory_groups.items()
+            group: list(names) for group, names in rules.scan.skip_directory_groups.items()
         },
         "known_cleanup_roots": [
             {
@@ -535,20 +577,15 @@ def render_rule_documents(rules: UserRules) -> tuple[str, str, str]:
         "schema_version": SCHEMA_VERSION,
         "document_type": _DOCUMENT_TYPES[DELETE_RULES_NAME],
         "_help": rules.delete.metadata.help_text,
-        "_ai_editing_contract": _metadata_contract_document(
-            rules.delete.metadata
-        ),
+        "_ai_editing_contract": _metadata_contract_document(rules.delete.metadata),
         "thresholds": {
             "old_temp_days": rules.delete.classification.old_temp_days,
             "large_file_bytes": rules.delete.classification.large_file_bytes,
             "stale_metadata_days": rules.delete.classification.stale_metadata_days,
         },
-        "classification": _delete_classification_document(
-            rules.delete.classification
-        ),
+        "classification": _delete_classification_document(rules.delete.classification),
         "classification_groups": {
-            group: list(fields)
-            for group, fields in rules.delete.classification_groups.items()
+            group: list(fields) for group, fields in rules.delete.classification_groups.items()
         },
         "match_help": dict(rules.delete.match_help),
         "rules": _decision_rule_documents(rules.delete.rules),
@@ -557,15 +594,10 @@ def render_rule_documents(rules: UserRules) -> tuple[str, str, str]:
         "schema_version": SCHEMA_VERSION,
         "document_type": _DOCUMENT_TYPES[KEEP_RULES_NAME],
         "_help": rules.keep.metadata.help_text,
-        "_ai_editing_contract": _metadata_contract_document(
-            rules.keep.metadata
-        ),
-        "classification": _keep_classification_document(
-            rules.keep.classification
-        ),
+        "_ai_editing_contract": _metadata_contract_document(rules.keep.metadata),
+        "classification": _keep_classification_document(rules.keep.classification),
         "classification_groups": {
-            group: list(fields)
-            for group, fields in rules.keep.classification_groups.items()
+            group: list(fields) for group, fields in rules.keep.classification_groups.items()
         },
         "match_help": dict(rules.keep.match_help),
         "rules": _decision_rule_documents(rules.keep.rules),
@@ -573,20 +605,12 @@ def render_rule_documents(rules: UserRules) -> tuple[str, str, str]:
     return (_render(scan_document), _render(delete_document), _render(keep_document))
 
 
-def parse_rule_documents(
-    scan_text: str, delete_text: str, keep_text: str
-) -> UserRules:
+def parse_rule_documents(scan_text: str, delete_text: str, keep_text: str) -> UserRules:
     """Parse and validate the three editor buffers as one configuration."""
 
-    scan_payload = _parse_document(
-        scan_text, SCAN_RULES_NAME, _SCAN_TOP_LEVEL_KEYS
-    )
-    delete_payload = _parse_document(
-        delete_text, DELETE_RULES_NAME, _DELETE_TOP_LEVEL_KEYS
-    )
-    keep_payload = _parse_document(
-        keep_text, KEEP_RULES_NAME, _KEEP_TOP_LEVEL_KEYS
-    )
+    scan_payload = _parse_document(scan_text, SCAN_RULES_NAME, _SCAN_TOP_LEVEL_KEYS)
+    delete_payload = _parse_document(delete_text, DELETE_RULES_NAME, _DELETE_TOP_LEVEL_KEYS)
+    keep_payload = _parse_document(keep_text, KEEP_RULES_NAME, _KEEP_TOP_LEVEL_KEYS)
     return UserRules(
         scan=_parse_scan_rules(scan_payload),
         delete=_parse_delete_rules(delete_payload),
@@ -641,9 +665,7 @@ def _add_verdict_rules(
     removal_keys: set[tuple[RuleMatch, str]] = set()
     for normalized, decision, reason in incoming.values():
         removal_keys.add(_stored_rule_key(RuleMatch.EXACT_PATH, normalized))
-        for match, value in _decision_rule_shapes(
-            normalized, decision=decision, reason=reason
-        ):
+        for match, value in _decision_rule_shapes(normalized, decision=decision, reason=reason):
             key = _stored_rule_key(match, value)
             removal_keys.add(key)
             requested.setdefault(key, []).append((value, match, decision, reason))
@@ -651,9 +673,7 @@ def _add_verdict_rules(
     # A reusable type rule is valid only while every observation of that shape
     # agrees. Conflicting evidence removes the broad rule and leaves the
     # portable exact-path decisions in place.
-    existing_decisions: dict[
-        tuple[RuleMatch, str], set[RuleDecision]
-    ] = {}
+    existing_decisions: dict[tuple[RuleMatch, str], set[RuleDecision]] = {}
     existing_exact: list[tuple[RuleDecision, str]] = []
     for decision, decision_rules in (
         (RuleDecision.DELETE, rules.delete.rules),
@@ -665,8 +685,7 @@ def _add_verdict_rules(
                 and rule.match is RuleMatch.EXACT_PATH
                 and not (
                     rule.source == source
-                    and _stored_rule_key(rule.match, rule.value)
-                    in removal_keys
+                    and _stored_rule_key(rule.match, rule.value) in removal_keys
                 )
             ):
                 existing_exact.append(
@@ -687,9 +706,7 @@ def _add_verdict_rules(
                 else ((rule.match, rule.value),)
             )
             for match, value in shapes:
-                existing_decisions.setdefault(
-                    _stored_rule_key(match, value), set()
-                ).add(decision)
+                existing_decisions.setdefault(_stored_rule_key(match, value), set()).add(decision)
     blocked_templates: set[tuple[RuleMatch, str]] = set()
     for key, entries in requested.items():
         if key[0] is not RuleMatch.PATH_GLOB:
@@ -700,10 +717,7 @@ def _add_verdict_rules(
         folded_template = os.path.normpath(expand_path(template)).casefold()
         compared_exact = [
             *existing_exact,
-            *(
-                (entry[1], entry[0])
-                for entry in incoming.values()
-            ),
+            *((entry[1], entry[0]) for entry in incoming.values()),
         ]
         decisions.update(
             exact_decision
@@ -717,21 +731,15 @@ def _add_verdict_rules(
             blocked_templates.add(key)
             removal_keys.add(key)
 
-    delete = _without_source_rule_keys(
-        rules.delete.rules, frozenset(removal_keys), source
-    )
-    keep = _without_source_rule_keys(
-        rules.keep.rules, frozenset(removal_keys), source
-    )
+    delete = _without_source_rule_keys(rules.delete.rules, frozenset(removal_keys), source)
+    keep = _without_source_rule_keys(rules.keep.rules, frozenset(removal_keys), source)
     used_ids = {rule.rule_id for rule in (*delete, *keep)}
     now = datetime.now(UTC).isoformat()
     for key, entries in requested.items():
         if key in blocked_templates:
             continue
         value, match, decision, reason = entries[-1]
-        rule_id = _unique_rule_id(
-            _decision_rule_id(source, f"{match.value}:{value}"), used_ids
-        )
+        rule_id = _unique_rule_id(_decision_rule_id(source, f"{match.value}:{value}"), used_ids)
         used_ids.add(rule_id)
         reusable = match is RuleMatch.PATH_GLOB
         entry = DecisionRule(
@@ -740,10 +748,7 @@ def _add_verdict_rules(
             match=match,
             value=value,
             source=source,
-            reason=(
-                ("同类动态路径模板；" if reusable else "")
-                + reason
-            )[:MAX_REASON_CHARS],
+            reason=(("同类动态路径模板；" if reusable else "") + reason)[:MAX_REASON_CHARS],
             updated_at=now,
         )
         (delete if decision is RuleDecision.DELETE else keep).append(entry)
@@ -781,9 +786,7 @@ _VOLATILE_TEXT = re.compile(
     r")",
     re.IGNORECASE,
 )
-_GENERIC_TEMPLATE_SEGMENTS: Final = frozenset(
-    {"temp", "tmp", "cache", "caches", "log", "logs"}
-)
+_GENERIC_TEMPLATE_SEGMENTS: Final = frozenset({"temp", "tmp", "cache", "caches", "log", "logs"})
 _CONTEXT_DEPENDENT_DECISION_REASON = re.compile(
     r"(?:"
     r"(?:超过|大于|至少)\s*\d+\s*天"
@@ -810,10 +813,7 @@ def _decision_rule_shapes(
     portable = _portable_path_value(path)
     exact = portable or path
     shapes: list[tuple[RuleMatch, str]] = [(RuleMatch.EXACT_PATH, exact)]
-    if (
-        decision is not None
-        and _CONTEXT_DEPENDENT_DECISION_REASON.search(reason)
-    ):
+    if decision is not None and _CONTEXT_DEPENDENT_DECISION_REASON.search(reason):
         return tuple(shapes)
     template = _volatile_path_glob(exact)
     if template is not None:
@@ -864,12 +864,8 @@ def _portable_path_value(path: str) -> str | None:
         for root, variable in inferred_roots:
             folded = root.casefold()
             if normalized.casefold() == folded:
-                candidates.append(
-                    (len(root), variable, "", inferred_username)
-                )
-            elif normalized.casefold().startswith(
-                folded.rstrip(os.sep) + os.sep
-            ):
+                candidates.append((len(root), variable, "", inferred_username))
+            elif normalized.casefold().startswith(folded.rstrip(os.sep) + os.sep):
                 candidates.append(
                     (
                         len(root),
@@ -889,12 +885,8 @@ def _portable_path_value(path: str) -> str | None:
             continue
         seen_roots.add(folded)
         if normalized.casefold() == folded:
-            candidates.append(
-                (len(root), f"%{name}%", "", inferred_username)
-            )
-        elif normalized.casefold().startswith(
-            folded.rstrip(os.sep) + os.sep
-        ):
+            candidates.append((len(root), f"%{name}%", "", inferred_username))
+        elif normalized.casefold().startswith(folded.rstrip(os.sep) + os.sep):
             candidates.append(
                 (
                     len(root),
@@ -905,9 +897,7 @@ def _portable_path_value(path: str) -> str | None:
             )
     if not candidates:
         return None
-    _length, variable, tail, source_username = max(
-        candidates, key=lambda item: item[0]
-    )
+    _length, variable, tail, source_username = max(candidates, key=lambda item: item[0])
     username = source_username or os.environ.get("USERNAME")
     if not username:
         profile = os.environ.get("USERPROFILE")
@@ -957,11 +947,7 @@ def _volatile_path_glob(portable_path: str) -> str | None:
             # suffix ``.4_134...``; appending that after ``*`` duplicated the
             # very timestamp we meant to abstract.
             suffix_start = part.rfind(".")
-            after = (
-                glob.escape(part[suffix_start:])
-                if suffix_start >= match.end()
-                else ""
-            )
+            after = glob.escape(part[suffix_start:]) if suffix_start >= match.end() else ""
             rendered.append(before + "*" + after)
             volatile = True
             anchored_volatile = anchored_volatile or bool(before or after)
@@ -1004,24 +990,18 @@ def clear_ai_rules(rules: UserRules) -> UserRules:
         scan=rules.scan,
         delete=replace(
             rules.delete,
-            rules=tuple(
-                rule for rule in rules.delete.rules if rule.source != "AI_IMPORT"
-            ),
+            rules=tuple(rule for rule in rules.delete.rules if rule.source != "AI_IMPORT"),
         ),
         keep=replace(
             rules.keep,
-            rules=tuple(
-                rule for rule in rules.keep.rules if rule.source != "AI_IMPORT"
-            ),
+            rules=tuple(rule for rule in rules.keep.rules if rule.source != "AI_IMPORT"),
         ),
     )
     save_rules(updated)
     return updated
 
 
-def expand_path(
-    value: str, environment: dict[str, str] | None = None
-) -> str:
+def expand_path(value: str, environment: dict[str, str] | None = None) -> str:
     """Expand Windows environment syntax and ``~`` without compatibility rules."""
 
     env = os.environ if environment is None else environment
@@ -1070,17 +1050,12 @@ def normalise_path(path: str | Path) -> str:
 def _packaged_documents() -> tuple[str, str, str]:
     package = resources.files("devclean.config")
     try:
-        return tuple(
-            package.joinpath(name).read_text(encoding="utf-8")
-            for name in _CONFIG_NAMES
-        )  # type: ignore[return-value]
+        return tuple(package.joinpath(name).read_text(encoding="utf-8") for name in _CONFIG_NAMES)  # type: ignore[return-value]
     except (OSError, UnicodeError) as error:
         raise RuleConfigError(f"无法读取随程序提供的三份初始配置：{error}") from error
 
 
-def _parse_document(
-    text: str, name: str, allowed_keys: frozenset[str]
-) -> dict[str, object]:
+def _parse_document(text: str, name: str, allowed_keys: frozenset[str]) -> dict[str, object]:
     try:
         payload = strict_json_loads(text)
     except (UnicodeError, ValueError, json.JSONDecodeError) as error:
@@ -1089,13 +1064,9 @@ def _parse_document(
         raise RuleConfigError(f"{name} 顶层必须是对象")
     _require_exact_keys(payload, allowed_keys, f"{name} 顶层")
     if payload.get("schema_version") != SCHEMA_VERSION:
-        raise RuleConfigError(
-            f"{name} 只支持 schema_version={SCHEMA_VERSION}"
-        )
+        raise RuleConfigError(f"{name} 只支持 schema_version={SCHEMA_VERSION}")
     if payload.get("document_type") != _DOCUMENT_TYPES[name]:
-        raise RuleConfigError(
-            f"{name} 的 document_type 必须是 {_DOCUMENT_TYPES[name]}"
-        )
+        raise RuleConfigError(f"{name} 的 document_type 必须是 {_DOCUMENT_TYPES[name]}")
     return payload
 
 
@@ -1108,15 +1079,9 @@ def _parse_scan_rules(payload: dict[str, object]) -> ScanRules:
     for index, raw in enumerate(raw_roots, start=1):
         if not isinstance(raw, dict):
             raise RuleConfigError(f"known_cleanup_roots 第 {index} 项必须是对象")
-        _require_exact_keys(
-            raw, _KNOWN_ROOT_KEYS, f"known_cleanup_roots 第 {index} 项"
-        )
-        category = _required_string(
-            raw.get("category"), f"已知目录 {index} 的 category"
-        )
-        policy = _required_string(
-            raw.get("policy"), f"已知目录 {index} 的 policy"
-        )
+        _require_exact_keys(raw, _KNOWN_ROOT_KEYS, f"known_cleanup_roots 第 {index} 项")
+        category = _required_string(raw.get("category"), f"已知目录 {index} 的 category")
+        policy = _required_string(raw.get("policy"), f"已知目录 {index} 的 policy")
         try:
             CleanupCategory(category)
             CleanupPolicy(policy)
@@ -1124,13 +1089,9 @@ def _parse_scan_rules(payload: dict[str, object]) -> ScanRules:
             raise RuleConfigError(
                 f"known_cleanup_roots 第 {index} 项使用了未知 category 或 policy"
             ) from error
-        patterns = _strings(
-            raw.get("patterns"), f"已知目录 {index} 的 patterns"
-        )
+        patterns = _strings(raw.get("patterns"), f"已知目录 {index} 的 patterns")
         if not patterns:
-            raise RuleConfigError(
-                f"known_cleanup_roots 第 {index} 项至少需要一个 pattern"
-            )
+            raise RuleConfigError(f"known_cleanup_roots 第 {index} 项至少需要一个 pattern")
         for pattern in patterns:
             expand_braces(pattern)
         rule_id = _required_string(raw.get("id"), f"已知目录 {index} 的 id")
@@ -1140,15 +1101,11 @@ def _parse_scan_rules(payload: dict[str, object]) -> ScanRules:
         roots.append(
             KnownRootRule(
                 rule_id=rule_id,
-                group=_required_string(
-                    raw.get("group"), f"已知目录 {index} 的 group"
-                ),
+                group=_required_string(raw.get("group"), f"已知目录 {index} 的 group"),
                 patterns=patterns,
                 category=category,
                 policy=policy,
-                label=_required_string(
-                    raw.get("label"), f"已知目录 {index} 的 label"
-                ),
+                label=_required_string(raw.get("label"), f"已知目录 {index} 的 label"),
                 enabled=_bool(raw.get("enabled", True), "enabled"),
                 allow_inside_system_anchor=_bool(
                     raw.get("allow_inside_system_anchor", False),
@@ -1156,9 +1113,7 @@ def _parse_scan_rules(payload: dict[str, object]) -> ScanRules:
                 ),
             )
         )
-    delete_root_ids = frozenset(
-        _strings(payload.get("delete_root_ids"), "delete_root_ids")
-    )
+    delete_root_ids = frozenset(_strings(payload.get("delete_root_ids"), "delete_root_ids"))
     unknown_delete_roots = delete_root_ids - root_ids
     if unknown_delete_roots:
         raise RuleConfigError(
@@ -1167,9 +1122,7 @@ def _parse_scan_rules(payload: dict[str, object]) -> ScanRules:
         )
     return ScanRules(
         metadata=_parse_metadata(payload, SCAN_RULES_NAME),
-        include_user_profile=_bool(
-            payload.get("include_user_profile"), "include_user_profile"
-        ),
+        include_user_profile=_bool(payload.get("include_user_profile"), "include_user_profile"),
         include_known_cleanup_roots=_bool(
             payload.get("include_known_cleanup_roots"),
             "include_known_cleanup_roots",
@@ -1193,20 +1146,14 @@ def _parse_delete_rules(payload: dict[str, object]) -> DeleteRules:
     thresholds = _object(payload.get("thresholds"), "thresholds")
     classification = _object(payload.get("classification"), "classification")
     _require_exact_keys(thresholds, _THRESHOLD_KEYS, "thresholds")
-    _require_exact_keys(
-        classification, _DELETE_CLASSIFICATION_KEYS, "delete classification"
-    )
+    _require_exact_keys(classification, _DELETE_CLASSIFICATION_KEYS, "delete classification")
     classification_groups = _parse_classification_groups(
         payload.get("classification_groups"),
         _DELETE_CLASSIFICATION_KEYS,
         "delete classification_groups",
     )
-    match_help = _parse_match_help(
-        payload.get("match_help"), DELETE_RULES_NAME
-    )
-    version_name = _required_string(
-        classification.get("version_name_regex"), "version_name_regex"
-    )
+    match_help = _parse_match_help(payload.get("match_help"), DELETE_RULES_NAME)
+    version_name = _required_string(classification.get("version_name_regex"), "version_name_regex")
     version_separators = _required_string(
         classification.get("version_separators_regex"),
         "version_separators_regex",
@@ -1220,39 +1167,25 @@ def _parse_delete_rules(payload: dict[str, object]) -> DeleteRules:
         except re.error as error:
             raise RuleConfigError(f"{label} 是无效正则：{error}") from error
     config = DeleteClassification(
-        old_temp_days=_nonnegative_int(
-            thresholds.get("old_temp_days"), "old_temp_days"
-        ),
-        large_file_bytes=_nonnegative_int(
-            thresholds.get("large_file_bytes"), "large_file_bytes"
-        ),
+        old_temp_days=_nonnegative_int(thresholds.get("old_temp_days"), "old_temp_days"),
+        large_file_bytes=_nonnegative_int(thresholds.get("large_file_bytes"), "large_file_bytes"),
         stale_metadata_days=_nonnegative_int(
             thresholds.get("stale_metadata_days"), "stale_metadata_days"
         ),
-        development_cache_segments=_folded_set(
-            classification, "development_cache_segments"
-        ),
-        regenerable_tool_directories=_folded_set(
-            classification, "regenerable_tool_directories"
-        ),
+        development_cache_segments=_folded_set(classification, "development_cache_segments"),
+        regenerable_tool_directories=_folded_set(classification, "regenerable_tool_directories"),
         byproduct_suffixes=_folded_set(classification, "byproduct_suffixes"),
-        cache_directory_names=_folded_set(
-            classification, "cache_directory_names"
-        ),
+        cache_directory_names=_folded_set(classification, "cache_directory_names"),
         byproduct_segments=_folded_set(classification, "byproduct_segments"),
         build_segments=_folded_set(classification, "build_segments"),
         ide_segments=_folded_set(classification, "ide_segments"),
         version_name_regex=version_name,
         version_separators_regex=version_separators,
-        self_updater_parents=_folded_set(
-            classification, "self_updater_parents"
-        ),
+        self_updater_parents=_folded_set(classification, "self_updater_parents"),
         cache_segments=_folded_set(classification, "cache_segments"),
         container_segments=_folded_set(classification, "container_segments"),
         container_suffixes=_folded_set(classification, "container_suffixes"),
-        windows_update_segments=_folded_set(
-            classification, "windows_update_segments"
-        ),
+        windows_update_segments=_folded_set(classification, "windows_update_segments"),
         windows_update_segment_groups=_folded_groups(
             classification, "windows_update_segment_groups"
         ),
@@ -1264,13 +1197,9 @@ def _parse_delete_rules(payload: dict[str, object]) -> DeleteRules:
         inferred_report_only_categories=_category_set(
             classification, "inferred_report_only_categories"
         ),
-        system_log_suffixes=_folded_set(
-            classification, "system_log_suffixes"
-        ),
+        system_log_suffixes=_folded_set(classification, "system_log_suffixes"),
         installer_suffixes=_folded_set(classification, "installer_suffixes"),
-        category_source_domains=_source_domain_map(
-            classification.get("category_source_domains")
-        ),
+        category_source_domains=_source_domain_map(classification.get("category_source_domains")),
     )
     return DeleteRules(
         metadata=_parse_metadata(payload, DELETE_RULES_NAME),
@@ -1283,9 +1212,7 @@ def _parse_delete_rules(payload: dict[str, object]) -> DeleteRules:
 
 def _parse_keep_rules(payload: dict[str, object]) -> KeepRules:
     classification = _object(payload.get("classification"), "classification")
-    _require_exact_keys(
-        classification, _KEEP_CLASSIFICATION_KEYS, "keep classification"
-    )
+    _require_exact_keys(classification, _KEEP_CLASSIFICATION_KEYS, "keep classification")
     classification_groups = _parse_classification_groups(
         payload.get("classification_groups"),
         _KEEP_CLASSIFICATION_KEYS,
@@ -1293,28 +1220,16 @@ def _parse_keep_rules(payload: dict[str, object]) -> KeepRules:
     )
     match_help = _parse_match_help(payload.get("match_help"), KEEP_RULES_NAME)
     config = KeepClassification(
-        application_data_segments=_folded_set(
-            classification, "application_data_segments"
-        ),
+        application_data_segments=_folded_set(classification, "application_data_segments"),
         protected_system_root_names=_strings(
             classification.get("protected_system_root_names"),
             "protected_system_root_names",
         ),
-        protected_system_file_names=_folded_set(
-            classification, "protected_system_file_names"
-        ),
-        program_payload_suffixes=_folded_set(
-            classification, "program_payload_suffixes"
-        ),
-        application_state_suffixes=_folded_set(
-            classification, "application_state_suffixes"
-        ),
-        installed_payload_segments=_folded_set(
-            classification, "installed_payload_segments"
-        ),
-        application_state_names=_folded_set(
-            classification, "application_state_names"
-        ),
+        protected_system_file_names=_folded_set(classification, "protected_system_file_names"),
+        program_payload_suffixes=_folded_set(classification, "program_payload_suffixes"),
+        application_state_suffixes=_folded_set(classification, "application_state_suffixes"),
+        installed_payload_segments=_folded_set(classification, "installed_payload_segments"),
+        application_state_names=_folded_set(classification, "application_state_names"),
         application_state_tails=tuple(
             item.casefold()
             for item in _strings(
@@ -1332,9 +1247,7 @@ def _parse_keep_rules(payload: dict[str, object]) -> KeepRules:
     )
 
 
-def _parse_decision_rules(
-    payload: dict[str, object], name: str
-) -> tuple[DecisionRule, ...]:
+def _parse_decision_rules(payload: dict[str, object], name: str) -> tuple[DecisionRule, ...]:
     raw_rules = payload.get("rules")
     if not isinstance(raw_rules, list):
         raise RuleConfigError(f"{name} 的 rules 必须是数组")
@@ -1345,9 +1258,7 @@ def _parse_decision_rules(
     for index, raw in enumerate(raw_rules, start=1):
         if not isinstance(raw, dict):
             raise RuleConfigError(f"{name} 第 {index} 条规则必须是对象")
-        _require_exact_keys(
-            raw, _DECISION_RULE_KEYS, f"{name} 第 {index} 条规则"
-        )
+        _require_exact_keys(raw, _DECISION_RULE_KEYS, f"{name} 第 {index} 条规则")
         try:
             match = RuleMatch(str(raw.get("match", "")))
         except ValueError as error:
@@ -1360,9 +1271,7 @@ def _parse_decision_rules(
             try:
                 re.compile(value, re.IGNORECASE)
             except re.error as error:
-                raise RuleConfigError(
-                    f"{name} 第 {index} 条正则表达式无效：{error}"
-                ) from error
+                raise RuleConfigError(f"{name} 第 {index} 条正则表达式无效：{error}") from error
         rule_id = _bounded_string(
             raw.get("id"),
             f"{name} 第 {index} 条规则 id",
@@ -1375,9 +1284,7 @@ def _parse_decision_rules(
         parsed.append(
             DecisionRule(
                 rule_id=rule_id,
-                group=_required_string(
-                    raw.get("group"), f"{name} 第 {index} 条 group"
-                ),
+                group=_required_string(raw.get("group"), f"{name} 第 {index} 条 group"),
                 match=match,
                 value=value,
                 enabled=_bool(raw.get("enabled", True), "enabled"),
@@ -1409,9 +1316,7 @@ def _delete_classification_document(
 ) -> dict[str, object]:
     return {
         "development_cache_segments": sorted(config.development_cache_segments),
-        "regenerable_tool_directories": sorted(
-            config.regenerable_tool_directories
-        ),
+        "regenerable_tool_directories": sorted(config.regenerable_tool_directories),
         "byproduct_suffixes": sorted(config.byproduct_suffixes),
         "cache_directory_names": sorted(config.cache_directory_names),
         "byproduct_segments": sorted(config.byproduct_segments),
@@ -1429,12 +1334,8 @@ def _delete_classification_document(
         ],
         "conda_segments": sorted(config.conda_segments),
         "downloads_segments": sorted(config.downloads_segments),
-        "inferred_ai_review_categories": sorted(
-            config.inferred_ai_review_categories
-        ),
-        "inferred_report_only_categories": sorted(
-            config.inferred_report_only_categories
-        ),
+        "inferred_ai_review_categories": sorted(config.inferred_ai_review_categories),
+        "inferred_report_only_categories": sorted(config.inferred_report_only_categories),
         "system_log_suffixes": sorted(config.system_log_suffixes),
         "installer_suffixes": sorted(config.installer_suffixes),
         "category_source_domains": dict(config.category_source_domains),
@@ -1446,12 +1347,8 @@ def _keep_classification_document(
 ) -> dict[str, object]:
     return {
         "application_data_segments": sorted(config.application_data_segments),
-        "protected_system_root_names": list(
-            config.protected_system_root_names
-        ),
-        "protected_system_file_names": sorted(
-            config.protected_system_file_names
-        ),
+        "protected_system_root_names": list(config.protected_system_root_names),
+        "protected_system_file_names": sorted(config.protected_system_file_names),
         "program_payload_suffixes": sorted(config.program_payload_suffixes),
         "application_state_suffixes": sorted(config.application_state_suffixes),
         "installed_payload_segments": sorted(config.installed_payload_segments),
@@ -1488,30 +1385,22 @@ def _metadata_contract_document(
     }
 
 
-def _require_exact_keys(
-    payload: dict[str, object], expected: frozenset[str], label: str
-) -> None:
+def _require_exact_keys(payload: dict[str, object], expected: frozenset[str], label: str) -> None:
     actual = set(payload)
     if actual == expected:
         return
     missing = sorted(expected - actual)
     extra = sorted(actual - expected)
-    raise RuleConfigError(
-        f"{label} 字段不符合统一格式；缺少={missing}，多余={extra}"
-    )
+    raise RuleConfigError(f"{label} 字段不符合统一格式；缺少={missing}，多余={extra}")
 
 
-def _parse_metadata(
-    payload: dict[str, object], name: str
-) -> RuleDocumentMetadata:
+def _parse_metadata(payload: dict[str, object], name: str) -> RuleDocumentMetadata:
     help_text = _required_string(payload.get("_help"), f"{name} 的 _help")
     contract = _object(
         payload.get("_ai_editing_contract"),
         f"{name} 的 _ai_editing_contract",
     )
-    _require_exact_keys(
-        contract, _CONTRACT_KEYS, f"{name} 的 _ai_editing_contract"
-    )
+    _require_exact_keys(contract, _CONTRACT_KEYS, f"{name} 的 _ai_editing_contract")
     contract_version = contract.get("contract_version")
     if (
         not isinstance(contract_version, int)
@@ -1520,12 +1409,8 @@ def _parse_metadata(
     ):
         raise RuleConfigError(f"{name} 的 contract_version 必须是 1")
     if contract.get("output_format") != "FULL_JSON_OBJECT_ONLY":
-        raise RuleConfigError(
-            f"{name} 的 output_format 必须是 FULL_JSON_OBJECT_ONLY"
-        )
-    instructions = _strings(
-        contract.get("instructions"), f"{name} 的 instructions"
-    )
+        raise RuleConfigError(f"{name} 的 output_format 必须是 FULL_JSON_OBJECT_ONLY")
+    instructions = _strings(contract.get("instructions"), f"{name} 的 instructions")
     if not instructions:
         raise RuleConfigError(f"{name} 的 instructions 不能为空")
     return RuleDocumentMetadata(
@@ -1536,9 +1421,7 @@ def _parse_metadata(
     )
 
 
-def _parse_string_groups(
-    value: object, label: str
-) -> dict[str, tuple[str, ...]]:
+def _parse_string_groups(value: object, label: str) -> dict[str, tuple[str, ...]]:
     groups = _object(value, label)
     if not groups:
         raise RuleConfigError(f"{label} 不能为空")
@@ -1549,14 +1432,10 @@ def _parse_string_groups(
         values = _strings(raw_values, f"{label}.{group_name}")
         folded = {item.casefold() for item in values}
         if len(folded) != len(values):
-            raise RuleConfigError(
-                f"{label}.{group_name} 中不能包含重复值"
-            )
+            raise RuleConfigError(f"{label}.{group_name} 中不能包含重复值")
         duplicates = seen & folded
         if duplicates:
-            raise RuleConfigError(
-                f"{label} 的不同分组包含重复值：{sorted(duplicates)}"
-            )
+            raise RuleConfigError(f"{label} 的不同分组包含重复值：{sorted(duplicates)}")
         seen.update(folded)
         parsed[group_name] = values
     return parsed
@@ -1566,9 +1445,7 @@ def _parse_classification_groups(
     value: object, expected_fields: frozenset[str], label: str
 ) -> dict[str, tuple[str, ...]]:
     groups = _parse_string_groups(value, label)
-    flattened = [
-        field for fields in groups.values() for field in fields
-    ]
+    flattened = [field for fields in groups.values() for field in fields]
     if len(flattened) != len(set(flattened)):
         raise RuleConfigError(f"{label} 中同一字段不能出现两次")
     actual = set(flattened)
@@ -1585,9 +1462,7 @@ def _parse_match_help(value: object, name: str) -> dict[str, str]:
     help_values = _object(value, f"{name} 的 match_help")
     _require_exact_keys(help_values, _MATCH_HELP_KEYS, f"{name} 的 match_help")
     return {
-        match: _required_string(
-            description, f"{name} 的 match_help.{match}"
-        )
+        match: _required_string(description, f"{name} 的 match_help.{match}")
         for match, description in help_values.items()
     }
 
@@ -1613,26 +1488,19 @@ def _folded_set(payload: dict[str, object], label: str) -> frozenset[str]:
     return frozenset(item.casefold() for item in _strings(payload.get(label), label))
 
 
-def _folded_groups(
-    payload: dict[str, object], label: str
-) -> tuple[frozenset[str], ...]:
+def _folded_groups(payload: dict[str, object], label: str) -> tuple[frozenset[str], ...]:
     value = payload.get(label)
     if not isinstance(value, list):
         raise RuleConfigError(f"{label} 必须是字符串数组的数组")
     groups: list[frozenset[str]] = []
     for index, group in enumerate(value, start=1):
         groups.append(
-            frozenset(
-                item.casefold()
-                for item in _strings(group, f"{label} 第 {index} 组")
-            )
+            frozenset(item.casefold() for item in _strings(group, f"{label} 第 {index} 组"))
         )
     return tuple(groups)
 
 
-def _category_set(
-    payload: dict[str, object], label: str
-) -> frozenset[str]:
+def _category_set(payload: dict[str, object], label: str) -> frozenset[str]:
     values = _strings(payload.get(label), label)
     parsed: set[str] = set()
     for value in values:
@@ -1651,8 +1519,7 @@ def _source_domain_map(value: object) -> dict[str, str]:
         missing = sorted(expected - set(value))
         extra = sorted(set(value) - expected)
         raise RuleConfigError(
-            "category_source_domains 必须完整覆盖 CleanupCategory；"
-            f"缺少={missing}，多余={extra}"
+            f"category_source_domains 必须完整覆盖 CleanupCategory；缺少={missing}，多余={extra}"
         )
     parsed: dict[str, str] = {}
     for category, domain in value.items():
@@ -1727,10 +1594,7 @@ def _without_source_rule_keys(
     return [
         rule
         for rule in rules
-        if not (
-            rule.source == source
-            and _stored_rule_key(rule.match, rule.value) in keys
-        )
+        if not (rule.source == source and _stored_rule_key(rule.match, rule.value) in keys)
     ]
 
 
@@ -1756,21 +1620,10 @@ def _bound_ai_decisions(
     if len(tagged) <= MAX_DECISION_RULES:
         return delete, keep
     tagged.sort(key=lambda item: item[2].updated_at)
-    remove = {
-        (group, index)
-        for group, index, _rule in tagged[: len(tagged) - MAX_DECISION_RULES]
-    }
+    remove = {(group, index) for group, index, _rule in tagged[: len(tagged) - MAX_DECISION_RULES]}
     return (
-        [
-            rule
-            for index, rule in enumerate(delete)
-            if ("delete", index) not in remove
-        ],
-        [
-            rule
-            for index, rule in enumerate(keep)
-            if ("keep", index) not in remove
-        ],
+        [rule for index, rule in enumerate(delete) if ("delete", index) not in remove],
+        [rule for index, rule in enumerate(keep) if ("keep", index) not in remove],
     )
 
 
@@ -1811,9 +1664,7 @@ def _ensure_default_backup(packaged: tuple[str, str, str]) -> None:
         pass
 
     scratch = target.with_suffix(target.suffix + ".writing")
-    with zipfile.ZipFile(
-        scratch, "w", compression=zipfile.ZIP_DEFLATED
-    ) as archive:
+    with zipfile.ZipFile(scratch, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, text in zip(_CONFIG_NAMES, packaged, strict=True):
             archive.writestr(name, text.encode("utf-8"))
     os.replace(scratch, target)
@@ -1824,13 +1675,8 @@ def _default_backup_documents() -> tuple[str, str, str]:
     try:
         with zipfile.ZipFile(target, "r") as archive:
             if archive.namelist() != list(_CONFIG_NAMES):
-                raise RuleConfigError(
-                    f"默认备份内容不完整：{target}"
-                )
-            return tuple(
-                archive.read(name).decode("utf-8")
-                for name in _CONFIG_NAMES
-            )  # type: ignore[return-value]
+                raise RuleConfigError(f"默认备份内容不完整：{target}")
+            return tuple(archive.read(name).decode("utf-8") for name in _CONFIG_NAMES)  # type: ignore[return-value]
     except RuleConfigError:
         raise
     except (
@@ -1840,9 +1686,7 @@ def _default_backup_documents() -> tuple[str, str, str]:
         zipfile.BadZipFile,
         KeyError,
     ) as error:
-        raise RuleConfigError(
-            f"无法读取同目录默认备份：{target}：{error}"
-        ) from error
+        raise RuleConfigError(f"无法读取同目录默认备份：{target}：{error}") from error
 
 
 __all__ = [
