@@ -1,5 +1,6 @@
 name: Temporary product file defaults clean patch
 
+# Second push intentionally triggers this temporary workflow after creation.
 on:
   push:
     branches:
