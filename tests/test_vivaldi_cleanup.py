@@ -24,7 +24,7 @@ from devclean.core.cleanup_catalog import (
 from devclean.core.user_rules import default_rules
 from devclean.core.vivaldi_cleanup import vivaldi_roots
 
-_NOW = datetime(2026, 8, 16, tzinfo=UTC)
+_NOW = datetime(2026, 8, 20, tzinfo=UTC)
 _MIB = 1024**2
 
 
@@ -73,7 +73,7 @@ def test_vivaldi_chromium_cache_user_data_and_crash_boundaries() -> None:
     assert history_rule.owner is DecisionOwner.KEEP
     assert crash_rule is not None
     assert crash_rule.rule_id == "vivaldi-crashpad-reports"
-    assert crash_rule.owner is DecisionOwner.TOOL
+    assert crash_rule.owner is DecisionOwner.KEEP
 
     projected = evaluate_application_path(
         cache_storage,
@@ -85,6 +85,27 @@ def test_vivaldi_chromium_cache_user_data_and_crash_boundaries() -> None:
     )
     assert projected is not None
     assert projected.action is PolicyAction.KEEP_PROTECTED
+
+
+def test_vivaldi_crash_reports_stay_protected_regardless_of_age_or_size() -> None:
+    crash = (
+        r"C:\Users\alice\AppData\Local\Vivaldi\User Data"
+        r"\Crashpad\reports\crash.dmp"
+    )
+    decision = evaluate_application_path(
+        crash,
+        logical_size=512 * _MIB,
+        last_used=_NOW - timedelta(days=3650),
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+    assert decision is not None
+    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Local\Vivaldi\User Data\Crashpad\reports",
+        _env(),
+    ) is None
 
 
 def test_vivaldi_standalone_user_data_root_is_detected_from_install_layout(
@@ -131,17 +152,15 @@ def test_vivaldi_whole_tree_roots_are_catalogued_precisely(tmp_path: Path) -> No
     by_path = {os.path.normcase(str(root.path)): root for root in roots}
 
     cache_root = by_path[os.path.normcase(str(cache))]
-    crash_root = by_path[os.path.normcase(str(crash))]
     data_root = by_path[os.path.normcase(str(data))]
 
     assert cache_root.category is CleanupCategory.BROWSER_CACHE
     assert cache_root.policy is CleanupPolicy.VENDOR_MANAGED
     assert cache_root.delete_root_itself
-    assert crash_root.category is CleanupCategory.CRASH_DUMPS
-    assert crash_root.policy is CleanupPolicy.VENDOR_MANAGED
-    assert crash_root.delete_root_itself
+    assert os.path.normcase(str(crash)) not in by_path
     assert data_root.policy is CleanupPolicy.REPORT_ONLY
     assert not data_root.delete_root_itself
+    assert whole_tree_application_rule(crash, env) is None
     assert whole_tree_application_rule(data, env) is None
     assert whole_tree_application_rule(profile, env) is None
 
@@ -157,12 +176,7 @@ def test_vivaldi_process_guard_rechecks_live_browser(
         r"C:\Users\alice\AppData\Local\Vivaldi\User Data"
         r"\Default\Cache\Cache_Data\f_001"
     )
-    crash = (
-        r"C:\Users\alice\AppData\Local\Vivaldi\User Data"
-        r"\Crashpad\reports\crash.dmp"
-    )
     assert not process_guard_allows(cache, _env())
-    assert not process_guard_allows(crash, _env())
 
 
 def test_vivaldi_scan_root_does_not_grant_parent_delete_authority() -> None:
