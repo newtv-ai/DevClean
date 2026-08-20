@@ -29,10 +29,12 @@ jobs:
         run: uv sync --frozen
       - name: Apply static vendor root correction
         run: uv run --frozen python .github/temporary-static-vendor-root-patch.py
+      - name: Apply regression and file-boundary follow-up
+        run: uv run --frozen python .github/temporary-static-vendor-root-followup.py
       - name: Remove temporary patch machinery
         shell: pwsh
         run: |
-          git rm -f .github/temporary-static-vendor-root-patch.py .github/workflows/temporary-static-vendor-root-patch.yml
+          git rm -f .github/temporary-static-vendor-root-patch.py .github/temporary-static-vendor-root-followup.py .github/workflows/temporary-static-vendor-root-patch.yml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Format and validate final tree
         shell: pwsh
@@ -40,8 +42,8 @@ jobs:
           uv lock --check
           uv sync --frozen
           uv pip check
-          uv run --frozen ruff check --fix src/devclean/core/triage.py src/devclean/core/postscan_cleanup.py src/devclean/core/whole_tree_policy.py tests/test_static_vendor_root_fallback.py
-          uv run --frozen ruff format src/devclean/core/triage.py src/devclean/core/postscan_cleanup.py src/devclean/core/whole_tree_policy.py tests/test_static_vendor_root_fallback.py
+          uv run --frozen ruff check --fix src/devclean/core/triage.py src/devclean/core/postscan_cleanup.py src/devclean/core/whole_tree_policy.py tests/test_static_vendor_root_fallback.py tests/test_android_sdk_cleanup.py tests/test_cleanup_execution.py tests/test_whole_tree_policy.py
+          uv run --frozen ruff format src/devclean/core/triage.py src/devclean/core/postscan_cleanup.py src/devclean/core/whole_tree_policy.py tests/test_static_vendor_root_fallback.py tests/test_android_sdk_cleanup.py tests/test_cleanup_execution.py tests/test_whole_tree_policy.py
           uv run --frozen ruff check src scripts tests
           uv run --frozen python -m mypy
           uv run --frozen pytest
