@@ -164,8 +164,6 @@ def yarn_roots(environment: Mapping[str, str] | None = None) -> YarnRootSet:
             global_folders.append(candidate)
             global_caches.append(candidate / "cache")
 
-    # Yarn Classic's Windows cache has historically lived here. Runtime discovery
-    # via ``yarn cache dir`` remains authoritative for identity when Yarn is installed.
     localappdata = env.get("localappdata")
     if localappdata:
         default_classic = PureWindowsPath(localappdata) / "Yarn" / "Cache"
@@ -189,7 +187,15 @@ def yarn_scan_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[PureWindowsPath, ...]:
     roots = yarn_roots(environment)
-    return tuple(dict.fromkeys((*roots.classic_cache_roots, *roots.global_folder_roots)))
+    return tuple(
+        dict.fromkeys(
+            (
+                *roots.classic_cache_roots,
+                *roots.global_folder_roots,
+                *roots.global_cache_roots,
+            )
+        )
+    )
 
 
 def match_yarn_rule(
@@ -266,8 +272,6 @@ def evaluate_yarn_path(
             _impl._age_bucket(idle, rule.user_age_buckets),
         )
 
-    # Keep the generic evaluator shape for compatibility if a future source-backed
-    # TOOL rule is added, but no current Yarn cache rule enters this branch.
     threshold = effective_idle_days(rule, logical_size)
     running = process_running
     if running is None and rule.requires_process_closed:
@@ -375,8 +379,6 @@ def _project_rule(path: PureWindowsPath) -> ApplicationCleanupRule | None:
         return _YARN_LOCAL_CACHE_RULE
     if child in _PROJECT_PROTECTED_CHILDREN:
         return _YARN_PROJECT_STATE_RULE
-    # Unknown project-local .yarn state is protected by default. This prevents a
-    # future Yarn storage child from inheriting generic "cache" name heuristics.
     return _YARN_PROJECT_STATE_RULE
 
 
