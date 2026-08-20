@@ -52,6 +52,8 @@ def _inventory(tmp_path: Path) -> CypressStorageInventory:
     cli.touch(exist_ok=True)
     old = _entry(root, "14.5.0", size=80, current=False, seed=3)
     current = _entry(root, "15.0.0", size=120, current=True, seed=4)
+    bundles = _identity(root / "bundles", directory=True, seed=5)
+    sessions = _identity(root / "sessions", directory=True, seed=6)
     return CypressStorageInventory(
         cli_tool=_identity(cli, directory=False, seed=1),
         cache_root=root,
@@ -59,6 +61,7 @@ def _inventory(tmp_path: Path) -> CypressStorageInventory:
         package_version="15.0.0",
         versions=(old, current),
         external_entries=("bundles", "sessions"),
+        external_identities=(bundles, sessions),
         unknown_entries=(),
     )
 
@@ -98,8 +101,8 @@ def test_inventory_uses_exact_vendor_path_and_package_version(
             return tool
         if path == root:
             return root_identity
-        seed = 3 if path.name == "14.5.0" else 4
-        return _identity(path, directory=expect_directory, seed=seed)
+        seeds = {"14.5.0": 3, "15.0.0": 4, "bundles": 5, "sessions": 6}
+        return _identity(path, directory=expect_directory, seed=seeds[path.name])
 
     monkeypatch.setattr(cypress, "_path_identity", fake_identity)
 
@@ -129,6 +132,7 @@ def test_inventory_uses_exact_vendor_path_and_package_version(
     assert inventory.versions[1].logical_bytes == 17
     assert inventory.prune_candidate_bytes == 13
     assert inventory.external_entries == ("bundles", "sessions")
+    assert [item.file_id for item in inventory.external_identities] == ["id-5", "id-6"]
     assert inventory.unknown_entries == ()
     assert inventory.prune_supported
     pinned = [env for args, env in calls if args == ("cache", "path")][-1]
@@ -170,6 +174,48 @@ def test_unknown_top_level_entry_disables_vendor_prune(
     inventory = cypress.inventory_cypress_storage(cli)
 
     assert inventory.unknown_entries == ("future-store",)
+    assert not inventory.prune_supported
+
+
+def test_unsafe_sessions_entry_becomes_unknown_and_disables_prune(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "Cypress" / "Cache"
+    (root / "14.5.0").mkdir(parents=True)
+    (root / "sessions").mkdir()
+    cli = tmp_path / "cypress.cmd"
+    cli.touch()
+    tool = _identity(cli, directory=False, seed=1)
+    root_identity = _identity(root, directory=True, seed=2)
+    monkeypatch.setattr(cypress, "_resolve_cypress_tool", lambda cli_path, environment: tool)
+
+    def fake_identity(path: Path, *, expect_directory: bool, label: str) -> CypressPathIdentity:
+        del label
+        if path == cli:
+            return tool
+        if path == root:
+            return root_identity
+        if path.name == "sessions":
+            raise RuntimeError("reparse")
+        return _identity(path, directory=expect_directory, seed=3)
+
+    monkeypatch.setattr(cypress, "_path_identity", fake_identity)
+    monkeypatch.setattr(
+        cypress,
+        "_run_cypress",
+        lambda tool, args, env, timeout: (
+            _completed("15.0.0\n")
+            if args == ("version", "--component", "package")
+            else _completed(str(root) + "\n")
+        ),
+    )
+
+    inventory = cypress.inventory_cypress_storage(cli)
+
+    assert inventory.external_entries == ()
+    assert inventory.external_identities == ()
+    assert inventory.unknown_entries == ("sessions",)
     assert not inventory.prune_supported
 
 
@@ -229,6 +275,26 @@ def test_prune_refuses_review_change_before_command(
         cypress.prune_cypress_binary_cache(reviewed)
 
 
+def test_prune_refuses_external_identity_change_before_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reviewed = _inventory(tmp_path)
+    changed_sessions = _identity(reviewed.cache_root / "sessions", directory=True, seed=99)
+    changed = replace(
+        reviewed,
+        external_identities=(reviewed.external_identities[0], changed_sessions),
+    )
+    monkeypatch.setattr(
+        cypress,
+        "inventory_cypress_storage",
+        lambda cli_path=None, environment=None: changed,
+    )
+
+    with pytest.raises(RuntimeError, match="外部 cache 身份"):
+        cypress.prune_cypress_binary_cache(reviewed)
+
+
 def test_prune_refuses_unknown_entry(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -259,6 +325,50 @@ def test_prune_requires_old_version_absent_after_vendor_success(
     monkeypatch.setattr(cypress, "_run_cypress", lambda *args, **kwargs: _completed("done"))
 
     with pytest.raises(RuntimeError, match="仍存在"):
+        cypress.prune_cypress_binary_cache(reviewed)
+
+
+def test_prune_requires_preexisting_current_version_preserved(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reviewed = _inventory(tmp_path)
+    after = replace(reviewed, versions=())
+    inventories = iter((reviewed, reviewed, after))
+    monkeypatch.setattr(
+        cypress,
+        "inventory_cypress_storage",
+        lambda cli_path=None, environment=None: next(inventories),
+    )
+    monkeypatch.setattr(cypress, "_require_process_idle", lambda: None)
+    monkeypatch.setattr(cypress, "_run_cypress", lambda *args, **kwargs: _completed("done"))
+
+    with pytest.raises(RuntimeError, match="当前 CLI 版本 cache 被移除"):
+        cypress.prune_cypress_binary_cache(reviewed)
+
+
+def test_prune_requires_external_boundaries_preserved(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reviewed = _inventory(tmp_path)
+    current_only = tuple(item for item in reviewed.versions if item.current_package_version)
+    after = replace(
+        reviewed,
+        versions=current_only,
+        external_entries=("bundles",),
+        external_identities=(reviewed.external_identities[0],),
+    )
+    inventories = iter((reviewed, reviewed, after))
+    monkeypatch.setattr(
+        cypress,
+        "inventory_cypress_storage",
+        lambda cli_path=None, environment=None: next(inventories),
+    )
+    monkeypatch.setattr(cypress, "_require_process_idle", lambda: None)
+    monkeypatch.setattr(cypress, "_run_cypress", lambda *args, **kwargs: _completed("done"))
+
+    with pytest.raises(RuntimeError, match="bundles/sessions 顶层边界"):
         cypress.prune_cypress_binary_cache(reviewed)
 
 
