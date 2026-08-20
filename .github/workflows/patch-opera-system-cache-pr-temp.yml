@@ -32,7 +32,8 @@ jobs:
           $text = Get-Content .github/workflows/patch-opera-system-cache-temp.yml -Raw
           $match = [regex]::Match($text, "(?s)@'\r?\n(.*?)\r?\n\s*'@ \| uv run --frozen python -")
           if (-not $match.Success) { throw "Could not extract embedded Python patch" }
-          $match.Groups[1].Value | uv run --frozen python -c "import sys, textwrap; sys.stdout.write(textwrap.dedent(sys.stdin.read()))" | uv run --frozen python -
+          $script = [regex]::Replace($match.Groups[1].Value, "(?m)^ {10}", "")
+          $script | uv run --frozen python -
       - name: Format and validate
         shell: pwsh
         run: |
