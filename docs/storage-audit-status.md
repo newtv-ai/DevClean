@@ -69,6 +69,7 @@ A clean CI run on a stale stacked base is not enough. Positive audit and impleme
 | Docker images | exact USER_REVIEW; container references/multi-tag cases protected; full ID + no force/no parent prune |
 | Docker stopped containers | exact USER_REVIEW; no force, volumes preserved |
 | Docker volumes | exact read-only inventory; all volumes REPORT_ONLY persistent data |
+| Docker unified maintenance UI | one endpoint-pinned Overview/Build Cache/Images/Containers/Volumes surface; existing decision classes preserved and no `system prune` |
 | Podman stopped containers | exact USER_REVIEW on one reviewed local managed Windows machine connection; positive terminal-state whitelist; no force/volumes |
 | Podman images | exact ordinary writable unreferenced leaf image USER_REVIEW; ordinary + Buildah/CRI-O external reference proof; no parent prune/force |
 | Windows component store | DISM inventory; manual `StartComponentCleanup` USER_REVIEW only when fresh DISM recommends it; `/ResetBase` excluded |
@@ -89,6 +90,10 @@ A clean CI run on a stale stacked base is not enough. Positive audit and impleme
 ### Docker
 
 Docker mutation first proves the effective context/host targets the local machine. Remote SSH/TCP/ambiguous contexts are non-executable and DevClean never switches context automatically. Build cache, images, containers and volumes remain separate semantic lanes; there is no generic `docker system prune` button.
+
+The unified Docker surface resolves the user's effective target once for review, then pins subsequent reads and mutations to the exact reviewed daemon endpoint through `DOCKER_HOST` while masking inherited `DOCKER_CONTEXT`. A later change to the user's default context therefore cannot redirect an already-reviewed action. Context name/source remain explanatory metadata; mutation authority is bound to the exact local endpoint.
+
+Docker `system df`, image size and BuildKit cache accounting remain logical vendor evidence. Shared layers and Docker Desktop's VM/WSL storage prevent DevClean from promising equal immediate Windows physical free-space recovery.
 
 ### Podman on Windows
 
@@ -153,6 +158,7 @@ A lower-level backend never inherits broader authority than the higher-level gen
 | Downloads | protected user content | explicit user-content workflow, not generic cleanup |
 | WER queue/archive report stores | exact per-report metadata exists but documented purge is whole-store | supported exact per-report delete operation or equally bounded vendor mutation surface |
 | Task Manager live user-mode dumps | documented location is mixed `%LOCALAPPDATA%\Temp`; `.dmp` suffix does not prove Task Manager ownership | source-backed exact identity or dedicated per-tool manifest/root |
+| Windows Setup/Panther/Rollback/MoSetup/CBS/DISM/SetupDiag diagnostics | source-backed troubleshooting evidence but no generic per-object expiration/deletion contract | Microsoft exact cleanup API/command, per-object expiration signal, or explicit normal deletion lifecycle |
 
 ## Cross-cutting protections
 
@@ -166,21 +172,17 @@ A lower-level backend never inherits broader authority than the higher-level gen
 
 ## Current high-value queue
 
-Recent Windows/Podman/Android queues are substantially closed. Prefer the next source where vendor semantics can still provide a narrow object lifecycle.
+The broad Windows diagnostics, Podman/Android package work and Docker unification passes are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
 
-1. **Remaining Windows diagnostics exact sub-sources**
-   - setup diagnostics, CBS/application-specific diagnostic bundles need separate source audits;
-   - broad `Logs`, `Prefetch`, `CbsTemp`, WER roots or diagnostic parent directories remain protected.
-2. **Docker unified UI/accounting**
-   - unify already-audited build-cache/image/container/volume views without changing any decision class;
-   - explain shared-layer accounting without pretending logical image size equals physical reclaim.
-3. **Android project/package explanation follow-ups**
+1. **Android project/package explanation follow-ups**
    - project/build-file correlation may explain likely platform/Build Tools/NDK/CMake use but must never infer "unused" from incomplete project discovery;
    - Gradle project mutation remains blocked until destructive task scope can be completely proven.
-4. **High-impact `%USERPROFILE%\.cache` applications**
+2. **High-impact `%USERPROFILE%\.cache` applications**
    - audit known applications individually; never restore generic parent delete authority.
-5. **Additional local-model products**
+3. **Additional local-model products**
    - models remain user-selected content; exact vendor model actions only.
+4. **Narrow application-specific Windows diagnostics**
+   - revisit only when Microsoft or the owning application exposes an exact lifecycle/API; broad `Logs`, `Prefetch`, `CbsTemp`, WER or servicing/setup roots remain protected.
 
 ## Explicit anti-goals
 
