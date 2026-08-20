@@ -3,9 +3,9 @@
 Vivaldi uses Chromium profile/cache storage but supports a Windows standalone
 installation whose User Data can live beside the application. Chromium cache
 rules are cloned from the already-audited Chrome profile so browser safety
-corrections stay aligned. Vivaldi profile data remains authoritative; only
-proven regenerable caches and documented Crashpad reports receive generic
-cleanup authority.
+corrections stay aligned. Vivaldi profile data remains authoritative; proven
+regenerable Chromium caches keep their existing policy while Crashpad reports
+remain visible diagnostic evidence without generic raw deletion authority.
 """
 
 from __future__ import annotations
@@ -31,8 +31,6 @@ from devclean.core._application_cleanup_impl import (
     effective_idle_days,
 )
 from devclean.core.chrome_cleanup import CHROME_RULES
-
-_MIB = 1024**2
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,23 +69,20 @@ _VIVALDI_DISK_CACHE_RULE = next(
     rule for rule in _VIVALDI_CHROMIUM_RULES if rule.root_key == "VIVALDI_DISK_CACHE"
 )
 
-# Vivaldi documents this exact Windows location when asking users to attach
-# crash dumps. Reports are diagnostic artifacts, not authoritative profile data.
+# Vivaldi documents this exact Windows location specifically so users can find
+# and submit crash dumps. These reports are diagnostic evidence, not cache.
+# Current Crashpad also owns a report-database prune lifecycle; DevClean must not
+# replace it with an unrelated seven-day whole-tree rule.
 _VIVALDI_CRASHPAD_REPORTS_RULE = ApplicationCleanupRule(
     rule_id="vivaldi-crashpad-reports",
     app_id="vivaldi",
     root_key="VIVALDI_DATA",
     relative_pattern=r"Crashpad\reports",
     match_kind=MatchKind.PREFIX,
-    owner=DecisionOwner.TOOL,
+    owner=DecisionOwner.KEEP,
     last_use=LastUseStrategy.FILE_MTIME,
     rebuild_cost=RebuildCost.NONE,
-    idle_days=7,
-    min_reclaim_bytes=_MIB,
-    requires_process_closed=True,
-    size_sensitive_idle=False,
-    allow_whole_tree=True,
-    label="Vivaldi Crashpad diagnostic reports",
+    label="Vivaldi Crashpad diagnostic reports retained for crash investigation",
 )
 
 VIVALDI_RULES: tuple[ApplicationCleanupRule, ...] = (
@@ -165,7 +160,6 @@ def vivaldi_audited_tool_roots(
     seen: set[str] = set()
 
     for root in roots.data_roots:
-        _append_tool_root(found, seen, root, _VIVALDI_CRASHPAD_REPORTS_RULE)
         for rule in _VIVALDI_DATA_RULES:
             _append_tool_root(found, seen, root, rule)
         for profile_root in _existing_profile_roots(root):
