@@ -29,10 +29,12 @@ jobs:
         run: uv sync --frozen
       - name: Apply learned file authority correction
         run: uv run --frozen python .github/temporary-learned-file-authority-patch.py
+      - name: Apply scan-retention follow-up
+        run: uv run --frozen python .github/temporary-learned-file-authority-followup.py
       - name: Remove temporary patch machinery
         shell: pwsh
         run: |
-          git rm -f .github/temporary-learned-file-authority-patch.py .github/workflows/temporary-learned-file-authority-patch.yml
+          git rm -f .github/temporary-learned-file-authority-patch.py .github/temporary-learned-file-authority-followup.py .github/workflows/temporary-learned-file-authority-patch.yml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Format and validate final tree
         shell: pwsh
