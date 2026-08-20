@@ -1,10 +1,11 @@
 """Audited Gradle User Home storage semantics for Windows cleanup.
 
-Gradle User Home is mixed state. It contains user configuration and init scripts,
-downloaded dependencies/toolchains/wrapper distributions, daemon coordination
-state, and caches that Gradle itself periodically garbage-collects. DevClean keeps
-the mixed root and shared/offline-capable stores protected, and delegates only
-exact cache roots whose whole-directory lifecycle is documented as regenerable.
+Gradle User Home is mixed, executable-policy-sensitive state. It contains user
+configuration and init scripts, downloaded dependencies/toolchains/wrapper
+distributions, daemon coordination state, and caches whose retention is owned by
+Gradle's configurable garbage collector. DevClean inventories these locations but
+does not derive raw deletion authority from directory names, age, size, or a
+partial static scan of init scripts.
 """
 
 from __future__ import annotations
@@ -26,14 +27,11 @@ from devclean.core._application_cleanup_impl import (
     MatchKind,
     PolicyAction,
     RebuildCost,
-    effective_idle_days,
 )
 
-_MIB = 1024**2
-_MAX_INIT_SCRIPT_BYTES = 1024 * 1024
-
-# Gradle's version-specific cache directories are numeric version selectors.
-# Timestamped snapshot/nightly selectors use the shorter vendor retention floor.
+# These names are useful for inventory/explanation only. Gradle's own cleanup
+# decisions use effective CacheConfigurations plus usage markers and version
+# relationships, so matching one of these names never grants mutation authority.
 _VERSION_DIR_RE = re.compile(
     r"^\d+(?:\.\d+)+(?:[-+][0-9A-Za-z][0-9A-Za-z.+-]*)?$",
     re.IGNORECASE,
@@ -46,7 +44,7 @@ _BUILD_CACHE_RE = re.compile(r"^build-cache-\d+$", re.IGNORECASE)
 
 # Gradle is normally a java/javaw process. Restrict the command-line match to
 # Gradle launch/daemon/wrapper entry points so unrelated Java applications do not
-# block cleanup.
+# affect process-state reporting or redirected-user-home discovery.
 _GRADLE_COMMAND_RE = (
     r"(?i)(?:org\.gradle\.launcher\.daemon\.bootstrap\.GradleDaemon|"
     r"org\.gradle\.launcher\.GradleMain|org\.gradle\.wrapper\.GradleWrapperMain)"
@@ -89,9 +87,8 @@ def _rule(
     )
 
 
-# These static rules document persistent/shared state. Dynamic version/build-cache
-# TOOL rules are created from directories that actually exist under each Gradle
-# User Home so whole-tree authority is exact rather than wildcard-derived.
+# Gradle User Home is reportable mixed state. Dynamic version/build-cache rules
+# below only make inventory labels more precise; every rule remains KEEP-owned.
 _GRADLE_PROPERTIES_RULE = _rule(
     "gradle-user-properties",
     "gradle.properties",
@@ -106,7 +103,7 @@ _GRADLE_INIT_RULE = _rule(
     MatchKind.PREFIX,
     DecisionOwner.KEEP,
     RebuildCost.HIGH,
-    "Gradle user initialization scripts and cache policy",
+    "Gradle user initialization scripts and executable cache policy",
 )
 _GRADLE_WRAPPER_RULE = _rule(
     "gradle-wrapper-distributions",
@@ -144,12 +141,9 @@ _GRADLE_DAEMON_LOG_RULE = _rule(
     "gradle-daemon-log",
     r"daemon\*\daemon-*.out.log",
     MatchKind.GLOB,
-    DecisionOwner.TOOL,
+    DecisionOwner.KEEP,
     RebuildCost.NONE,
-    "Gradle daemon diagnostic log",
-    idle_days=14,
-    requires_process_closed=True,
-    size_sensitive_idle=False,
+    "Gradle daemon diagnostic log managed by configurable vendor retention",
 )
 _GRADLE_ROOT_STATE_RULE = _rule(
     "gradle-user-home-state",
@@ -157,7 +151,7 @@ _GRADLE_ROOT_STATE_RULE = _rule(
     MatchKind.PREFIX,
     DecisionOwner.KEEP,
     RebuildCost.HIGH,
-    "Gradle User Home mixed configuration, downloads and cache state",
+    "Gradle User Home mixed configuration, downloads and vendor-managed cache state",
 )
 
 GRADLE_RULES: tuple[ApplicationCleanupRule, ...] = (
@@ -178,8 +172,9 @@ def gradle_roots(
     """Return documented and source-backed Gradle User Home locations.
 
     The documented default is retained even when an override is active so stale
-    cache from a former setup remains discoverable. Explicit environment/system
+    storage from a former setup remains discoverable. Explicit environment/system
     property and running command-line overrides are additional audited roots.
+    Discovery never executes Gradle, project code, settings, or init scripts.
     """
 
     env = _casefold_env(environment)
@@ -221,13 +216,9 @@ def match_gradle_rule(
         if not _impl._matches(normalized, root_norm, MatchKind.PREFIX):
             continue
 
-        # A user-provided Gradle cleanup policy outranks DevClean defaults. We
-        # still inventory the root, but it cannot gain generic deletion authority.
-        if _custom_cleanup_policy_detected(root):
-            _append_match(matches, normalized, root, _GRADLE_ROOT_STATE_RULE, 0)
-            continue
-
-        for dynamic_root, rule in _dynamic_tool_roots_for(root):
+        # Dynamic cache-directory recognition is classification only. It does not
+        # inspect or execute init scripts and cannot create whole-tree authority.
+        for dynamic_root, rule in _dynamic_report_roots_for(root):
             _append_match(matches, normalized, dynamic_root.parent.parent, rule, 0)
 
         for index, rule in enumerate(GRADLE_RULES):
@@ -241,28 +232,19 @@ def match_gradle_rule(
 def gradle_audited_tool_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
-    found: list[tuple[PureWindowsPath, ApplicationCleanupRule]] = []
-    seen: set[str] = set()
-    for root in gradle_roots(environment):
-        if _custom_cleanup_policy_detected(root):
-            continue
-        for path, rule in _dynamic_tool_roots_for(root):
-            key = _impl._normalize(path)
-            if key in seen:
-                continue
-            seen.add(key)
-            found.append((path, rule))
-    return tuple(found)
+    """No generic Gradle User Home delete root is currently source-authorized."""
+
+    del environment
+    return ()
 
 
 def whole_tree_gradle_rule(
     path: str | os.PathLike[str],
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationCleanupRule | None:
-    target = _impl._normalize(path)
-    for root, rule in gradle_audited_tool_roots(environment):
-        if target == _impl._normalize(root):
-            return rule
+    """Raw whole-tree Gradle User Home cache deletion is not authorized."""
+
+    del path, environment
     return None
 
 
@@ -275,6 +257,7 @@ def evaluate_gradle_path(
     process_running: bool | None = None,
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationPolicyDecision | None:
+    del logical_size, process_running
     rule = match_gradle_rule(path, environment)
     if rule is None:
         return None
@@ -287,27 +270,9 @@ def evaluate_gradle_path(
         if observed is None
         else max(0.0, (current - observed).total_seconds() / 86_400)
     )
-    if rule.owner is DecisionOwner.KEEP:
-        return ApplicationPolicyDecision(
-            rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
-        )
-
-    threshold = effective_idle_days(rule, logical_size)
-    running = process_running
-    if running is None and rule.requires_process_closed:
-        running = gradle_process_running()
-    score = _impl._benefit_score(logical_size, idle, threshold, rule.rebuild_cost)
-    if rule.requires_process_closed and running:
-        action = PolicyAction.TOOL_KEEP_IN_USE
-    elif logical_size < rule.min_reclaim_bytes:
-        action = PolicyAction.TOOL_KEEP_LOW_BENEFIT
-    elif idle is None or threshold is None:
-        action = PolicyAction.TOOL_KEEP_UNKNOWN_USAGE
-    elif idle < threshold:
-        action = PolicyAction.TOOL_KEEP_RECENT
-    else:
-        action = PolicyAction.TOOL_DELETE
-    return ApplicationPolicyDecision(rule, action, observed, idle, threshold, score)
+    return ApplicationPolicyDecision(
+        rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
+    )
 
 
 @lru_cache(maxsize=1)
@@ -371,7 +336,7 @@ def clear_gradle_process_cache() -> None:
     _running_override_paths.cache_clear()
 
 
-def _dynamic_tool_roots_for(
+def _dynamic_report_roots_for(
     root: PureWindowsPath,
 ) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
     cache_parent = root / "caches"
@@ -392,10 +357,8 @@ def _dynamic_tool_roots_for(
             rule = _dynamic_cache_rule(
                 "gradle-local-build-cache",
                 name,
-                idle_days=7,
-                min_reclaim_bytes=128 * _MIB,
                 rebuild_cost=RebuildCost.MEDIUM,
-                label="Gradle local build cache",
+                label="Gradle local build cache managed by effective vendor policy",
             )
         elif _VERSION_DIR_RE.fullmatch(name):
             snapshot = _SNAPSHOT_VERSION_RE.search(name) is not None
@@ -406,13 +369,11 @@ def _dynamic_tool_roots_for(
                     else "gradle-release-version-cache"
                 ),
                 name,
-                idle_days=7 if snapshot else 30,
-                min_reclaim_bytes=128 * _MIB if snapshot else 256 * _MIB,
                 rebuild_cost=RebuildCost.HIGH,
                 label=(
-                    f"Gradle snapshot {name} version-specific cache"
+                    f"Gradle snapshot {name} version-specific vendor-managed cache"
                     if snapshot
-                    else f"Gradle {name} version-specific cache"
+                    else f"Gradle {name} version-specific vendor-managed cache"
                 ),
             )
         else:
@@ -425,8 +386,6 @@ def _dynamic_cache_rule(
     rule_id: str,
     cache_name: str,
     *,
-    idle_days: int,
-    min_reclaim_bytes: int,
     rebuild_cost: RebuildCost,
     label: str,
 ) -> ApplicationCleanupRule:
@@ -436,52 +395,16 @@ def _dynamic_cache_rule(
         root_key="GRADLE_USER_HOME",
         relative_pattern=str(PureWindowsPath("caches") / cache_name),
         match_kind=MatchKind.PREFIX,
-        owner=DecisionOwner.TOOL,
+        owner=DecisionOwner.KEEP,
         last_use=LastUseStrategy.DIRECTORY_MTIME,
         rebuild_cost=rebuild_cost,
-        idle_days=float(idle_days),
-        min_reclaim_bytes=min_reclaim_bytes,
-        requires_process_closed=True,
+        idle_days=None,
+        min_reclaim_bytes=0,
+        requires_process_closed=False,
         size_sensitive_idle=False,
-        allow_whole_tree=True,
+        allow_whole_tree=False,
         label=label,
     )
-
-
-def _custom_cleanup_policy_detected(root: PureWindowsPath) -> bool:
-    init_dir = Path(str(root / "init.d"))
-    try:
-        if not init_dir.is_dir():
-            return False
-        scripts = tuple(init_dir.rglob("*.gradle")) + tuple(
-            init_dir.rglob("*.gradle.kts")
-        )
-    except OSError:
-        return True
-
-    for script in scripts:
-        try:
-            if script.stat().st_size > _MAX_INIT_SCRIPT_BYTES:
-                return True
-            text = script.read_text(encoding="utf-8", errors="ignore").casefold()
-        except OSError:
-            return True
-        if "removeunusedentriesafterdays" in text:
-            return True
-        if "cleanup.disabled" in text or "cleanup.always" in text:
-            return True
-        if any(
-            token in text
-            for token in (
-                "releasedwrappers",
-                "snapshotwrappers",
-                "downloadedresources",
-                "createdresources",
-                "daemonlogs",
-            )
-        ):
-            return True
-    return False
 
 
 def _append_match(
