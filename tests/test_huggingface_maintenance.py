@@ -151,8 +151,8 @@ def test_duplicate_revision_hash_disables_revision_delete_globally(tmp_path: Pat
     tool = _identity(tmp_path / "hf.exe", directory=False, seed=1)
     root = _identity(tmp_path / "hub", directory=True, seed=2)
     commit = "c" * 40
-    repo_rows = []
-    revision_rows = []
+    repo_rows: list[dict[str, object]] = []
+    revision_rows: list[dict[str, object]] = []
     for cache_id in ("model/org/one", "dataset/org/two"):
         repo_type, repo_id = cache_id.split("/", 1)
         repo_rows.append(
