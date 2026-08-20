@@ -31,10 +31,12 @@ jobs:
         run: uv run --frozen python .github/temporary-static-vendor-root-patch.py
       - name: Apply regression and file-boundary follow-up
         run: uv run --frozen python .github/temporary-static-vendor-root-followup.py
+      - name: Apply final regression import repair
+        run: uv run --frozen python .github/temporary-static-vendor-root-repair.py
       - name: Remove temporary patch machinery
         shell: pwsh
         run: |
-          git rm -f .github/temporary-static-vendor-root-patch.py .github/temporary-static-vendor-root-followup.py .github/workflows/temporary-static-vendor-root-patch.yml
+          git rm -f .github/temporary-static-vendor-root-patch.py .github/temporary-static-vendor-root-followup.py .github/temporary-static-vendor-root-repair.py .github/workflows/temporary-static-vendor-root-patch.yml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Format and validate final tree
         shell: pwsh
