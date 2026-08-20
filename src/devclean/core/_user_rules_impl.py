@@ -33,6 +33,7 @@ SCHEMA_VERSION: Final = 3
 MAX_DECISION_RULES: Final = 100_000
 MAX_REASON_CHARS: Final = 500
 MAX_RULE_VALUE_CHARS: Final = 32_767
+_DIRECTORY_DECISION_SOURCE: Final = "USER_DIRECTORY_DECISION"
 
 SCAN_RULES_NAME: Final = "scan-rules.json"
 DELETE_RULES_NAME: Final = "delete-rules.json"
@@ -351,11 +352,35 @@ class UserRules:
     keep: KeepRules
     _delete_matcher: _DecisionMatcher = field(init=False, repr=False, compare=False)
     _keep_matcher: _DecisionMatcher = field(init=False, repr=False, compare=False)
+    _delete_directory_matcher: _DecisionMatcher = field(init=False, repr=False, compare=False)
+    _keep_directory_matcher: _DecisionMatcher = field(init=False, repr=False, compare=False)
     _ai_rule_count: int = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "_delete_matcher", _DecisionMatcher.compile(self.delete.rules))
-        object.__setattr__(self, "_keep_matcher", _DecisionMatcher.compile(self.keep.rules))
+        file_delete = tuple(
+            rule for rule in self.delete.rules if rule.source != _DIRECTORY_DECISION_SOURCE
+        )
+        file_keep = tuple(
+            rule for rule in self.keep.rules if rule.source != _DIRECTORY_DECISION_SOURCE
+        )
+        directory_delete = tuple(
+            rule
+            for rule in self.delete.rules
+            if rule.source == _DIRECTORY_DECISION_SOURCE and rule.match is RuleMatch.EXACT_PATH
+        )
+        directory_keep = tuple(
+            rule
+            for rule in self.keep.rules
+            if rule.source == _DIRECTORY_DECISION_SOURCE and rule.match is RuleMatch.EXACT_PATH
+        )
+        object.__setattr__(self, "_delete_matcher", _DecisionMatcher.compile(file_delete))
+        object.__setattr__(self, "_keep_matcher", _DecisionMatcher.compile(file_keep))
+        object.__setattr__(
+            self, "_delete_directory_matcher", _DecisionMatcher.compile(directory_delete)
+        )
+        object.__setattr__(
+            self, "_keep_directory_matcher", _DecisionMatcher.compile(directory_keep)
+        )
         object.__setattr__(
             self,
             "_ai_rule_count",
@@ -367,13 +392,31 @@ class UserRules:
         )
 
     def decision_for(self, path: str | Path) -> RuleDecision | None:
-        """Return the configured decision, with KEEP taking priority."""
+        """Return the configured file decision, with KEEP taking priority."""
 
         if self._keep_matcher.matches(path):
             return RuleDecision.KEEP
         if self._delete_matcher.matches(path):
             return RuleDecision.DELETE
         return None
+
+    def directory_decision_for(self, path: str | Path) -> RuleDecision | None:
+        """Return only an explicit exact-path directory decision from the UI."""
+
+        if self._keep_directory_matcher.matches(path):
+            return RuleDecision.KEEP
+        if self._delete_directory_matcher.matches(path):
+            return RuleDecision.DELETE
+        return None
+
+    def is_within_kept_directory(self, path: str | Path) -> bool:
+        """Return whether *path* is inside an explicitly kept directory."""
+
+        candidate = Path(normalise_path(path))
+        return any(
+            self._keep_directory_matcher.matches(parent)
+            for parent in (candidate, *candidate.parents)
+        )
 
     @property
     def ai_rule_count(self) -> int:
@@ -636,7 +679,7 @@ def add_user_verdicts(
     rules: UserRules,
     verdicts: list[tuple[str, RuleDecision, str]],
 ) -> UserRules:
-    """Persist the user's final decision with the same reusable rule shapes."""
+    """Persist the user's final file decision with reusable file-rule shapes."""
 
     return _add_verdict_rules(
         rules,
@@ -644,6 +687,66 @@ def add_user_verdicts(
         source="USER_DECISION",
         group="user_decision",
     )
+
+
+def add_user_directory_verdicts(
+    rules: UserRules,
+    verdicts: list[tuple[str, RuleDecision, str]],
+) -> UserRules:
+    """Persist explicit directory choices as exact-path-only rules."""
+
+    incoming: dict[str, tuple[str, RuleDecision, str]] = {}
+    for path, decision, reason in verdicts:
+        normalized = normalise_path(path)
+        incoming[normalized.casefold()] = (normalized, decision, reason)
+    if not incoming:
+        return rules
+
+    removal = {
+        _stored_rule_key(RuleMatch.EXACT_PATH, path)
+        for path, _decision, _reason in incoming.values()
+    }
+    delete = [
+        rule
+        for rule in rules.delete.rules
+        if not (
+            rule.source == _DIRECTORY_DECISION_SOURCE
+            and _stored_rule_key(rule.match, rule.value) in removal
+        )
+    ]
+    keep = [
+        rule
+        for rule in rules.keep.rules
+        if not (
+            rule.source == _DIRECTORY_DECISION_SOURCE
+            and _stored_rule_key(rule.match, rule.value) in removal
+        )
+    ]
+    used_ids = {rule.rule_id for rule in (*delete, *keep)}
+    now = datetime.now(UTC).isoformat()
+    for path, decision, reason in incoming.values():
+        rule_id = _unique_rule_id(
+            _decision_rule_id(_DIRECTORY_DECISION_SOURCE, f"exact_path:{path}"),
+            used_ids,
+        )
+        used_ids.add(rule_id)
+        entry = DecisionRule(
+            rule_id=rule_id,
+            group="user_directory_decision",
+            match=RuleMatch.EXACT_PATH,
+            value=path,
+            source=_DIRECTORY_DECISION_SOURCE,
+            reason=reason[:MAX_REASON_CHARS],
+            updated_at=now,
+        )
+        (delete if decision is RuleDecision.DELETE else keep).append(entry)
+    updated = UserRules(
+        scan=rules.scan,
+        delete=replace(rules.delete, rules=_bounded_rules(delete)),
+        keep=replace(rules.keep, rules=_bounded_rules(keep)),
+    )
+    save_rules(updated)
+    return updated
 
 
 def _add_verdict_rules(
