@@ -4,15 +4,13 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PureWindowsPath
 
-import pytest
-
-import devclean.core.application_cleanup as application_cleanup
 from devclean.core.application_cleanup import (
     DecisionOwner,
     PolicyAction,
     application_scan_roots,
     evaluate_application_path,
     match_application_rule,
+    process_guard_allows,
     whole_tree_application_rule,
 )
 from devclean.core.cleanup_catalog import CleanupPolicy, discover_known_cleanup_roots
@@ -210,21 +208,13 @@ def test_gradle_whole_tree_authority_is_removed_and_catalog_is_report_only(
         assert os.path.normcase(str(path)) not in by_path
 
 
-def test_gradle_process_guard_is_independent_from_android_studio(
+def test_gradle_protected_paths_fail_closed_before_process_state(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     env, root = _layout(tmp_path)
     release, _, _ = _cache_layout(root)
 
-    monkeypatch.setattr(application_cleanup, "gradle_process_running", lambda: True)
-    monkeypatch.setattr(
-        application_cleanup, "android_studio_process_running", lambda: False
-    )
-    assert not application_cleanup.process_guard_allows(release, env)
-
-    monkeypatch.setattr(application_cleanup, "gradle_process_running", lambda: False)
-    monkeypatch.setattr(
-        application_cleanup, "android_studio_process_running", lambda: True
-    )
-    assert application_cleanup.process_guard_allows(release, env)
+    rule = match_application_rule(release, env)
+    assert rule is not None
+    assert rule.owner is DecisionOwner.KEEP
+    assert not process_guard_allows(release, env)
