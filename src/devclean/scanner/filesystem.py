@@ -68,6 +68,11 @@ class ScanOptions:
     # Absolute directory roots configured by the user as excluded.  Unlike a
     # name rule, this prunes only that exact subtree.
     skip_paths: frozenset[str] = frozenset()
+    # Exact top-level scan roots that may bypass their *own* basename appearing
+    # in ``skip_directory_names``. This never disables descendant name pruning;
+    # it exists only so an explicitly selected/audited root such as Documents or
+    # .git can actually be scanned without opening every same-named subtree.
+    root_skip_name_overrides: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if self.progress_interval < 1:
@@ -80,6 +85,14 @@ class ScanOptions:
             frozenset(
                 os.path.normcase(os.path.normpath(os.path.abspath(path)))
                 for path in self.skip_paths
+            ),
+        )
+        object.__setattr__(
+            self,
+            "root_skip_name_overrides",
+            frozenset(
+                os.path.normcase(os.path.normpath(os.path.abspath(path)))
+                for path in self.root_skip_name_overrides
             ),
         )
 
@@ -157,6 +170,7 @@ class CancellationToken:
         """Return current state without implying it is stable across calls."""
 
         return self._event.is_set()
+
 
 type ProgressCallback = Callable[[ScanStats], None]
 
@@ -274,9 +288,7 @@ def _base_record(
 
 _DIRECTORY_ATTRIBUTE = 0x00000010
 _CLOUD_ATTRIBUTES = (
-    FILE_ATTRIBUTE_OFFLINE
-    | FILE_ATTRIBUTE_RECALL_ON_OPEN
-    | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
+    FILE_ATTRIBUTE_OFFLINE | FILE_ATTRIBUTE_RECALL_ON_OPEN | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
 )
 
 
@@ -434,6 +446,8 @@ def _update_stats(
         stats.errors += 1
         if record.error_code in {errno.EACCES, errno.EPERM, 5}:
             stats.inaccessible += 1
+
+
 def scan_roots(
     roots: Iterable[PathLike],
     options: ScanOptions | None = None,
@@ -475,9 +489,14 @@ def scan_roots(
             for record in records:
                 yield emit(record)
             if root_frame is not None:
+                root_is_override = (
+                    os.path.normcase(os.path.normpath(os.path.abspath(root_frame.path)))
+                    in active_options.root_skip_name_overrides
+                )
                 if (
                     os.path.basename(root_frame.path).casefold()
                     in active_options.skip_directory_names
+                    and not root_is_override
                 ):
                     root_frame.close()
                 else:
@@ -538,8 +557,7 @@ def scan_roots(
 def _is_skipped_path(path: str, excluded: frozenset[str]) -> bool:
     normalized = os.path.normcase(os.path.normpath(os.path.abspath(path)))
     return any(
-        normalized == root
-        or normalized.startswith(root.rstrip(os.sep) + os.sep)
+        normalized == root or normalized.startswith(root.rstrip(os.sep) + os.sep)
         for root in excluded
     )
 

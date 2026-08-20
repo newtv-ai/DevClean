@@ -565,17 +565,69 @@ def _format_bytes(value: int) -> str:
     return f"{size:.1f} TB"
 
 
+def _scan_specific_roots(
+    known_roots: Sequence[KnownCleanupRoot],
+    rules: UserRules,
+) -> tuple[Path, ...]:
+    """Return roots whose exact selection must survive broad-name pruning."""
+
+    roots = list(expanded_scan_paths(rules.scan.additional_paths))
+    if rules.scan.include_known_cleanup_roots:
+        roots.extend(root.path for root in known_roots if root.application_rule is not None)
+    return tuple(dict.fromkeys(roots))
+
+
+def _scan_path_excluded(path: Path, excluded: tuple[str, ...]) -> bool:
+    normalized = normalise_path(path)
+    return any(
+        normalized == blocked or normalized.startswith(blocked.rstrip(os.sep) + os.sep)
+        for blocked in excluded
+    )
+
+
+def _scan_root_can_reach(
+    root: Path,
+    target: Path,
+    skip_directory_names: frozenset[str],
+) -> bool:
+    """Return whether normal traversal from *root* can reach *target*."""
+
+    try:
+        relative = target.relative_to(root)
+    except ValueError:
+        return False
+    if not relative.parts:
+        return True
+    return not any(part.casefold() in skip_directory_names for part in relative.parts)
+
+
+def _scan_root_skip_name_overrides(
+    roots: Sequence[Path],
+    known_roots: Sequence[KnownCleanupRoot],
+    rules: UserRules,
+) -> frozenset[str]:
+    """Return exact selected roots allowed to bypass only their own skip-name."""
+
+    selected = {normalise_path(path) for path in roots}
+    return frozenset(
+        normalise_path(path)
+        for path in _scan_specific_roots(known_roots, rules)
+        if normalise_path(path) in selected
+    )
+
+
 def scan_targets(
     known_roots: Sequence[KnownCleanupRoot],
     drives: Sequence[Path] = (),
     rules: UserRules | None = None,
 ) -> tuple[Path, ...]:
-    """Return the configured profile, catalog, and additional scan roots.
+    """Return broad roots plus otherwise unreachable explicit/audited roots.
 
-    Defaults cover every catalog root the machine actually has, plus the profile
-    so project build output is reachable.  User exclusions and additional roots
-    are applied, then the result is reduced to outermost paths so nothing is
-    walked twice.  Whole drives are deliberately not walked.
+    The profile remains the cheap broad traversal root, but its skip-name rules
+    must not make an explicit user ``additional_path`` or source-audited
+    application root disappear. A specific nested root is therefore retained
+    only when every broader retained root would prune a component on the way to
+    it. Whole drives are deliberately never added.
     """
 
     active_rules = rules or default_rules()
@@ -589,29 +641,44 @@ def scan_targets(
     excluded = tuple(
         normalise_path(path) for path in expanded_scan_paths(active_rules.scan.excluded_paths)
     )
-    if drives:
-        allowed = {str(drive)[:2].casefold() for drive in drives}
-        candidates = [path for path in candidates if str(path)[:2].casefold() in allowed]
-    resolved: list[Path] = []
-    for path in candidates:
-        normalized_text = normalise_path(path)
-        if any(
-            normalized_text == blocked
-            or normalized_text.startswith(blocked.rstrip(os.sep) + os.sep)
-            for blocked in excluded
-        ):
-            continue
+    allowed = {str(drive)[:2].casefold() for drive in drives} if drives else None
+
+    def usable(path: Path) -> Path | None:
+        if allowed is not None and str(path)[:2].casefold() not in allowed:
+            return None
+        if _scan_path_excluded(path, excluded):
+            return None
         try:
             if not path.is_dir():
-                continue
+                return None
         except OSError:
+            return None
+        return Path(os.path.normcase(os.path.normpath(os.path.abspath(path))))
+
+    resolved: list[Path] = []
+    for path in candidates:
+        normalized = usable(path)
+        if normalized is None:
             continue
-        normalized = Path(os.path.normcase(os.path.normpath(os.path.abspath(path))))
         if any(normalized.is_relative_to(kept) for kept in resolved):
             continue
         resolved = [kept for kept in resolved if not kept.is_relative_to(normalized)]
         resolved.append(normalized)
-    return tuple(resolved)
+
+    skip_names = frozenset(name.casefold() for name in active_rules.scan.skip_directory_names)
+    specifics = sorted(
+        (
+            normalized
+            for path in _scan_specific_roots(known_roots, active_rules)
+            if (normalized := usable(path)) is not None
+        ),
+        key=lambda path: len(path.parts),
+    )
+    for specific in specifics:
+        if any(_scan_root_can_reach(root, specific, skip_names) for root in resolved):
+            continue
+        resolved.append(specific)
+    return tuple(dict.fromkeys(resolved))
 
 
 class DevCleanWindow:
@@ -1060,6 +1127,9 @@ class DevCleanWindow:
                         name.casefold() for name in active_rules.scan.skip_directory_names
                     ),
                     skip_paths=frozenset(configured_skip_paths),
+                    root_skip_name_overrides=_scan_root_skip_name_overrides(
+                        roots, known_roots, active_rules
+                    ),
                 ),
                 cancel,
                 progress,
