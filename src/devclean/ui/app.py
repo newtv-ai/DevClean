@@ -22,7 +22,7 @@ import threading
 import time
 import tkinter as tk
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from queue import Empty, Queue
@@ -314,14 +314,48 @@ def is_ai_review_eligible(item: TriageItem) -> bool:
     )
 
 
-def _configured_delete_eligible(item: TriageItem) -> bool:
-    """Configured DELETE may promote only an item the executor already accepts."""
+_LEARNED_FILE_OVERRIDE_TAGS = frozenset(
+    {"byproduct", "cache_directory", "path_heuristic", "unknown"}
+)
 
-    return (
+
+def _configured_delete_eligible(item: TriageItem) -> bool:
+    """Return whether a configured DELETE can authorize this exact file item."""
+
+    if (
         is_direct_cleanup_eligible(item)
         or is_user_review_eligible(item)
         or is_ai_review_eligible(item)
+    ):
+        return True
+    return (
+        item.target_kind is CleanupTargetKind.FILE
+        and item.lane is ReviewLane.REPORT_ONLY
+        and item.actionability is Actionability.REPORT_ONLY
+        and item.execution_policy is ExecutionPolicy.NONE
+        and bool(_LEARNED_FILE_OVERRIDE_TAGS.intersection(item.tags))
     )
+
+
+def _effective_deletable_item(item: TriageItem, rules: UserRules) -> TriageItem:
+    """Materialize file-only learned authority without mutating classifier truth."""
+
+    if (
+        item.target_kind is CleanupTargetKind.FILE
+        and rules.decision_for(item.path) is RuleDecision.DELETE
+        and item.lane is ReviewLane.REPORT_ONLY
+        and _configured_delete_eligible(item)
+    ):
+        return replace(
+            item,
+            lane=ReviewLane.USER_REVIEW,
+            risk_tier=RiskTier.MEDIUM,
+            actionability=Actionability.USER_REVIEW,
+            execution_policy=ExecutionPolicy.USER_CHOICE_DELETE,
+            reason=item.reason + "；命中已确认的文件级 DELETE 默认/学习规则",
+            tags=(*item.tags, "configured_file_delete"),
+        )
+    return item
 
 
 def _rows_of(session: TriageSession, rules: UserRules) -> tuple[PartialBucket, PartialBucket]:
@@ -382,7 +416,7 @@ def _partition_items(
     for item in session.iter_items():
         bucket = _item_bucket(item, rules, kept_paths)
         if bucket == _DELETE_BUCKET:
-            deletable.append(item)
+            deletable.append(_effective_deletable_item(item, rules))
         elif bucket == _UNSURE_BUCKET:
             unsure.append(item)
     # A whole-directory row already represents every descendant. Showing its
@@ -1036,15 +1070,14 @@ class DevCleanWindow:
                         active_rules,
                         target_kind=CleanupTargetKind.FILE,
                     )
-                    session.add(
-                        triage_file(
-                            record,
-                            known_roots=active_known_roots,
-                            delete_config=active_rules.delete.classification,
-                            keep_config=active_rules.keep.classification,
-                            now=now,
-                        )
+                    file_item = triage_file(
+                        record,
+                        known_roots=active_known_roots,
+                        delete_config=active_rules.delete.classification,
+                        keep_config=active_rules.keep.classification,
+                        now=now,
                     )
+                    session.add(_effective_deletable_item(file_item, active_rules))
                 elif record.kind is ScanRecordKind.DIRECTORY:
                     session.observe_path(
                         record.path,

@@ -160,7 +160,7 @@ def test_generic_stale_version_and_tool_output_directories_are_not_user_delete_l
         _assert_protected(generated)
 
 
-def test_learned_delete_rule_cannot_promote_generic_protected_path(tmp_path: Path) -> None:
+def test_learned_delete_rule_can_promote_generic_protected_file(tmp_path: Path) -> None:
     path = tmp_path / "cache" / "opaque.log"
     path.parent.mkdir()
     item = _triage(path)
@@ -179,6 +179,41 @@ def test_learned_delete_rule_cannot_promote_generic_protected_path(tmp_path: Pat
                     value=item.path,
                     source="AI_IMPORT",
                     reason="old heuristic verdict",
+                ),
+            ),
+        ),
+        keep=base.keep,
+    )
+    session = TriageSession(review_sample_per_category=rules.scan.review_sample_per_category)
+    session.observe_path(item.path, rules)
+    session.add(app._effective_deletable_item(item, rules))
+
+    deletable, unsure = app._partition_items(session, rules)
+    assert [candidate.path for candidate in deletable] == [item.path]
+    assert deletable[0].execution_policy is ExecutionPolicy.USER_CHOICE_DELETE
+    assert "configured_file_delete" in deletable[0].tags
+    assert unsure == ()
+
+
+def test_learned_delete_cannot_override_hard_program_payload(tmp_path: Path) -> None:
+    path = tmp_path / "cache" / "runtime.dll"
+    path.parent.mkdir()
+    item = _triage(path)
+    assert "program_payload" in item.tags
+
+    base = default_rules()
+    rules = UserRules(
+        scan=base.scan,
+        delete=replace(
+            base.delete,
+            rules=(
+                DecisionRule(
+                    rule_id="unsafe-learned-delete",
+                    group="ai_import",
+                    match=RuleMatch.EXACT_PATH,
+                    value=item.path,
+                    source="AI_IMPORT",
+                    reason="historical verdict must not beat hard protection",
                 ),
             ),
         ),

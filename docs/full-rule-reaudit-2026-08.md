@@ -6,7 +6,7 @@ This tracker exists so the requested second-pass audit is genuinely one-by-one r
 
 | Layer | Status | Result |
 | --- | --- | --- |
-| Packaged DELETE/KEEP defaults | ✅ #142 | learned machine decisions removed; neutral defaults + conservative migration |
+| Packaged DELETE/KEEP defaults | ⚠ #142 interim | backup/migration bug fixed; defaults temporarily neutralized, safe file-level knowledge will be selectively restored |
 | Generic file-name/suffix/cache heuristics | ✅ phase 2 | protected/report-only; no USER/AI delete authority |
 | Generic directory-name/version heuristics | ✅ phase 2 | protected/report-only; no whole-tree USER delete authority |
 | Generic unknown-file routing | ✅ phase 2 | protected; no default paid AI route |
@@ -14,7 +14,8 @@ This tracker exists so the requested second-pass audit is genuinely one-by-one r
 | Static VENDOR_MANAGED root fallback | ⏳ next | verify every root cannot bypass richer app/vendor semantics |
 | AGE_BASED_REVIEW temp lifecycle | ⏳ next | re-check exact Windows/temp semantics and age threshold |
 | Scan exclusions/pruning | ⏳ queued | verify no important audited cache is accidentally skipped and no user data is widened |
-| Learned-rule portability/generalization | ⏳ queued | re-check generated glob/regex reuse after #142 neutral baseline |
+| Learned-rule target boundary | ✅ phase 2 | learned/default rules apply to files only; directory choices are exact-path-only and subtree KEEP wins |
+| Learned-rule portability/default restoration | ⏳ queued | re-audit old packaged file rules, generated glob/regex reuse, then selectively restore safe common-file knowledge |
 | Execution identity/reparse/hardlink/concurrency gates | ⏳ queued | second-pass regression audit; no weakening planned |
 
 ## Packaged known cleanup roots
@@ -79,4 +80,4 @@ Re-verify on current primary vendor docs/source in small PRs. Recent audits are 
 
 ## Acceptance rule for reducing user/AI burden
 
-A reduction in USER_REVIEW or AI_REVIEW counts is accepted only by moving an item either upward to a source-proven exact deterministic lane or downward to protected/report-only. It must never be achieved by treating cache-like names, age, size, redownloadability, or an AI guess as deletion authority.
+A reduction in USER_REVIEW or AI_REVIEW counts is accepted by moving an item to a source-proven exact deterministic lane, to protected/report-only, or by applying a separately confirmed reusable **file-level** DELETE/KEEP rule. Cache-like names, age, size, redownloadability, or a one-off AI guess are not authority by themselves; learned file authority never extends to directories or hard semantic protections.
