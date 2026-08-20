@@ -778,13 +778,18 @@ def _path_identity(
         raise RuntimeError(f"{label} 是 reparse/cloud placeholder; 不授予维护权限")
     if metadata.volume_serial is None or metadata.file_id is None or metadata.file_id_kind is None:
         raise RuntimeError(f"{label} 缺少稳定文件身份")
+    # Directory last-write timestamps legitimately change when the vendor removes
+    # direct repo children. Stable directory authority is the exact path + volume
+    # + file ID; file timestamps remain bound for the hf executable itself.
+    creation_time_ns = None if expect_directory else metadata.creation_time_ns
+    last_write_time_ns = None if expect_directory else metadata.last_write_time_ns
     return HuggingFacePathIdentity(
         path=resolved,
         volume_serial=metadata.volume_serial,
         file_id=metadata.file_id,
         file_id_kind=metadata.file_id_kind,
-        creation_time_ns=metadata.creation_time_ns,
-        last_write_time_ns=metadata.last_write_time_ns,
+        creation_time_ns=creation_time_ns,
+        last_write_time_ns=last_write_time_ns,
         is_directory=metadata.is_directory,
     )
 
