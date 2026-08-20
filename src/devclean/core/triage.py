@@ -419,14 +419,14 @@ def triage_directory(
             tags = ("whole_directory", "known_cache_root", "report_only")
     elif scope is DirectoryScope.AGED_TEMP_ITEM:
         category = CleanupCategory.USER_TEMP
-        recovery = RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT
-        lane = ReviewLane.DETERMINISTIC_CANDIDATE
-        risk_tier = RiskTier.LOW
-        evidence_kind = EvidenceKind.AGE_AND_APPROVED_ROOT
-        actionability = Actionability.REVIEW_PLAN
-        execution_policy = ExecutionPolicy.USER_CHOICE_DELETE
-        reason = f"{path.name}：临时目录中超过 {delete_config.old_temp_days} 天未改动的整个条目"
-        tags = ("whole_directory", "aged_temp_item", "tool_decision")
+        recovery = RecoveryCapability.UNKNOWN
+        lane = ReviewLane.REPORT_ONLY
+        risk_tier = RiskTier.PROTECTED
+        evidence_kind = EvidenceKind.FILESYSTEM_OBSERVATION
+        actionability = Actionability.REPORT_ONLY
+        execution_policy = ExecutionPolicy.NONE
+        reason = f"{path.name}：文件时间只能说明观察到的年龄，不能证明整个临时目录当前可删"
+        tags = ("whole_directory", "aged_temp_item", "report_only")
     elif scope is DirectoryScope.STALE_VERSION:
         category = CleanupCategory.OTHER
         recovery = RecoveryCapability.NONE
@@ -528,38 +528,19 @@ def _classify(
     known = known_root_for_path(path, known_roots)
     if known is not None:
         if known.policy is CleanupPolicy.AGE_BASED_REVIEW:
-            if _is_older_than(
-                last_write_time_ns,
-                timedelta(days=delete_config.old_temp_days),
-                now,
-            ):
-                return _Classification(
-                    known.category,
-                    ReviewLane.DETERMINISTIC_CANDIDATE,
-                    RiskTier.LOW,
-                    EvidenceKind.AGE_AND_APPROVED_ROOT,
-                    Actionability.REVIEW_PLAN,
-                    ExecutionPolicy.USER_CHOICE_DELETE,
-                    RecoveryCapability.UNKNOWN,
-                    (
-                        f"{known.label}：已知根目录且超过 "
-                        f"{delete_config.old_temp_days} 天，判定可以删除；执行仍需你确认"
-                    ),
-                    ("known_root", "older_than_configured_days"),
-                )
             return _Classification(
                 known.category,
                 ReviewLane.REPORT_ONLY,
                 RiskTier.PROTECTED,
-                EvidenceKind.KNOWN_ROOT_HEURISTIC,
+                EvidenceKind.FILESYSTEM_OBSERVATION,
                 Actionability.REPORT_ONLY,
                 ExecutionPolicy.NONE,
                 RecoveryCapability.UNKNOWN,
                 (
-                    f"{known.label}：属于已知临时目录，但未达到 "
-                    f"{delete_config.old_temp_days} 天阈值；工具直接保留，不要求用户判断"
+                    f"{known.label}：旧规则曾按文件时间授予删除权限；"
+                    "当前没有来源证明单靠 mtime 能代表未使用或安全删除，工具直接保护"
                 ),
-                ("known_root", "recent", "report_only"),
+                ("known_root", "legacy_age_based_review", "report_only"),
             )
         if known.policy is CleanupPolicy.VENDOR_MANAGED:
             provenance = (
@@ -607,24 +588,20 @@ def _classify(
             )
 
     root = temp_root or Path(tempfile.gettempdir())
-    if _is_descendant(path, root) and _is_older_than(
-        last_write_time_ns,
-        timedelta(days=delete_config.old_temp_days),
-        now,
-    ):
+    if _is_descendant(path, root):
         return _Classification(
             CleanupCategory.USER_TEMP,
-            ReviewLane.DETERMINISTIC_CANDIDATE,
-            RiskTier.LOW,
-            EvidenceKind.AGE_AND_APPROVED_ROOT,
-            Actionability.REVIEW_PLAN,
-            ExecutionPolicy.USER_CHOICE_DELETE,
+            ReviewLane.REPORT_ONLY,
+            RiskTier.PROTECTED,
+            EvidenceKind.FILESYSTEM_OBSERVATION,
+            Actionability.REPORT_ONLY,
+            ExecutionPolicy.NONE,
             RecoveryCapability.UNKNOWN,
             (
-                f"当前用户临时目录中超过 {delete_config.old_temp_days} 天，"
-                "判定可以删除；执行仍需你确认"
+                "位于当前用户临时目录，但 Windows 的维护语义是清理未在使用的临时文件；"
+                "单独的 mtime/年龄不能证明当前未使用，工具直接保护"
             ),
-            ("older_than_configured_days",),
+            ("temp_root", "unknown", "report_only"),
         )
 
     if is_regenerable_byproduct(path, delete_config):
@@ -841,34 +818,6 @@ def _version_key(name: str, separator_regex: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-def _is_aged_temp_child(
-    path: Path,
-    known_roots: tuple[KnownCleanupRoot, ...],
-    old_temp_days: int,
-) -> bool:
-    parent = _normalized_path(path.parent)
-    if parent not in _age_based_known_roots(known_roots):
-        return False
-    try:
-        modified = path.stat().st_mtime
-    except OSError:
-        return False
-    return (datetime.now(UTC).timestamp() - modified) > timedelta(
-        days=old_temp_days
-    ).total_seconds()
-
-
-@lru_cache(maxsize=8)
-def _age_based_known_roots(
-    known_roots: tuple[KnownCleanupRoot, ...],
-) -> frozenset[str]:
-    return frozenset(
-        _normalized_path(root.path)
-        for root in known_roots
-        if root.policy is CleanupPolicy.AGE_BASED_REVIEW
-    )
-
-
 def _newest_version_sibling(
     parent: str, version_name_regex: str, version_separators_regex: str
 ) -> str | None:
@@ -932,8 +881,6 @@ def directory_cleanup_scope(
     is_known_root = _normalized_path(path) in _whole_tree_known_roots(known_roots)
     is_tool_output = is_regenerable_tool_directory(path, delete_config)
     if not is_known_root and not is_tool_output:
-        if _is_aged_temp_child(path, known_roots, delete_config.old_temp_days):
-            return DirectoryScope.AGED_TEMP_ITEM
         if is_stale_version_directory(path, delete_config):
             return DirectoryScope.STALE_VERSION
         return DirectoryScope.NOT_ELIGIBLE

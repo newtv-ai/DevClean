@@ -12,7 +12,7 @@ This tracker exists so the requested second-pass audit is genuinely one-by-one r
 | Generic unknown-file routing | ✅ phase 2 | protected; no default paid AI route |
 | Legacy MANUAL_REVIEW raw roots | ✅ phase 2 | runtime fails closed to REPORT_ONLY |
 | Static VENDOR_MANAGED root fallback | ✅ phase 3 | static roots are discovery-only; deterministic vendor authority requires an attached audited TOOL whole-tree rule |
-| AGE_BASED_REVIEW temp lifecycle | ⏳ next | Microsoft Storage Sense semantics do not justify raw one-day mtime authority; rework this next |
+| AGE_BASED_REVIEW temp lifecycle | ✅ phase 4 | raw mtime/age authority removed; legacy AGE roots fail closed and packaged temp/crash roots are discovery-only |
 | Scan exclusions/pruning | ⏳ queued | verify no important audited cache is accidentally skipped and no user data is widened |
 | Learned-rule target boundary | ✅ phase 2 | learned/default rules apply to files only; directory choices are exact-path-only and subtree KEEP wins |
 | Learned-rule portability/default restoration | ⏳ queued | re-audit old packaged file rules, generated glob/regex reuse, then selectively restore safe common-file knowledge |
@@ -22,38 +22,38 @@ This tracker exists so the requested second-pass audit is genuinely one-by-one r
 
 | Root id | Current packaged policy | Re-audit state |
 | --- | --- | --- |
-| `user-temp` | `AGE_BASED_REVIEW` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `windows-temp` | `AGE_BASED_REVIEW` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `user-crash-dumps` | `AGE_BASED_REVIEW` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `user-temp` | `REPORT_ONLY` | phase 4: Storage Sense semantics do not justify raw mtime deletion authority |
+| `windows-temp` | `REPORT_ONLY` | phase 4: Windows temp is discovery-only unless a narrower source-owned lane applies |
+| `user-crash-dumps` | `REPORT_ONLY` | phase 4: generic age removed; exact Windows crash-dump USER_REVIEW lane remains source-specific |
 | `system-crash-dumps` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
 | `windows-maintenance` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
 | `windows-update-downloads` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
 | `windows-old` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `windows-internet-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `windows-internet-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
 | `thumbnail-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `pip-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `uv-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `npm-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `pnpm-store` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `conda-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `huggingface-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `gradle-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `yarn-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `bun-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `maven-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `nuget-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `go-module-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `cargo-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `test-browser-binaries` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `android-images` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `ollama` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `ollama-updates` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `pip-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `uv-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `npm-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `pnpm-store` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `conda-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `huggingface-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `gradle-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `yarn-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `bun-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `maven-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `nuget-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `go-module-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `cargo-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `test-browser-binaries` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `android-images` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `ollama` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `ollama-updates` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
 | `lmstudio` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
 | `editor-caches` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
 | `jetbrains-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
 | `browser-caches` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
 | `ide-working-caches` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
-| `claude-plugin-cache` | `VENDOR_MANAGED` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
+| `claude-plugin-cache` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
 | `general-tool-caches` | `REPORT_ONLY` | phase 2 generic boundary applied; vendor/source detail still tracked separately |
 
 ## Application/source modules
