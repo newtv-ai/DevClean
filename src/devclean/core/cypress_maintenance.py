@@ -57,6 +57,7 @@ class CypressStorageInventory:
     package_version: str
     versions: tuple[CypressBinaryCacheEntry, ...]
     external_entries: tuple[str, ...]
+    external_identities: tuple[CypressPathIdentity, ...]
     unknown_entries: tuple[str, ...]
 
     @property
@@ -112,6 +113,7 @@ def inventory_cypress_storage(
     root_identity = _optional_root_identity(cache_root)
     versions: list[CypressBinaryCacheEntry] = []
     external: list[str] = []
+    external_identities: list[CypressPathIdentity] = []
     unknown: list[str] = []
 
     if root_identity is not None:
@@ -122,7 +124,17 @@ def inventory_cypress_storage(
 
         for child in children:
             if child.name in _EXTERNAL_CACHE_ENTRIES:
+                try:
+                    identity = _path_identity(
+                        child,
+                        expect_directory=True,
+                        label=f"Cypress external cache entry {child.name}",
+                    )
+                except (OSError, RuntimeError):
+                    unknown.append(child.name)
+                    continue
                 external.append(child.name)
+                external_identities.append(identity)
                 continue
             if not _SEMVER_DIR_RE.fullmatch(child.name):
                 unknown.append(child.name)
@@ -157,13 +169,18 @@ def inventory_cypress_storage(
             raise RuntimeError("Cypress cache root 身份在 inventory 期间发生变化")
 
     versions.sort(key=lambda item: item.version.casefold())
+    external_pairs = sorted(
+        zip(external, external_identities, strict=True),
+        key=lambda item: item[0].casefold(),
+    )
     return CypressStorageInventory(
         cli_tool=tool,
         cache_root=cache_root,
         cache_root_identity=root_identity,
         package_version=package_version,
         versions=tuple(versions),
-        external_entries=tuple(sorted(external, key=str.casefold)),
+        external_entries=tuple(name for name, _ in external_pairs),
+        external_identities=tuple(identity for _, identity in external_pairs),
         unknown_entries=tuple(sorted(set(unknown), key=str.casefold)),
     )
 
@@ -191,6 +208,7 @@ def prune_cypress_binary_cache(
     _require_process_idle()
 
     removed_versions = tuple(item.version for item in fresh.prune_candidates)
+    retained_versions = tuple(item for item in fresh.versions if item.current_package_version)
     before_bytes = fresh.binary_bytes
     result = _run_cypress(
         fresh.cli_tool,
@@ -204,11 +222,20 @@ def prune_cypress_binary_cache(
     _require_same_boundaries(fresh, after)
     if after.unknown_entries:
         raise RuntimeError("Cypress prune 后出现未知 cache 顶层对象; 不报告成功")
-    remaining = {item.version for item in after.versions}
-    still_present = sorted(set(removed_versions) & remaining, key=str.casefold)
+    if fresh.external_entries != after.external_entries:
+        raise RuntimeError("Cypress prune 改变了 bundles/sessions 顶层边界; 不报告成功")
+    if fresh.external_identities != after.external_identities:
+        raise RuntimeError("Cypress prune 后 bundles/sessions 稳定身份发生变化; 不报告成功")
+
+    remaining_by_version = {item.version: item for item in after.versions}
+    still_present = sorted(set(removed_versions) & remaining_by_version.keys(), key=str.casefold)
     if still_present:
         joined = ", ".join(still_present)
         raise RuntimeError(f"Cypress 返回成功后旧 binary cache 仍存在: {joined}")
+    for retained in retained_versions:
+        if remaining_by_version.get(retained.version) != retained:
+            raise RuntimeError("Cypress prune 后当前 CLI 版本 cache 被移除或发生变化; 不报告成功")
+
     unexpected = [
         item.version
         for item in after.versions
@@ -237,6 +264,8 @@ def _require_same_review(
         raise RuntimeError("Cypress binary cache 自审核后发生变化; 请重新统计")
     if reviewed.external_entries != current.external_entries:
         raise RuntimeError("Cypress 外部 cache 状态自审核后发生变化; 请重新统计")
+    if reviewed.external_identities != current.external_identities:
+        raise RuntimeError("Cypress 外部 cache 身份自审核后发生变化; 请重新统计")
     if reviewed.unknown_entries != current.unknown_entries:
         raise RuntimeError("Cypress 未知 cache 对象自审核后发生变化; 请重新统计")
 
