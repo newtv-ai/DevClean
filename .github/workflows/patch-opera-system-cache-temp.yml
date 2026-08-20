@@ -1,0 +1,314 @@
+name: Temporary Opera System Cache authority patch
+
+on:
+  push:
+    branches:
+      - agent/opera-system-cache-authority-audit-2026-08
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-2025
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: agent/opera-system-cache-authority-audit-2026-08
+          persist-credentials: true
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.6"
+          python-version: "3.13"
+      - name: Sync locked environment
+        run: uv sync --frozen
+      - name: Apply source-first authority correction
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f"{label}: expected exactly one match, found {count}")
+              return text.replace(old, new, 1)
+
+          core_path = Path("src/devclean/core/opera_cleanup.py")
+          core = core_path.read_text(encoding="utf-8")
+          core = replace_once(
+              core,
+              '''# Opera-specific cache directory exposed in the vendor support community and in
+          # current Opera GX cache layouts. It is cache-only and can be regenerated.
+          _OPERA_SYSTEM_CACHE_RULE = ApplicationCleanupRule(
+              rule_id="opera-system-cache",
+              app_id="opera",
+              root_key="OPERA_PROFILE",
+              relative_pattern="System Cache",
+              match_kind=MatchKind.PREFIX,
+              owner=DecisionOwner.TOOL,
+              last_use=LastUseStrategy.FILE_MTIME,
+              rebuild_cost=RebuildCost.LOW,
+              idle_days=14,
+              min_reclaim_bytes=8 * _MIB,
+              requires_process_closed=True,
+              allow_whole_tree=True,
+              label="Opera Chromium system cache",
+          )
+          ''',
+              '''# Opera support material identifies ``System Cache`` as cache-like storage, but
+          # current public Opera documentation does not define a filesystem-level retention or
+          # whole-tree cleanup contract for it. Keep the path recognizable for explanation while
+          # leaving mutation to Opera/browser lifecycle rather than an invented age/size rule.
+          _OPERA_SYSTEM_CACHE_RULE = ApplicationCleanupRule(
+              rule_id="opera-system-cache",
+              app_id="opera",
+              root_key="OPERA_PROFILE",
+              relative_pattern="System Cache",
+              match_kind=MatchKind.PREFIX,
+              owner=DecisionOwner.KEEP,
+              last_use=LastUseStrategy.FILE_MTIME,
+              rebuild_cost=RebuildCost.LOW,
+              label="Opera System Cache (browser-managed)",
+          )
+          ''',
+              "Opera System Cache rule",
+          )
+          core = replace_once(
+              core,
+              '''    # Local cache roots: exact Chromium cache children and Opera System Cache.
+              for root in roots.local_roots:
+                  for profile_root in _candidate_profile_roots(root):
+                      for rule in _OPERA_PROFILE_RULES:
+                          if rule.owner is DecisionOwner.TOOL:
+                              _append_tool_root(found, seen, profile_root, rule)
+                      _append_tool_root(found, seen, profile_root, _OPERA_SYSTEM_CACHE_RULE)
+                  for rule in _OPERA_DATA_RULES:
+                      _append_tool_root(found, seen, root, rule)
+          ''',
+              '''    # Local cache roots: only already-audited Chromium cache children receive
+              # generic tool-root authority. Opera ``System Cache`` remains explanation-only.
+              for root in roots.local_roots:
+                  for profile_root in _candidate_profile_roots(root):
+                      for rule in _OPERA_PROFILE_RULES:
+                          if rule.owner is DecisionOwner.TOOL:
+                              _append_tool_root(found, seen, profile_root, rule)
+                  for rule in _OPERA_DATA_RULES:
+                      _append_tool_root(found, seen, root, rule)
+          ''',
+              "Opera audited roots",
+          )
+          core_path.write_text(core, encoding="utf-8")
+
+          test_path = Path("tests/test_opera_cleanup.py")
+          test = test_path.read_text(encoding="utf-8")
+          test = replace_once(
+              test,
+              '''    paths = {
+                  root + r"\\Cache\\Cache_Data\\f_001": "opera-http-cache",
+                  root + r"\\System Cache\\Cache_Data\\data_0": "opera-system-cache",
+                  root + r"\\Default\\Cache\\Cache_Data\\f_002": "opera-http-cache",
+                  root + r"\\Default\\System Cache\\Cache_Data\\data_1": "opera-system-cache",
+                  root + r"\\Default\\GPUCache\\data_0": "opera-profile-gpu-cache",
+              }
+              for path, rule_id in paths.items():
+                  rule = match_application_rule(path, _env())
+                  assert rule is not None
+                  assert rule.owner is DecisionOwner.TOOL
+                  assert rule.rule_id == rule_id
+
+              unknown = match_application_rule(root + r"\\Default\\mystery.db", _env())
+          ''',
+              '''    paths = {
+                  root + r"\\Cache\\Cache_Data\\f_001": "opera-http-cache",
+                  root + r"\\Default\\Cache\\Cache_Data\\f_002": "opera-http-cache",
+                  root + r"\\Default\\GPUCache\\data_0": "opera-profile-gpu-cache",
+              }
+              for path, rule_id in paths.items():
+                  rule = match_application_rule(path, _env())
+                  assert rule is not None
+                  assert rule.owner is DecisionOwner.TOOL
+                  assert rule.rule_id == rule_id
+
+              for path in (
+                  root + r"\\System Cache\\Cache_Data\\data_0",
+                  root + r"\\Default\\System Cache\\Cache_Data\\data_1",
+              ):
+                  rule = match_application_rule(path, _env())
+                  assert rule is not None
+                  assert rule.rule_id == "opera-system-cache"
+                  assert rule.owner is DecisionOwner.KEEP
+
+              unknown = match_application_rule(root + r"\\Default\\mystery.db", _env())
+          ''',
+              "Opera local cache expectations",
+          )
+          test = replace_once(
+              test,
+              '''    for cache in (code_cache, http_cache, system_cache):
+                  item = by_path[os.path.normcase(str(cache))]
+                  assert item.category is CleanupCategory.BROWSER_CACHE
+                  assert item.policy is CleanupPolicy.VENDOR_MANAGED
+                  assert item.delete_root_itself
+
+              assert by_path[os.path.normcase(str(roaming_root))].policy is CleanupPolicy.REPORT_ONLY
+          ''',
+              '''    for cache in (code_cache, http_cache):
+                  item = by_path[os.path.normcase(str(cache))]
+                  assert item.category is CleanupCategory.BROWSER_CACHE
+                  assert item.policy is CleanupPolicy.VENDOR_MANAGED
+                  assert item.delete_root_itself
+
+              assert os.path.normcase(str(system_cache)) not in by_path
+              assert whole_tree_application_rule(system_cache, env) is None
+              assert by_path[os.path.normcase(str(roaming_root))].policy is CleanupPolicy.REPORT_ONLY
+          ''',
+              "Opera catalog expectations",
+          )
+          test += '''\n\ndef test_opera_system_cache_age_size_and_idle_process_do_not_create_delete_authority() -> None:\n    root = r"C:\\Users\\alice\\AppData\\Local\\Opera Software\\Opera Stable"\n    path = root + r"\\Default\\System Cache\\Cache_Data\\data_0"\n    decision = evaluate_application_path(\n        path,\n        logical_size=32 * 1024**3,\n        last_used=_NOW - timedelta(days=3650),\n        now=_NOW,\n        process_running=False,\n        environment=_env(),\n    )\n    assert decision is not None\n    assert decision.rule.rule_id == "opera-system-cache"\n    assert decision.action is PolicyAction.KEEP_PROTECTED\n    assert whole_tree_application_rule(root + r"\\Default\\System Cache", _env()) is None\n'''
+          test_path.write_text(test, encoding="utf-8")
+
+          authority_path = Path("tests/test_opera_rule_authority.py")
+          authority = authority_path.read_text(encoding="utf-8")
+          authority += '''\n\ndef test_learned_verdicts_cannot_restore_opera_system_cache_raw_deletion(\n    tmp_path: Path,\n    monkeypatch: pytest.MonkeyPatch,\n) -> None:\n    _environment(tmp_path, monkeypatch)\n    system_cache = (\n        r"C:\\Users\\person\\AppData\\Local\\Opera Software\\Opera Stable"\n        r"\\Default\\System Cache\\Cache_Data\\data_0"\n    )\n    baseline = load_rules()\n    ai_before = baseline.ai_rule_count\n    ai_updated = add_ai_verdicts(\n        baseline,\n        [(system_cache, RuleDecision.DELETE, "old regenerable system cache")],\n    )\n    assert ai_updated.decision_for(system_cache) is None\n    assert ai_updated.ai_rule_count == ai_before\n\n    user_updated = add_user_verdicts(\n        baseline,\n        [(system_cache, RuleDecision.DELETE, "用户要求删除 Opera System Cache")],\n    )\n    assert user_updated.decision_for(system_cache) is None\n'''
+          authority_path.write_text(authority, encoding="utf-8")
+
+          audit = r'''# Opera System Cache authority audit
+
+Audited: 2026-08-20
+
+## Product conclusion
+
+DevClean's generic age/size-driven raw deletion authority for Opera's `System Cache` directory is removed.
+
+Current lane:
+
+- Opera `System Cache`: **REPORT_ONLY / browser-managed**;
+- the path remains semantically identifiable for explanation;
+- age, size and process-idle state do not make it a generic delete candidate;
+- the directory is no longer a whole-tree DevClean cleanup root;
+- existing separately audited Chromium-derived Opera HTTP/code/GPU/shader/script-cache rules are unchanged;
+- an explicitly dedicated `DEVCLEAN_OPERA_DISK_CACHE_DIR` remains a separate exact cache-root contract and is not changed by this audit.
+
+The correction is narrow. `System Cache` looks cache-like and Opera support material treats it as regenerable troubleshooting storage, but that does not establish the former DevClean policy of `14 days + 8 MiB -> raw whole-tree deletion`.
+
+## Current vendor evidence
+
+Opera's current public Help documentation describes clearing **cached images and files** through Opera's own browsing-data UI. It explains that the cache stores temporary website/application data and that clearing it can release disk space.
+
+Primary current public documentation:
+
+- `https://help.opera.com/?p=private.html`
+
+The documentation does not define an on-disk `System Cache` object contract, a fourteen-day expiration rule, or a supported filesystem-level whole-tree deletion API for that directory.
+
+Opera community troubleshooting posts do describe closing Opera and manually deleting `Cache` / `System Cache`, and some advice is intentionally broader, such as deleting folders with `cache` in their name. That is useful evidence that the data can be regenerated in troubleshooting scenarios. It is not a stable machine-readable lifecycle suitable for an unattended cleaner:
+
+- it is manual support guidance rather than a bounded maintenance API;
+- it assumes a human has identified the correct profile/cache path;
+- it does not define the former fourteen-day threshold;
+- broader community advice can intentionally trade retained browser acceleration state for troubleshooting reset;
+- it does not supply a fresh object manifest or concurrency/postcondition contract.
+
+DevClean therefore uses the vendor evidence for **classification**, not for inventing destructive authority.
+
+## Why the former rule was too broad
+
+The former `_OPERA_SYSTEM_CACHE_RULE` granted `DecisionOwner.TOOL` when a matching `System Cache` subtree was at least 14 days old and at least 8 MiB. It also set `allow_whole_tree=True`.
+
+That policy was independently invented by DevClean. The current public vendor material does not establish either threshold, and it does not state that every environment-derived Opera edition/profile `System Cache` path is an interchangeable whole-tree cleanup object.
+
+The rule also bypassed Opera's own browsing-data lifecycle. Even where cache files are regenerable, vendor-managed cache eviction and a user-initiated browser cache clear are not equivalent to a generic filesystem tree deletion chosen from mtime and logical size.
+
+Under DevClean's current execution standard, **regenerable is necessary evidence but not sufficient authority**.
+
+## Scope separation retained
+
+This audit does not collapse all Opera cache semantics into REPORT_ONLY.
+
+DevClean already has Chromium-derived rules for specific browser-generated cache classes. Those rules remain separate and are not reclassified merely because the Opera-specific `System Cache` rule was under-specified.
+
+Likewise, an explicit dedicated disk-cache root supplied through DevClean's dedicated override remains a distinct boundary. The change is only that the additional Opera-specific `System Cache` folder no longer gains raw whole-tree authority from its name plus age/size.
+
+Profile history, sessions, login state, local storage and recovery copies remain protected under their existing rules.
+
+## No learned-rule bypass
+
+Application semantics outrank generic learned filename/path verdicts.
+
+After this correction, AI or user learned verdicts cannot manufacture a generic delete rule under Opera `System Cache`. Otherwise a path protected because its lifecycle is insufficiently bounded could immediately regain the same raw authority through a lower-confidence heuristic layer.
+
+Regression tests keep the existing positive Opera HTTP-cache learned behavior separate from this protected Opera-specific directory.
+
+## Revisit trigger
+
+A future positive Opera `System Cache` lane should not restore the former fixed age/size rule. Reconsider only if Opera exposes a sufficiently exact source/vendor contract, for example:
+
+1. an official API/CLI or exact browser maintenance operation that targets the reviewed cache class without also clearing cookies, history, passwords, site state or unrelated profiles;
+2. a source-backed effective path/object model that binds the exact Opera edition/profile and cache root without guessing from directory names;
+3. a complete mutation scope that remains inside that reviewed cache class;
+4. browser/process/concurrency protection and fresh revalidation immediately before mutation;
+5. a postcondition proving the reviewed cache operation completed without widening into persistent profile state;
+6. logical reclaim reporting that does not promise identical physical free-space recovery.
+
+Until then, `System Cache` is visible and explainable but non-executable.
+
+## Validation
+
+This correction removes Opera `System Cache` from audited generic tool roots, keeps its classification as protected/browser-managed state, and adds regression coverage that extreme age/size, browser-idle state, AI verdicts and user verdicts cannot restore raw deletion authority.
+
+Normal final-head gate remains mandatory: lock/dependency checks, Ruff, strict mypy, full pytest/current workflow, Windows EXE artifact and CodeQL must all be green before merge.
+'''
+          Path("docs/opera-system-cache-authority-audit.md").write_text(audit, encoding="utf-8")
+
+          status_path = Path("docs/storage-audit-status.md")
+          status = status_path.read_text(encoding="utf-8")
+          status = replace_once(
+              status,
+              '''| Vivaldi Crashpad reports | REPORT_ONLY diagnostic evidence; no seven-day/whole-tree raw deletion, while the owning Crashpad report database retains lifecycle authority |\n| pnpm store | vendor garbage collection rather than whole-store deletion |''',
+              '''| Vivaldi Crashpad reports | REPORT_ONLY diagnostic evidence; no seven-day/whole-tree raw deletion, while the owning Crashpad report database retains lifecycle authority |\n| Opera System Cache | REPORT_ONLY/browser-managed; no generic 14-day/8-MiB or whole-tree raw deletion authority |\n| pnpm store | vendor garbage collection rather than whole-store deletion |''',
+              "storage completed table",
+          )
+          status = replace_once(
+              status,
+              '''| Vivaldi Crashpad reports | generic raw authority removed; Vivaldi documents reports as crash/bug-report evidence and current Crashpad owns report-database pruning rather than a seven-day whole-tree filesystem lifecycle | exact Vivaldi/Crashpad vendor lifecycle/API or a dedicated exact-report USER_REVIEW lane with database identity, concurrency and fresh revalidation proof |\n| Cargo `build.build-dir` | intermediate state but effective-path discovery insufficient | stable metadata/config query or narrow vendor clean action |''',
+              '''| Vivaldi Crashpad reports | generic raw authority removed; Vivaldi documents reports as crash/bug-report evidence and current Crashpad owns report-database pruning rather than a seven-day whole-tree filesystem lifecycle | exact Vivaldi/Crashpad vendor lifecycle/API or a dedicated exact-report USER_REVIEW lane with database identity, concurrency and fresh revalidation proof |\n| Opera System Cache | generic raw authority removed; current Opera Help supports browser cache clearing but does not define the former 14-day raw `System Cache` filesystem lifecycle, while community troubleshooting deletion is not a bounded cleaner contract | exact Opera API/source-backed cache object lifecycle or safely scoped browser cache-clear operation with exact profile/root binding and fresh revalidation |\n| Cargo `build.build-dir` | intermediate state but effective-path discovery insufficient | stable metadata/config query or narrow vendor clean action |''',
+              "storage non-executable table",
+          )
+          status = replace_once(
+              status,
+              '''The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, exact Hugging Face Hub object maintenance, PyTorch Hub read-only audit, npm vendor maintenance, Cypress binary-cache lifecycle, Yarn correction, Bun cache-authority correction, Gradle User Home cache-authority correction, Brave Update storage-authority correction, and Vivaldi Crashpad authority correction are substantially closed.''',
+              '''The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, exact Hugging Face Hub object maintenance, PyTorch Hub read-only audit, npm vendor maintenance, Cypress binary-cache lifecycle, Yarn correction, Bun cache-authority correction, Gradle User Home cache-authority correction, Brave Update storage-authority correction, Vivaldi Crashpad authority correction, and Opera System Cache authority correction are substantially closed.''',
+              "storage queue intro",
+          )
+          status = replace_once(
+              status,
+              '''while PyTorch Hub, Yarn, Bun, Gradle User Home, Brave Update and Vivaldi Crashpad are explicitly protected where the current generic lane cannot reproduce the bounded vendor lifecycle.''',
+              '''while PyTorch Hub, Yarn, Bun, Gradle User Home, Brave Update, Vivaldi Crashpad and Opera System Cache are explicitly protected where the current generic lane cannot reproduce the bounded vendor lifecycle.''',
+              "storage queue application bullet",
+          )
+          status_path.write_text(status, encoding="utf-8")
+          '@ | uv run --frozen python -
+      - name: Format and validate full current workflow
+        shell: pwsh
+        run: |
+          uv lock --check
+          uv sync --frozen
+          uv pip check
+          uv run --frozen ruff check --fix src/devclean/core/opera_cleanup.py tests/test_opera_cleanup.py tests/test_opera_rule_authority.py
+          uv run --frozen ruff format src/devclean/core/opera_cleanup.py tests/test_opera_cleanup.py tests/test_opera_rule_authority.py
+          uv run --frozen ruff check src scripts tests
+          uv run --frozen mypy src scripts tests
+          uv run --frozen pytest -q
+      - name: Commit correction and remove temporary workflow
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/patch-opera-system-cache-temp.yml
+          git add src/devclean/core/opera_cleanup.py tests/test_opera_cleanup.py tests/test_opera_rule_authority.py docs/opera-system-cache-authority-audit.md docs/storage-audit-status.md
+          git commit -m "Remove broad Opera System Cache deletion authority"
+          git push origin HEAD:agent/opera-system-cache-authority-audit-2026-08
