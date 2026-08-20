@@ -28,6 +28,9 @@ from devclean.ui.git_repository_maintenance_dialog import (
     open_git_repository_maintenance_dialog,
 )
 from devclean.ui.go_maintenance_dialog import open_go_maintenance_dialog
+from devclean.ui.huggingface_hub_maintenance_dialog import (
+    open_huggingface_hub_maintenance_dialog,
+)
 from devclean.ui.jetbrains_leftover_maintenance_dialog import (
     open_jetbrains_leftover_maintenance_dialog,
 )
@@ -131,6 +134,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Git / Git LFS 存储维护…",
         command=lambda: open_git_repository_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="Hugging Face Hub 缓存维护…",
+        command=lambda: open_huggingface_hub_maintenance_dialog(root),
     )
     tools.add_command(
         label="Ollama 本机模型维护…",

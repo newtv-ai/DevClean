@@ -53,6 +53,7 @@ A clean CI run on a stale stacked base is not enough. Positive audit and impleme
 | Conan 2 cache | `conan cache clean`; source/build/download/temp cleanup without deleting recipe/package artifacts/config/remotes |
 | Git object storage | `git maintenance run --auto` behind exact repository/object-store/alternate-storage checks |
 | Git LFS | USER_REVIEW vendor prune with remote verification; no force |
+| Hugging Face Hub cache | exact cached repo USER_REVIEW; globally-unique full revision USER_REVIEW; vendor prune USER_REVIEW after exact dry-run; Xet/assets/HF_HOME protected |
 | Unreal Engine DDC | project/vendor-aware DDC maintenance; no raw recursive Zen/custom DDC deletion |
 | Bazel workspace output | exact workspace/output-base discovery; ordinary clean deterministic, expunge USER_REVIEW |
 | Cargo workspace target | exact `cargo metadata` target discovery; full vendor clean USER_REVIEW |
@@ -148,6 +149,7 @@ A lower-level backend never inherits broader authority than the higher-level gen
 | Maven/Gradle/CMake/.NET/Ninja/Make/Automake/SCons generic project clean | destructive scope not completely provable without project-defined execution/expansion | stable complete non-executing destructive manifest/model |
 | Cargo `build.build-dir` | intermediate state but effective-path discovery insufficient | stable metadata/config query or narrow vendor clean action |
 | Ollama raw model store | user-selected content with shared blobs/manifests | exact per-model vendor action only |
+| Hugging Face Xet/assets/HF_HOME/token | Xet/assets are separate vendor/application caches while HF_HOME mixes authentication and cache state; raw deletion protected | dedicated exact vendor lifecycle/API per cache class; never whole-HF_HOME deletion |
 | Maven local repository | remote cache mixed with unique local artifacts | vendor semantics separating safely reclaimable remote content |
 | Cargo global registry/git | shared vendor-managed download/source state | stable vendor prune/GC interface |
 | WSL distro VHD/rootfs | persistent Linux filesystem/user state | no generic delete lane |
@@ -173,12 +175,12 @@ A lower-level backend never inherits broader authority than the higher-level gen
 
 ## Current high-value queue
 
-The broad Windows diagnostics, Podman/Android package work, Docker unification, and first Android project-reference explanation pass are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
+The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, and exact Hugging Face Hub object maintenance are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
 
 1. **High-impact `%USERPROFILE%\.cache` applications**
-   - audit known applications individually; never restore generic parent delete authority.
+   - continue auditing known applications individually; Hugging Face Hub is now object-aware, but generic `.cache` parent deletion remains prohibited.
 2. **Additional local-model products**
-   - models remain user-selected content; exact vendor model actions only.
+   - models remain user-selected content; exact vendor model actions only, with offline/rebuild value treated as USER_REVIEW.
 3. **Narrow application-specific Windows diagnostics**
    - revisit only when Microsoft or the owning application exposes an exact lifecycle/API; broad `Logs`, `Prefetch`, `CbsTemp`, WER or servicing/setup roots remain protected.
 4. **Android project explanation follow-ups only when source-backed**
