@@ -96,7 +96,7 @@ A clean CI run on a stale stacked base is not enough. Positive audit and impleme
 
 Docker mutation first proves the effective context/host targets the local machine. Remote SSH/TCP/ambiguous contexts are non-executable and DevClean never switches context automatically. Build cache, images, containers and volumes remain separate semantic lanes; there is no generic `docker system prune` button.
 
-The unified Docker surface resolves the user's effective target once for review, then pins subsequent reads and mutations to the exact reviewed daemon endpoint through `DOCKER_HOST` while masking inherited `DOCKER_CONTEXT`. A later change to the user's default context therefore cannot redirect an already-reviewed action. Context name/source remain explanatory metadata; mutation authority is bound to the exact local endpoint.
+The unified Docker surface resolves the user's effective target once for review, then pins subsequent reads and mutations to the exact reviewed daemon endpoint through `DOCKER_HOST` while masking inherited `DOCKER_CONTEXT`. A later change to the user's default context therefore cannot redirect an already-reviewed action. Context name/source remain explanatory UI metadata; mutation authority is bound to the exact local endpoint.
 
 Docker `system df`, image size and BuildKit cache accounting remain logical vendor evidence. Shared layers and Docker Desktop's VM/WSL storage prevent DevClean from promising equal immediate Windows physical free-space recovery.
 
@@ -155,6 +155,7 @@ A lower-level backend never inherits broader authority than the higher-level gen
 | Hugging Face Xet/assets/HF_HOME/token | Xet/assets are separate vendor/application caches while HF_HOME mixes authentication and cache state; raw deletion protected | dedicated exact vendor lifecycle/API per cache class; never whole-HF_HOME deletion |
 | PyTorch Hub repo/checkpoint/temp objects | current source has no public complete cache inventory/remove API; repo directory encoding is not reliably reversible; checkpoints lack durable URL/provenance metadata; trusted_list is persistent trust state | public exact inventory + remove/prune API, or durable source/hash provenance with equally strong mutation scope |
 | Cypress whole-cache clear / unknown future root objects | audited source clears the entire cache root while prune treats `bundles` and `sessions` as separate non-binary entries; unknown future root shapes fail closed | source contract that separates binary clear from neighboring state, or a later audit explicitly covering all whole-root side effects |
+| Yarn Classic / modern machine cache | generic raw whole-tree authority removed: Classic vendor clean widens from reported version dir to base root; modern clean is project/config-sensitive and mirror cleanup triggers plugin hooks | dedicated generation-specific exact lifecycle with bounded effective root, no project/plugin widening, fresh revalidation and USER_REVIEW |
 | Maven local repository | remote cache mixed with unique local artifacts | vendor semantics separating safely reclaimable remote content |
 | Cargo global registry/git | shared vendor-managed download/source state | stable vendor prune/GC interface |
 | WSL distro VHD/rootfs | persistent Linux filesystem/user state | no generic delete lane |
@@ -180,14 +181,14 @@ A lower-level backend never inherits broader authority than the higher-level gen
 
 ## Current high-value queue
 
-The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, exact Hugging Face Hub object maintenance, PyTorch Hub read-only audit, npm vendor maintenance, and Cypress binary-cache lifecycle are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
+The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, exact Hugging Face Hub object maintenance, PyTorch Hub read-only audit, npm vendor maintenance, Cypress binary-cache lifecycle, and Yarn cache-authority correction are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
 
 1. **High-impact application caches**
-   - continue auditing known applications individually; npm/Cypress/Hugging Face are now vendor-aware and PyTorch Hub is explicitly report-only, but generic `.cache` or product-parent deletion remains prohibited.
+   - continue auditing known applications individually; npm/Cypress/Hugging Face are vendor-aware, while PyTorch Hub and Yarn are explicitly protected where a bounded lifecycle is unavailable.
 2. **Additional local-model products**
    - models remain user-selected content; exact vendor model actions only, with offline/rebuild value treated as USER_REVIEW.
 3. **Package/runtime managers with existing broad cache rules**
-   - re-audit Yarn/Bun and similar sources against current vendor commands before retaining whole-tree TOOL authority; project-local/offline mirrors remain user/persistent state.
+   - audit Bun next against current `bun pm cache` / `bun pm cache rm` behavior before retaining whole-tree TOOL authority; project-local/runtime state remains separate.
 4. **Narrow application-specific Windows diagnostics**
    - revisit only when Microsoft or the owning application exposes an exact lifecycle/API; broad `Logs`, `Prefetch`, `CbsTemp`, WER or servicing/setup roots remain protected.
 
