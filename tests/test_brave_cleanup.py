@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PureWindowsPath
 
 import pytest
 
 from devclean.core.application_cleanup import (
     DecisionOwner,
+    PolicyAction,
     application_scan_roots,
     match_application_rule,
     process_guard_allows,
     whole_tree_application_rule,
 )
-from devclean.core.brave_cleanup import brave_roots
+from devclean.core.brave_cleanup import brave_roots, evaluate_brave_path
 from devclean.core.cleanup_catalog import (
     CleanupCategory,
     CleanupPolicy,
@@ -91,7 +93,7 @@ def test_brave_chromium_cache_and_profile_boundaries() -> None:
     assert history_rule.owner is DecisionOwner.KEEP
 
 
-def test_brave_updater_install_staging_is_tool_but_updater_versions_are_keep() -> None:
+def test_brave_updater_storage_is_protected_from_generic_raw_deletion() -> None:
     base = r"C:\Program Files (x86)\BraveSoftware\Update"
     staged = base + r"\Install\{A}\brave_installer-delta-x64.exe"
     current = base + r"\1.3.361.143\BraveUpdate.exe"
@@ -103,17 +105,47 @@ def test_brave_updater_install_staging_is_tool_but_updater_versions_are_keep() -
 
     assert staged_rule is not None
     assert staged_rule.rule_id == "brave-updater-install-staging"
-    assert staged_rule.owner is DecisionOwner.TOOL
+    assert staged_rule.owner is DecisionOwner.KEEP
     assert current_rule is not None
     assert current_rule.rule_id == "brave-updater-state"
     assert current_rule.owner is DecisionOwner.KEEP
     assert log_rule is not None
     assert log_rule.rule_id == "brave-update-log"
-    assert log_rule.owner is DecisionOwner.TOOL
+    assert log_rule.owner is DecisionOwner.KEEP
 
-    assert whole_tree_application_rule(base + r"\Install", _env()) is not None
+    assert whole_tree_application_rule(base + r"\Install", _env()) is None
     assert whole_tree_application_rule(base, _env()) is None
     assert whole_tree_application_rule(base + r"\1.3.361.143", _env()) is None
+
+
+def test_brave_updater_age_and_size_do_not_restore_tool_authority() -> None:
+    now = datetime(2026, 8, 20, tzinfo=UTC)
+    old = now - timedelta(days=3650)
+    base = r"C:\Program Files (x86)\BraveSoftware\Update"
+    staged = base + r"\Install\{A}\brave_installer.exe"
+    log = r"C:\ProgramData\BraveSoftware\Update\Log\BraveUpdate.log"
+
+    staged_decision = evaluate_brave_path(
+        staged,
+        logical_size=8 * 1024**3,
+        last_used=old,
+        now=now,
+        process_running=False,
+        environment=_env(),
+    )
+    log_decision = evaluate_brave_path(
+        log,
+        logical_size=8 * 1024**3,
+        last_used=old,
+        now=now,
+        process_running=False,
+        environment=_env(),
+    )
+
+    assert staged_decision is not None
+    assert staged_decision.action is PolicyAction.KEEP_PROTECTED
+    assert log_decision is not None
+    assert log_decision.action is PolicyAction.KEEP_PROTECTED
 
 
 def test_brave_whole_tree_roots_are_catalogued_precisely(tmp_path: Path) -> None:
@@ -139,23 +171,20 @@ def test_brave_whole_tree_roots_are_catalogued_precisely(tmp_path: Path) -> None
     by_path = {os.path.normcase(str(root.path)): root for root in roots}
 
     cache_root = by_path[os.path.normcase(str(cache))]
-    install_root = by_path[os.path.normcase(str(install))]
     data_root = by_path[os.path.normcase(str(data))]
     updater_root = by_path[os.path.normcase(str(updater))]
 
     assert cache_root.category is CleanupCategory.BROWSER_CACHE
     assert cache_root.policy is CleanupPolicy.VENDOR_MANAGED
     assert cache_root.delete_root_itself
-    assert install_root.category is CleanupCategory.INSTALLERS_DOWNLOADS
-    assert install_root.policy is CleanupPolicy.VENDOR_MANAGED
-    assert install_root.delete_root_itself
+    assert os.path.normcase(str(install)) not in by_path
     assert data_root.policy is CleanupPolicy.REPORT_ONLY
     assert not data_root.delete_root_itself
     assert updater_root.policy is CleanupPolicy.REPORT_ONLY
     assert not updater_root.delete_root_itself
 
 
-def test_brave_process_guard_blocks_cache_and_staging_while_running(
+def test_brave_process_guard_blocks_browser_cache_while_running(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -166,12 +195,7 @@ def test_brave_process_guard_blocks_cache_and_staging_while_running(
         r"C:\Users\alice\AppData\Local\BraveSoftware\Brave-Browser\User Data"
         r"\Default\Cache\Cache_Data\f_001"
     )
-    staged = (
-        r"C:\Program Files (x86)\BraveSoftware\Update"
-        r"\Install\{A}\brave_installer.exe"
-    )
     assert not process_guard_allows(cache, _env())
-    assert not process_guard_allows(staged, _env())
 
 
 def test_brave_scan_roots_do_not_grant_parent_deletion_authority() -> None:

@@ -49,6 +49,7 @@ A clean CI run on a stale stacked base is not enough. Positive audit and impleme
 | npm cache | exact configured root; `npm cache verify` deterministic vendor GC, whole package cache USER_REVIEW, exact npx entry USER_REVIEW, TUF protected |
 | Cypress binary cache | exact selected CLI + vendor-reported root; `cypress cache prune` USER_REVIEW with future-root fail-closed guard; whole `cache clear` not exposed |
 | Gradle User Home caches/logs | REPORT_ONLY vendor-managed configurable lifecycle; version caches, build cache and daemon logs have no raw age/size or whole-tree delete authority |
+| Brave Update storage | REPORT_ONLY vendor-managed updater lifecycle; install working tree and diagnostic log have no generic age/size or whole-tree delete authority |
 | pnpm store | vendor garbage collection rather than whole-store deletion |
 | uv cache | vendor garbage collection |
 | Go caches | vendor build-cache deterministic lane and USER_REVIEW module-cache lane |
@@ -152,6 +153,7 @@ A lower-level backend never inherits broader authority than the higher-level gen
 | Bazel `--disk_cache` | shared/configurable vendor-managed | stable effective-path + installed GC/control interface |
 | Maven/Gradle/CMake/.NET/Ninja/Make/Automake/SCons generic project clean | destructive scope not completely provable without project-defined execution/expansion | stable complete non-executing destructive manifest/model |
 | Gradle User Home version/build caches and daemon logs | generic raw authority removed; Gradle GC uses effective configurable retention, usage markers/version semantics and executable init-script policy | exact vendor operation or complete non-executing effective cleanup plan that preserves configured lifecycle semantics |
+| Brave Update install/log storage | generic raw authority removed; Omaha owns exact install-working-directory clearing, package-cache GC and log size lifecycle while DevClean's old rule used broader environment roots plus independent age/size thresholds | dedicated source-bound contents-only install-working-directory lane with exact Windows path identity, updater concurrency proof and fresh revalidation |
 | Cargo `build.build-dir` | intermediate state but effective-path discovery insufficient | stable metadata/config query or narrow vendor clean action |
 | Ollama raw model store | user-selected content with shared blobs/manifests | exact per-model vendor action only |
 | Hugging Face Xet/assets/HF_HOME/token | Xet/assets are separate vendor/application caches while HF_HOME mixes authentication and cache state; raw deletion protected | dedicated exact vendor lifecycle/API per cache class; never whole-HF_HOME deletion |
@@ -184,10 +186,10 @@ A lower-level backend never inherits broader authority than the higher-level gen
 
 ## Current high-value queue
 
-The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, exact Hugging Face Hub object maintenance, PyTorch Hub read-only audit, npm vendor maintenance, Cypress binary-cache lifecycle, Yarn correction, Bun cache-authority correction, and Gradle User Home cache-authority correction are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
+The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, exact Hugging Face Hub object maintenance, PyTorch Hub read-only audit, npm vendor maintenance, Cypress binary-cache lifecycle, Yarn correction, Bun cache-authority correction, Gradle User Home cache-authority correction, and Brave Update storage-authority correction are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
 
 1. **High-impact application caches**
-   - continue auditing known applications individually; npm/Cypress/Hugging Face are vendor-aware, while PyTorch Hub, Yarn, Bun and Gradle User Home are explicitly protected where a bounded lifecycle is unavailable.
+   - continue auditing known applications individually; npm/Cypress/Hugging Face are vendor-aware, while PyTorch Hub, Yarn, Bun, Gradle User Home and Brave Update are explicitly protected where the current generic lane cannot reproduce the bounded vendor lifecycle.
 2. **Additional local-model products**
    - models remain user-selected content; exact vendor model actions only, with offline/rebuild value treated as USER_REVIEW.
 3. **Remaining broad TOOL/cache rules**

@@ -3,7 +3,9 @@
 Brave inherits Chromium's cache/profile layout while adding Brave-specific
 channels and an Omaha-based updater. Chromium cache semantics are cloned from
 the already-audited Chrome profile so safety changes stay aligned. Brave Update
-staging is regenerable, but updater binaries/version state remain protected.
+storage is source-classified for explanation, but its installer working tree,
+diagnostic log and updater state do not inherit generic age/size deletion
+authority.
 """
 
 from __future__ import annotations
@@ -29,8 +31,6 @@ from devclean.core._application_cleanup_impl import (
     effective_idle_days,
 )
 from devclean.core.chrome_cleanup import CHROME_RULES
-
-_MIB = 1024**2
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,14 +77,10 @@ _BRAVE_UPDATER_RULES: tuple[ApplicationCleanupRule, ...] = (
         root_key="BRAVE_UPDATER",
         relative_pattern="Install",
         match_kind=MatchKind.PREFIX,
-        owner=DecisionOwner.TOOL,
+        owner=DecisionOwner.KEEP,
         last_use=LastUseStrategy.FILE_MTIME,
         rebuild_cost=RebuildCost.MEDIUM,
-        idle_days=7,
-        min_reclaim_bytes=16 * _MIB,
-        requires_process_closed=True,
-        allow_whole_tree=True,
-        label="Brave Update downloaded installer staging",
+        label="Brave Update install working directory (vendor-managed)",
     ),
     ApplicationCleanupRule(
         rule_id="brave-update-log",
@@ -92,14 +88,10 @@ _BRAVE_UPDATER_RULES: tuple[ApplicationCleanupRule, ...] = (
         root_key="BRAVE_UPDATER",
         relative_pattern=r"Log\BraveUpdate.log",
         match_kind=MatchKind.EXACT,
-        owner=DecisionOwner.TOOL,
+        owner=DecisionOwner.KEEP,
         last_use=LastUseStrategy.FILE_MTIME,
         rebuild_cost=RebuildCost.NONE,
-        idle_days=7,
-        min_reclaim_bytes=256 * 1024,
-        requires_process_closed=True,
-        size_sensitive_idle=False,
-        label="Brave Update diagnostic log",
+        label="Brave Update diagnostic log (vendor-managed size lifecycle)",
     ),
     ApplicationCleanupRule(
         rule_id="brave-updater-state",
@@ -110,7 +102,7 @@ _BRAVE_UPDATER_RULES: tuple[ApplicationCleanupRule, ...] = (
         owner=DecisionOwner.KEEP,
         last_use=LastUseStrategy.FILE_MTIME,
         rebuild_cost=RebuildCost.HIGH,
-        label="Brave Update binaries, active versions and persistent updater state",
+        label="Brave Update binaries, package/offline state and updater storage",
     ),
 )
 
