@@ -18,6 +18,10 @@ DevClean therefore treats age and mtime as benefit/observation evidence only. Th
 - separately source-audited application rules still run before generic root policy and are unchanged;
 - exact learned/common **file** knowledge may still supplement a generic temp-file uncertainty when it passes the existing file-only authority boundary, but no learned rule gains directory authority.
 
+## Authority invariant
+
+A timestamp can make an already source-proven cleanup object more or less worthwhile, but a timestamp alone cannot move an object from REPORT_ONLY into an executable lane. This remains true for legacy sidecars and for explicit current-user temp-root observations.
+
 ## Why not change 1 day to 7/30 days?
 
 A larger number would still confuse age with lifecycle. A stale mtime does not prove that a file is closed, unused, reconstructable, unreferenced, or outside an application's recovery/rollback state. Where Windows or an application exposes an exact maintenance operation, DevClean should use that source-owned lane instead of inventing a raw-age contract.
