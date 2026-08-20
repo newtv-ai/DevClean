@@ -1,0 +1,51 @@
+name: Temporary generic review routing patch
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: agent/generic-review-routing-reaudit-2026-08
+          persist-credentials: true
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.6"
+          python-version: "3.13"
+      - name: Sync locked environment
+        run: uv sync --frozen
+      - name: Apply routing correction
+        run: uv run --frozen python scripts/temporary_generic_review_routing_patch.py
+      - name: Format and validate
+        shell: pwsh
+        run: |
+          uv lock --check
+          uv sync --frozen
+          uv pip check
+          uv run --frozen ruff check --fix src/devclean/core/triage.py src/devclean/ui/app.py tests/test_builtin_root_authority.py tests/test_generic_review_routing.py scripts/temporary_generic_review_routing_patch.py
+          uv run --frozen ruff format src/devclean/core/triage.py src/devclean/ui/app.py tests/test_builtin_root_authority.py tests/test_generic_review_routing.py scripts/temporary_generic_review_routing_patch.py
+          uv run --frozen ruff check src scripts tests
+          uv run --frozen python -m mypy
+          uv run --frozen pytest
+      - name: Commit correction and remove temporary files
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/temporary-generic-review-routing-patch.yml scripts/temporary_generic_review_routing_patch.py
+          git add README.md docs/generic-review-routing-reaudit.md docs/full-rule-reaudit-2026-08.md docs/storage-audit-status.md src/devclean/config/scan-rules.json src/devclean/config/delete-rules.json src/devclean/core/triage.py src/devclean/ui/app.py tests/test_builtin_root_authority.py tests/test_generic_review_routing.py
+          git commit -m "Protect generic ambiguity from user and AI deletion"
+          git push origin HEAD:agent/generic-review-routing-reaudit-2026-08
