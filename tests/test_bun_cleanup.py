@@ -169,7 +169,7 @@ def test_bun_has_no_generic_whole_tree_authority_and_catalog_is_report_only(
     assert not cache_item.delete_root_itself
 
 
-def test_bun_process_guard_is_independent_from_other_js_package_managers(
+def test_protected_bun_cache_never_passes_generic_process_guard(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -185,4 +185,4 @@ def test_bun_process_guard_is_independent_from_other_js_package_managers(
     monkeypatch.setattr(application_cleanup, "npm_process_running", lambda: True)
     monkeypatch.setattr(application_cleanup, "pnpm_process_running", lambda: True)
     monkeypatch.setattr(application_cleanup, "yarn_process_running", lambda: True)
-    assert application_cleanup.process_guard_allows(cache, env)
+    assert not application_cleanup.process_guard_allows(cache, env)
