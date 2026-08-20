@@ -156,6 +156,7 @@ A lower-level backend never inherits broader authority than the higher-level gen
 | PyTorch Hub repo/checkpoint/temp objects | current source has no public complete cache inventory/remove API; repo directory encoding is not reliably reversible; checkpoints lack durable URL/provenance metadata; trusted_list is persistent trust state | public exact inventory + remove/prune API, or durable source/hash provenance with equally strong mutation scope |
 | Cypress whole-cache clear / unknown future root objects | audited source clears the entire cache root while prune treats `bundles` and `sessions` as separate non-binary entries; unknown future root shapes fail closed | source contract that separates binary clear from neighboring state, or a later audit explicitly covering all whole-root side effects |
 | Yarn Classic / modern machine cache | generic raw whole-tree authority removed: Classic vendor clean widens from reported version dir to base root; modern clean is project/config-sensitive and mirror cleanup triggers plugin hooks | dedicated generation-specific exact lifecycle with bounded effective root, no project/plugin widening, fresh revalidation and USER_REVIEW |
+| Bun machine/global module cache | generic raw whole-tree authority removed: current vendor `pm cache rm` also clears Bunx temp state, and the cache may contain `globalStore` content backing project symlinks | dedicated exact USER_REVIEW vendor lane with one bound Bun CLI/root, pinned `BUN_INSTALL_CACHE_DIR`, Bunx side-effect review, reinstall warning and fresh revalidation |
 | Maven local repository | remote cache mixed with unique local artifacts | vendor semantics separating safely reclaimable remote content |
 | Cargo global registry/git | shared vendor-managed download/source state | stable vendor prune/GC interface |
 | WSL distro VHD/rootfs | persistent Linux filesystem/user state | no generic delete lane |
@@ -181,14 +182,14 @@ A lower-level backend never inherits broader authority than the higher-level gen
 
 ## Current high-value queue
 
-The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, exact Hugging Face Hub object maintenance, PyTorch Hub read-only audit, npm vendor maintenance, Cypress binary-cache lifecycle, and Yarn cache-authority correction are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
+The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, exact Hugging Face Hub object maintenance, PyTorch Hub read-only audit, npm vendor maintenance, Cypress binary-cache lifecycle, Yarn correction, and Bun cache-authority correction are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
 
 1. **High-impact application caches**
-   - continue auditing known applications individually; npm/Cypress/Hugging Face are vendor-aware, while PyTorch Hub and Yarn are explicitly protected where a bounded lifecycle is unavailable.
+   - continue auditing known applications individually; npm/Cypress/Hugging Face are vendor-aware, while PyTorch Hub, Yarn and Bun are explicitly protected where a bounded lifecycle is unavailable.
 2. **Additional local-model products**
    - models remain user-selected content; exact vendor model actions only, with offline/rebuild value treated as USER_REVIEW.
-3. **Package/runtime managers with existing broad cache rules**
-   - audit Bun next against current `bun pm cache` / `bun pm cache rm` behavior before retaining whole-tree TOOL authority; project-local/runtime state remains separate.
+3. **Remaining broad TOOL/cache rules**
+   - continue source-first re-audits of any existing rule that can still grant whole-tree or age/size-driven mutation; keep package-manager generations and project/offline state semantically separate.
 4. **Narrow application-specific Windows diagnostics**
    - revisit only when Microsoft or the owning application exposes an exact lifecycle/API; broad `Logs`, `Prefetch`, `CbsTemp`, WER or servicing/setup roots remain protected.
 

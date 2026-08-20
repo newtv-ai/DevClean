@@ -15,16 +15,11 @@ from devclean.core.application_cleanup import (
     match_application_rule,
     whole_tree_application_rule,
 )
-from devclean.core.bun_cleanup import bun_roots
-from devclean.core.cleanup_catalog import (
-    CleanupCategory,
-    CleanupPolicy,
-    discover_known_cleanup_roots,
-)
+from devclean.core.bun_cleanup import bun_audited_tool_roots, bun_roots
+from devclean.core.cleanup_catalog import CleanupPolicy, discover_known_cleanup_roots
 from devclean.core.user_rules import default_rules
 
 _NOW = datetime(2026, 8, 17, tzinfo=UTC)
-_MIB = 1024**2
 
 
 def _layout(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
@@ -55,14 +50,12 @@ def test_bun_default_home_and_global_cache_are_discovered(tmp_path: Path) -> Non
     assert PureWindowsPath(str(cache)) in scan
 
 
-def test_bun_exact_global_cache_is_tool_but_surrounding_home_is_protected(
-    tmp_path: Path,
-) -> None:
+def test_bun_exact_global_cache_and_surrounding_home_are_protected(tmp_path: Path) -> None:
     env, home, cache = _layout(tmp_path)
     cases = {
         cache / "@scope" / "pkg@1.0.0": (
             "bun-global-module-cache",
-            DecisionOwner.TOOL,
+            DecisionOwner.KEEP,
         ),
         home / "install" / "global" / "node_modules" / "typescript": (
             "bun-home-state",
@@ -80,7 +73,9 @@ def test_bun_exact_global_cache_is_tool_but_surrounding_home_is_protected(
         assert rule.owner is owner
 
 
-def test_bun_custom_cache_environment_is_source_backed(tmp_path: Path) -> None:
+def test_bun_custom_cache_environment_is_source_backed_but_not_delete_authority(
+    tmp_path: Path,
+) -> None:
     env, _, _ = _layout(tmp_path)
     custom = tmp_path / "cache-drive" / "bun-cache"
     custom.mkdir(parents=True)
@@ -92,7 +87,8 @@ def test_bun_custom_cache_environment_is_source_backed(tmp_path: Path) -> None:
     rule = match_application_rule(custom / "react@19.0.0", env)
     assert rule is not None
     assert rule.rule_id == "bun-global-module-cache"
-    assert whole_tree_application_rule(custom, env) is not None
+    assert rule.owner is DecisionOwner.KEEP
+    assert whole_tree_application_rule(custom, env) is None
 
 
 def test_bun_project_local_cache_and_metadata_are_protected(tmp_path: Path) -> None:
@@ -128,54 +124,35 @@ def test_bun_project_local_cache_and_metadata_are_protected(tmp_path: Path) -> N
     assert whole_tree_application_rule(project / ".bun" / "cache", env) is None
 
 
-def test_bun_global_cache_policy_is_conservative(tmp_path: Path) -> None:
+def test_bun_global_cache_never_becomes_age_or_size_delete_candidate(tmp_path: Path) -> None:
     env, _, cache = _layout(tmp_path)
 
-    recent = evaluate_application_path(
-        cache,
-        logical_size=2 * 1024**3,
-        last_used=_NOW - timedelta(days=10),
-        now=_NOW,
-        process_running=False,
-        environment=env,
-    )
-    stale = evaluate_application_path(
-        cache,
-        logical_size=2 * 1024**3,
-        last_used=_NOW - timedelta(days=45),
-        now=_NOW,
-        process_running=False,
-        environment=env,
-    )
-    small = evaluate_application_path(
-        cache,
-        logical_size=16 * _MIB,
-        last_used=_NOW - timedelta(days=365),
-        now=_NOW,
-        process_running=False,
-        environment=env,
-    )
-    running = evaluate_application_path(
-        cache,
-        logical_size=2 * 1024**3,
-        last_used=_NOW - timedelta(days=365),
-        now=_NOW,
-        process_running=True,
-        environment=env,
-    )
-
-    assert recent is not None
-    assert recent.effective_idle_days == 30
-    assert recent.action is PolicyAction.TOOL_KEEP_RECENT
-    assert stale is not None and stale.action is PolicyAction.TOOL_DELETE
-    assert small is not None and small.action is PolicyAction.TOOL_KEEP_LOW_BENEFIT
-    assert running is not None and running.action is PolicyAction.TOOL_KEEP_IN_USE
+    for logical_size, age_days, running in (
+        (2 * 1024**3, 10, False),
+        (2 * 1024**3, 3650, False),
+        (1, 3650, False),
+        (2 * 1024**3, 3650, True),
+    ):
+        decision = evaluate_application_path(
+            cache,
+            logical_size=logical_size,
+            last_used=_NOW - timedelta(days=age_days),
+            now=_NOW,
+            process_running=running,
+            environment=env,
+        )
+        assert decision is not None
+        assert decision.action is PolicyAction.KEEP_PROTECTED
+        assert decision.effective_idle_days is None
 
 
-def test_bun_whole_tree_authority_is_exact_and_catalogued(tmp_path: Path) -> None:
+def test_bun_has_no_generic_whole_tree_authority_and_catalog_is_report_only(
+    tmp_path: Path,
+) -> None:
     env, home, cache = _layout(tmp_path)
 
-    assert whole_tree_application_rule(cache, env) is not None
+    assert bun_audited_tool_roots(env) == ()
+    assert whole_tree_application_rule(cache, env) is None
     assert whole_tree_application_rule(home, env) is None
     assert whole_tree_application_rule(home / "install", env) is None
     assert whole_tree_application_rule(home / "install" / "global", env) is None
@@ -188,13 +165,11 @@ def test_bun_whole_tree_authority_is_exact_and_catalogued(tmp_path: Path) -> Non
 
     assert home_item.policy is CleanupPolicy.REPORT_ONLY
     assert not home_item.delete_root_itself
-    assert cache_item.category is CleanupCategory.BUN_CACHE
-    assert cache_item.policy is CleanupPolicy.VENDOR_MANAGED
-    assert cache_item.delete_root_itself
-    assert cache_item.application_rule is not None
+    assert cache_item.policy is CleanupPolicy.REPORT_ONLY
+    assert not cache_item.delete_root_itself
 
 
-def test_bun_process_guard_is_independent_from_other_js_package_managers(
+def test_protected_bun_cache_never_passes_generic_process_guard(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -210,4 +185,4 @@ def test_bun_process_guard_is_independent_from_other_js_package_managers(
     monkeypatch.setattr(application_cleanup, "npm_process_running", lambda: True)
     monkeypatch.setattr(application_cleanup, "pnpm_process_running", lambda: True)
     monkeypatch.setattr(application_cleanup, "yarn_process_running", lambda: True)
-    assert application_cleanup.process_guard_allows(cache, env)
+    assert not application_cleanup.process_guard_allows(cache, env)
