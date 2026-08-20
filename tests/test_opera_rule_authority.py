@@ -88,3 +88,28 @@ def test_ai_can_learn_opera_owned_local_cache_decision(
         [(cache_file, RuleDecision.DELETE, "regenerable Opera cache")],
     )
     assert updated.decision_for(cache_file) is RuleDecision.DELETE
+
+
+def test_learned_verdicts_cannot_restore_opera_system_cache_raw_deletion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _environment(tmp_path, monkeypatch)
+    system_cache = (
+        r"C:\Users\person\AppData\Local\Opera Software\Opera Stable"
+        r"\Default\System Cache\Cache_Data\data_0"
+    )
+    baseline = load_rules()
+    ai_before = baseline.ai_rule_count
+    ai_updated = add_ai_verdicts(
+        baseline,
+        [(system_cache, RuleDecision.DELETE, "old regenerable system cache")],
+    )
+    assert ai_updated.decision_for(system_cache) is None
+    assert ai_updated.ai_rule_count == ai_before
+
+    user_updated = add_user_verdicts(
+        baseline,
+        [(system_cache, RuleDecision.DELETE, "用户要求删除 Opera System Cache")],
+    )
+    assert user_updated.decision_for(system_cache) is None

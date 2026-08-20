@@ -63,9 +63,7 @@ def _clone_data_rule(rule: ApplicationCleanupRule) -> ApplicationCleanupRule:
 
 
 _OPERA_PROFILE_RULES: tuple[ApplicationCleanupRule, ...] = tuple(
-    _clone_profile_rule(rule)
-    for rule in CHROME_RULES
-    if rule.root_key == "CHROME_PROFILE"
+    _clone_profile_rule(rule) for rule in CHROME_RULES if rule.root_key == "CHROME_PROFILE"
 )
 _OPERA_DATA_RULES: tuple[ApplicationCleanupRule, ...] = tuple(
     _clone_data_rule(rule)
@@ -80,22 +78,20 @@ _OPERA_DISK_CACHE_RULE = replace(
     label="Opera explicitly dedicated disk cache",
 )
 
-# Opera-specific cache directory exposed in the vendor support community and in
-# current Opera GX cache layouts. It is cache-only and can be regenerated.
+# Opera support material identifies ``System Cache`` as cache-like storage, but
+# current public Opera documentation does not define a filesystem-level retention or
+# whole-tree cleanup contract for it. Keep the path recognizable for explanation while
+# leaving mutation to Opera/browser lifecycle rather than an invented age/size rule.
 _OPERA_SYSTEM_CACHE_RULE = ApplicationCleanupRule(
     rule_id="opera-system-cache",
     app_id="opera",
     root_key="OPERA_PROFILE",
     relative_pattern="System Cache",
     match_kind=MatchKind.PREFIX,
-    owner=DecisionOwner.TOOL,
+    owner=DecisionOwner.KEEP,
     last_use=LastUseStrategy.FILE_MTIME,
     rebuild_cost=RebuildCost.LOW,
-    idle_days=14,
-    min_reclaim_bytes=8 * _MIB,
-    requires_process_closed=True,
-    allow_whole_tree=True,
-    label="Opera Chromium system cache",
+    label="Opera System Cache (browser-managed)",
 )
 
 # Profiles manually renamed during Opera update/recovery incidents can be the
@@ -189,11 +185,7 @@ def opera_scan_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[PureWindowsPath, ...]:
     roots = opera_roots(environment)
-    return tuple(
-        dict.fromkeys(
-            (*roots.roaming_roots, *roots.local_roots, *roots.disk_cache_roots)
-        )
-    )
+    return tuple(dict.fromkeys((*roots.roaming_roots, *roots.local_roots, *roots.disk_cache_roots)))
 
 
 def match_opera_rule(
@@ -243,13 +235,13 @@ def opera_audited_tool_roots(
         for rule in _OPERA_DATA_RULES:
             _append_tool_root(found, seen, root, rule)
 
-    # Local cache roots: exact Chromium cache children and Opera System Cache.
+    # Local cache roots: only already-audited Chromium cache children receive
+    # generic tool-root authority. Opera ``System Cache`` remains explanation-only.
     for root in roots.local_roots:
         for profile_root in _candidate_profile_roots(root):
             for rule in _OPERA_PROFILE_RULES:
                 if rule.owner is DecisionOwner.TOOL:
                     _append_tool_root(found, seen, profile_root, rule)
-            _append_tool_root(found, seen, profile_root, _OPERA_SYSTEM_CACHE_RULE)
         for rule in _OPERA_DATA_RULES:
             _append_tool_root(found, seen, root, rule)
 
@@ -285,16 +277,10 @@ def evaluate_opera_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
 
     if rule.owner is DecisionOwner.KEEP:
-        return ApplicationPolicyDecision(
-            rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
-        )
+        return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
     if rule.owner is DecisionOwner.USER:
         return ApplicationPolicyDecision(
             rule,
@@ -358,7 +344,7 @@ def _running_override_roots() -> tuple[
         return (), (), ()
     script = (
         "$p=Get-CimInstance Win32_Process | Where-Object { $_.Name -ieq 'opera.exe' }; "
-        "$p | ForEach-Object { \"{0}`t{1}\" -f $_.ExecutablePath,$_.CommandLine }"
+        '$p | ForEach-Object { "{0}`t{1}" -f $_.ExecutablePath,$_.CommandLine }'
     )
     try:
         result = subprocess.run(
@@ -499,9 +485,8 @@ def _candidate_profile_roots(root: PureWindowsPath) -> tuple[PureWindowsPath, ..
 
 def _is_profile_dir_name(name: str) -> bool:
     lowered = name.casefold()
-    return (
-        lowered in {"default", "guest profile", "system profile"}
-        or lowered.startswith("profile ")
+    return lowered in {"default", "guest profile", "system profile"} or lowered.startswith(
+        "profile "
     )
 
 
