@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-import devclean.core.torch_hub_inventory as torch_hub
 from devclean.core.torch_hub_inventory import (
     TorchHubDecision,
     TorchHubEntryKind,
     default_torch_hub_root,
     inventory_torch_hub,
 )
+from devclean.platform.windows.filesystem import FILE_ATTRIBUTE_REPARSE_POINT
 
 
 def test_default_torch_hub_root_matches_vendor_environment_precedence() -> None:
@@ -124,11 +124,11 @@ def test_inventory_skips_reparse_like_children(
         if Path(path) == skipped and not follow_symlinks:
             return _FakeStat(
                 result,
-                torch_hub.FILE_ATTRIBUTE_REPARSE_POINT,
+                FILE_ATTRIBUTE_REPARSE_POINT,
             )  # type: ignore[return-value]
         return result
 
-    monkeypatch.setattr(torch_hub.os, "stat", fake_stat)
+    monkeypatch.setattr("devclean.core.torch_hub_inventory.os.stat", fake_stat)
 
     inventory = inventory_torch_hub(root)
 
