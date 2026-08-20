@@ -33,13 +33,13 @@ jobs:
         run: uv run --frozen python scripts/temporary_generic_review_routing_patch.py
       - name: Apply file versus directory boundary
         run: uv run --frozen python .github/temporary-file-boundary-patch.py
+      - name: Apply validation and precedence follow-up
+        run: uv run --frozen python .github/temporary-generic-followup-patch.py
       - name: Remove temporary patch machinery
         shell: pwsh
         run: |
-          git rm .github/workflows/temporary-generic-review-routing-patch.yml
-          git rm .github/temporary-file-boundary-patch.py
-          git rm scripts/temporary_generic_review_routing_patch.py
-          git rm scripts/temporary_repair_generic_patch.py
+          git rm -f .github/workflows/temporary-generic-review-routing-patch.yml .github/temporary-file-boundary-patch.py .github/temporary-generic-followup-patch.py scripts/temporary_generic_review_routing_patch.py scripts/temporary_repair_generic_patch.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Format and validate final tree
         shell: pwsh
         run: |
