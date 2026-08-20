@@ -35,6 +35,7 @@ from devclean.ui.jetbrains_leftover_maintenance_dialog import (
     open_jetbrains_leftover_maintenance_dialog,
 )
 from devclean.ui.meson_project_maintenance_dialog import open_meson_project_maintenance_dialog
+from devclean.ui.npm_maintenance_dialog import open_npm_maintenance_dialog
 from devclean.ui.nuget_maintenance_dialog import open_nuget_maintenance_dialog
 from devclean.ui.ollama_model_maintenance_dialog import open_ollama_model_maintenance_dialog
 from devclean.ui.pip_maintenance_dialog import open_pip_maintenance_dialog
@@ -107,6 +108,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="pip 缓存维护…",
         command=lambda: open_pip_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="npm 缓存维护…",
+        command=lambda: open_npm_maintenance_dialog(root),
     )
     tools.add_command(
         label="pnpm Store 垃圾收集…",
