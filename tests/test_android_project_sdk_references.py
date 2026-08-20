@@ -77,10 +77,13 @@ android {
     assert not _package_ids(source, tmp_path)
 
 
-def test_comments_and_unrelated_cmake_blocks_do_not_create_evidence(tmp_path: Path) -> None:
+def test_comments_unrelated_blocks_and_string_examples_do_not_create_evidence(
+    tmp_path: Path,
+) -> None:
     source = r'''
 // compileSdk = 99
 /* buildToolsVersion = "99.0.0" */
+val example = "compileSdk = 98; ndkVersion = '98.0.0'"
 foo {
     cmake {
         version = "9.9.9"
@@ -149,7 +152,7 @@ def test_scan_rejects_directory_without_direct_gradle_marker(
 
     monkeypatch.setattr(project_refs, "_ordinary_local_directory", lambda path, label: path)
 
-    with pytest.raises(ValueError, match="settings.gradle"):
+    with pytest.raises(ValueError, match=r"settings\.gradle"):
         project_refs.scan_android_project_sdk_references(root)
 
 
