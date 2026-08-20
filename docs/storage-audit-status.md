@@ -54,6 +54,7 @@ A clean CI run on a stale stacked base is not enough. Positive audit and impleme
 | Git object storage | `git maintenance run --auto` behind exact repository/object-store/alternate-storage checks |
 | Git LFS | USER_REVIEW vendor prune with remote verification; no force |
 | Hugging Face Hub cache | exact cached repo USER_REVIEW; globally-unique full revision USER_REVIEW; vendor prune USER_REVIEW after exact dry-run; Xet/assets/HF_HOME protected |
+| PyTorch Hub storage | read-only explicit-root inventory only; checkpoints/repo-like dirs/top-level zip REPORT_ONLY, trusted_list protected; no delete API wrapped |
 | Unreal Engine DDC | project/vendor-aware DDC maintenance; no raw recursive Zen/custom DDC deletion |
 | Bazel workspace output | exact workspace/output-base discovery; ordinary clean deterministic, expunge USER_REVIEW |
 | Cargo workspace target | exact `cargo metadata` target discovery; full vendor clean USER_REVIEW |
@@ -150,6 +151,7 @@ A lower-level backend never inherits broader authority than the higher-level gen
 | Cargo `build.build-dir` | intermediate state but effective-path discovery insufficient | stable metadata/config query or narrow vendor clean action |
 | Ollama raw model store | user-selected content with shared blobs/manifests | exact per-model vendor action only |
 | Hugging Face Xet/assets/HF_HOME/token | Xet/assets are separate vendor/application caches while HF_HOME mixes authentication and cache state; raw deletion protected | dedicated exact vendor lifecycle/API per cache class; never whole-HF_HOME deletion |
+| PyTorch Hub repo/checkpoint/temp objects | current source has no public complete cache inventory/remove API; repo directory encoding is not reliably reversible; checkpoints lack durable URL/provenance metadata; trusted_list is persistent trust state | public exact inventory + remove/prune API, or durable source/hash provenance with equally strong mutation scope |
 | Maven local repository | remote cache mixed with unique local artifacts | vendor semantics separating safely reclaimable remote content |
 | Cargo global registry/git | shared vendor-managed download/source state | stable vendor prune/GC interface |
 | WSL distro VHD/rootfs | persistent Linux filesystem/user state | no generic delete lane |
@@ -175,10 +177,10 @@ A lower-level backend never inherits broader authority than the higher-level gen
 
 ## Current high-value queue
 
-The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, and exact Hugging Face Hub object maintenance are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
+The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, exact Hugging Face Hub object maintenance, and PyTorch Hub read-only source audit are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
 
 1. **High-impact `%USERPROFILE%\.cache` applications**
-   - continue auditing known applications individually; Hugging Face Hub is now object-aware, but generic `.cache` parent deletion remains prohibited.
+   - continue auditing known applications individually; Hugging Face Hub is object-aware and PyTorch Hub is now explicitly report-only, but generic `.cache` parent deletion remains prohibited.
 2. **Additional local-model products**
    - models remain user-selected content; exact vendor model actions only, with offline/rebuild value treated as USER_REVIEW.
 3. **Narrow application-specific Windows diagnostics**
