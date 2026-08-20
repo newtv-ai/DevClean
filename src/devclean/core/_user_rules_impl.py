@@ -34,6 +34,7 @@ MAX_DECISION_RULES: Final = 100_000
 MAX_REASON_CHARS: Final = 500
 MAX_RULE_VALUE_CHARS: Final = 32_767
 _DIRECTORY_DECISION_SOURCE: Final = "USER_DIRECTORY_DECISION"
+_PRODUCT_RULE_SOURCE: Final = "PRODUCT_AUDITED"
 
 SCAN_RULES_NAME: Final = "scan-rules.json"
 DELETE_RULES_NAME: Final = "delete-rules.json"
@@ -498,7 +499,11 @@ def load_rules(*, create_missing: bool = True) -> UserRules:
         with suppress(ImportError, OSError, RuleConfigError, UnicodeError):
             _ensure_default_backup(packaged)
 
-    return parse_rule_documents(*read_rule_documents())
+    active = parse_rule_documents(*read_rule_documents())
+    if packaged is None:
+        return active
+    current_defaults = parse_rule_documents(*packaged)
+    return _overlay_packaged_product_rules(active, current_defaults)
 
 
 def restore_default_rules() -> UserRules:
@@ -529,18 +534,19 @@ def restore_default_rules() -> UserRules:
 def _migrate_legacy_packaged_decisions(
     packaged: tuple[str, str, str],
 ) -> None:
-    """Remove only unchanged decision entries proven to come from old defaults."""
+    """Remove unchanged accidental AI imports while allowing audited defaults."""
 
-    current_defaults = parse_rule_documents(*packaged)
-    if current_defaults.delete.rules or current_defaults.keep.rules:
-        # This migration is deliberately tied to the neutral-default contract.
-        # If a future release intentionally ships decision entries, do not infer
-        # that older sidecar entries are contamination.
-        return
-
+    # The historical contamination was specifically a snapshot of AI_IMPORT
+    # decisions from one development machine. Product-audited rules deliberately
+    # shipped by a newer executable must not disable this cleanup migration.
+    parse_rule_documents(*packaged)
     legacy_defaults = parse_rule_documents(*_default_backup_documents())
-    legacy_delete = frozenset(legacy_defaults.delete.rules)
-    legacy_keep = frozenset(legacy_defaults.keep.rules)
+    legacy_delete = frozenset(
+        rule for rule in legacy_defaults.delete.rules if rule.source == "AI_IMPORT"
+    )
+    legacy_keep = frozenset(
+        rule for rule in legacy_defaults.keep.rules if rule.source == "AI_IMPORT"
+    )
     if not legacy_delete and not legacy_keep:
         return
 
@@ -556,6 +562,26 @@ def _migrate_legacy_packaged_decisions(
             delete=replace(active.delete, rules=delete_rules),
             keep=replace(active.keep, rules=keep_rules),
         )
+    )
+
+
+def _overlay_packaged_product_rules(active: UserRules, packaged: UserRules) -> UserRules:
+    """Apply current product file knowledge independently of local history."""
+
+    product_delete = tuple(
+        rule for rule in packaged.delete.rules if rule.source == _PRODUCT_RULE_SOURCE
+    )
+    product_keep = tuple(
+        rule for rule in packaged.keep.rules if rule.source == _PRODUCT_RULE_SOURCE
+    )
+    local_delete = tuple(
+        rule for rule in active.delete.rules if rule.source != _PRODUCT_RULE_SOURCE
+    )
+    local_keep = tuple(rule for rule in active.keep.rules if rule.source != _PRODUCT_RULE_SOURCE)
+    return UserRules(
+        scan=active.scan,
+        delete=replace(active.delete, rules=(*product_delete, *local_delete)),
+        keep=replace(active.keep, rules=(*product_keep, *local_keep)),
     )
 
 

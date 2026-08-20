@@ -33,8 +33,15 @@ def test_packaged_rule_documents_are_current_and_round_trip() -> None:
 
     assert rules.scan.delete_root_ids == set()
     assert len(rules.scan.known_cleanup_roots) >= 30
-    assert rules.delete.rules == ()
-    assert rules.keep.rules == ()
+    assert {rule.rule_id for rule in rules.delete.rules} == {
+        "product_nvidia_dxcache_nvph",
+        "product_nvidia_dxcache_bin",
+        "product_nvidia_glcache_bin",
+    }
+    assert {rule.rule_id for rule in rules.keep.rules} == {"product_user_jdk_runtime_modules"}
+    assert all(
+        rule.source == "PRODUCT_AUDITED" for rule in (*rules.delete.rules, *rules.keep.rules)
+    )
     assert rules.ai_rule_count == 0
     assert MAX_DECISION_RULES == 100_000
     assert parse_rule_documents(*render_rule_documents(rules)) == rules
@@ -152,6 +159,51 @@ def test_existing_sidecar_uses_packaged_data_only_to_rebuild_missing_backup(
     assert load_rules() == original
 
 
+def test_current_product_rules_overlay_existing_neutral_sidecars(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "DevClean-data"))
+    current = default_rules()
+    current_documents = render_rule_documents(current)
+    local_delete = DecisionRule(
+        rule_id="local-user-delete",
+        group="user_decision",
+        match=RuleMatch.EXACT_PATH,
+        value=r"D:\user-selected\disposable.bin",
+        source="USER_DECISION",
+        reason="local history must survive product updates",
+    )
+    neutral = UserRules(
+        scan=current.scan,
+        delete=replace(current.delete, rules=(local_delete,)),
+        keep=replace(current.keep, rules=()),
+    )
+
+    from devclean.core import user_rules as module
+
+    module.rules_dir().mkdir(parents=True, exist_ok=True)
+    for path, document in zip(
+        (module.scan_rules_path(), module.delete_rules_path(), module.keep_rules_path()),
+        render_rule_documents(neutral),
+        strict=True,
+    ):
+        path.write_text(document, encoding="utf-8")
+    monkeypatch.setattr(module, "_packaged_documents", lambda: current_documents)
+
+    loaded = load_rules()
+
+    assert local_delete in loaded.delete.rules
+    assert loaded.decision_for(local_delete.value) is RuleDecision.DELETE
+    assert {rule.rule_id for rule in loaded.delete.rules if rule.source == "PRODUCT_AUDITED"} == {
+        "product_nvidia_dxcache_nvph",
+        "product_nvidia_dxcache_bin",
+        "product_nvidia_glcache_bin",
+    }
+    assert {rule.rule_id for rule in loaded.keep.rules if rule.source == "PRODUCT_AUDITED"} == {
+        "product_user_jdk_runtime_modules"
+    }
+
+
 def test_legacy_packaged_decisions_are_removed_without_erasing_new_user_rules(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -250,8 +302,8 @@ def test_restore_defaults_prefers_current_packaged_templates_over_stale_backup(
 
     restored = restore_default_rules()
 
-    assert restored.delete.rules == ()
-    assert restored.keep.rules == ()
+    assert restored.delete.rules == clean.delete.rules
+    assert restored.keep.rules == clean.keep.rules
     assert restored.ai_rule_count == 0
     with zipfile.ZipFile(default_backup_path()) as archive:
         assert archive.read(DELETE_RULES_NAME).decode("utf-8") == clean_documents[1]

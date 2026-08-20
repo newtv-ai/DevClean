@@ -161,3 +161,19 @@ def test_kept_directory_overrides_descendant_learned_file_delete(
 
     assert deletable == ()
     assert unsure == ()
+
+
+def test_product_file_rule_never_authorizes_same_named_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("LOCALAPPDATA", r"C:\Users\person\AppData\Local")
+    path = r"C:\Users\person\AppData\Local\NVIDIA\DXCache\sample.bin"
+    rules = default_rules()
+
+    assert rules.decision_for(path) is RuleDecision.DELETE
+    deletable, unsure = _partition(_item(path, directory=True), rules)
+
+    assert deletable == ()
+    assert [item.path for item in unsure] == [path]
+    assert rules.directory_decision_for(path) is None
