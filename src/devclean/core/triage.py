@@ -167,14 +167,25 @@ class TriageSession:
         self._directory_totals: dict[str, DirectorySubtreeTotals] = {}
         self._ancestor_cache: dict[str, tuple[str, ...]] = {}
 
-    def observe_path(self, path: str, rules: UserRules) -> None:
-        """Retain only observed paths protected by a configured KEEP rule."""
+    def observe_path(
+        self,
+        path: str,
+        rules: UserRules,
+        *,
+        target_kind: CleanupTargetKind = CleanupTargetKind.FILE,
+    ) -> None:
+        """Retain observed FILE/DIRECTORY paths protected by their own rule kind."""
 
         if self._observation_rules is None:
             self._observation_rules = rules
         elif self._observation_rules is not rules:
             raise ValueError("one scan session must use one pinned rule set")
-        if rules.decision_for(path) is RuleDecision.KEEP:
+        decision = (
+            rules.directory_decision_for(path)
+            if target_kind is CleanupTargetKind.DIRECTORY
+            else rules.decision_for(path)
+        )
+        if decision is RuleDecision.KEEP:
             self._observed_keep_paths.add(normalise_path(path))
             self._keep_cache_rules = None
             self._keep_cache = ()
@@ -266,7 +277,12 @@ class TriageSession:
         kept_paths.update(
             normalise_path(item.path)
             for item in self.iter_items()
-            if rules.decision_for(item.path) is RuleDecision.KEEP
+            if (
+                rules.directory_decision_for(item.path)
+                if item.target_kind is CleanupTargetKind.DIRECTORY
+                else rules.decision_for(item.path)
+            )
+            is RuleDecision.KEEP
         )
         kept = tuple(sorted(kept_paths))
         self._keep_cache_rules = rules
@@ -380,13 +396,13 @@ def triage_directory(
             reason = f"{known.label}：已知受保护目录，只生成报告"
             tags = ("whole_directory", "known_cache_root", "report_only")
         else:
-            lane = ReviewLane.USER_REVIEW
-            risk_tier = RiskTier.MEDIUM
-            evidence_kind = EvidenceKind.KNOWN_ROOT_HEURISTIC
-            actionability = Actionability.USER_REVIEW
-            execution_policy = ExecutionPolicy.USER_CHOICE_DELETE
-            reason = f"{known.label}：已识别目录，但是否清理取决于你的使用方式，由你决定"
-            tags = ("whole_directory", "known_cache_root", "user_review")
+            lane = ReviewLane.REPORT_ONLY
+            risk_tier = RiskTier.PROTECTED
+            evidence_kind = EvidenceKind.FILESYSTEM_OBSERVATION
+            actionability = Actionability.REPORT_ONLY
+            execution_policy = ExecutionPolicy.NONE
+            reason = f"{known.label}：没有足够的通用删除契约，工具直接保护，不要求用户猜测"
+            tags = ("whole_directory", "known_cache_root", "report_only")
     elif scope is DirectoryScope.AGED_TEMP_ITEM:
         category = CleanupCategory.USER_TEMP
         recovery = RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT
@@ -399,24 +415,24 @@ def triage_directory(
         tags = ("whole_directory", "aged_temp_item", "tool_decision")
     elif scope is DirectoryScope.STALE_VERSION:
         category = CleanupCategory.OTHER
-        recovery = RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT
-        lane = ReviewLane.USER_REVIEW
-        risk_tier = RiskTier.MEDIUM
+        recovery = RecoveryCapability.NONE
+        lane = ReviewLane.REPORT_ONLY
+        risk_tier = RiskTier.PROTECTED
         evidence_kind = EvidenceKind.PATH_HEURISTIC
-        actionability = Actionability.USER_REVIEW
-        execution_policy = ExecutionPolicy.USER_CHOICE_DELETE
-        reason = f"{path.name}：看起来像被更新取代的旧版本目录，但缺少厂商级证据，由你决定"
-        tags = ("whole_directory", "stale_version", "user_review")
+        actionability = Actionability.REPORT_ONLY
+        execution_policy = ExecutionPolicy.NONE
+        reason = f"{path.name}：名称像旧版本但缺少厂商生命周期证据，工具直接保护"
+        tags = ("whole_directory", "stale_version", "report_only")
     else:
         category = CleanupCategory.PROJECT_BUILD_OUTPUT
-        recovery = RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT
-        lane = ReviewLane.USER_REVIEW
-        risk_tier = RiskTier.MEDIUM
+        recovery = RecoveryCapability.NONE
+        lane = ReviewLane.REPORT_ONLY
+        risk_tier = RiskTier.PROTECTED
         evidence_kind = EvidenceKind.PATH_HEURISTIC
-        actionability = Actionability.USER_REVIEW
-        execution_policy = ExecutionPolicy.USER_CHOICE_DELETE
-        reason = f"{path.name}：通常是可重建的工具产物，但项目可能有自定义行为，由你决定"
-        tags = ("whole_directory", "regenerable_tool_output", "user_review")
+        actionability = Actionability.REPORT_ONLY
+        execution_policy = ExecutionPolicy.NONE
+        reason = f"{path.name}：名称像可重建工具产物，但项目语义未经证明，工具直接保护"
+        tags = ("whole_directory", "regenerable_tool_output", "report_only")
     return TriageItem(
         record=record,
         path=record.path,
@@ -458,32 +474,6 @@ def _classify(
     if application is not None:
         return application
 
-    if is_regenerable_byproduct(path, delete_config):
-        return _Classification(
-            _infer_presentation_category(path, delete_config),
-            ReviewLane.USER_REVIEW,
-            RiskTier.MEDIUM,
-            EvidenceKind.PATH_HEURISTIC,
-            Actionability.USER_REVIEW,
-            ExecutionPolicy.USER_CHOICE_DELETE,
-            RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT,
-            "看起来是日志、转储或临时产物，但仅凭文件名不能对所有用户保证可删；由你决定",
-            ("byproduct", "user_review"),
-        )
-
-    if is_inside_cache_directory(path, delete_config):
-        return _Classification(
-            _infer_presentation_category(path, delete_config),
-            ReviewLane.USER_REVIEW,
-            RiskTier.MEDIUM,
-            EvidenceKind.PATH_HEURISTIC,
-            Actionability.USER_REVIEW,
-            ExecutionPolicy.USER_CHOICE_DELETE,
-            RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT,
-            "目录名看起来像缓存，但通用 cache 名称不足以给所有用户授予删除结论；由你决定",
-            ("cache_directory", "user_review"),
-        )
-
     if is_installed_addon_payload(path, keep_config):
         return _Classification(
             _infer_presentation_category(path, delete_config),
@@ -496,6 +486,31 @@ def _classify(
             "已安装的扩展或捆绑运行时的一部分，不是垃圾；只能靠重装该扩展恢复",
             ("installed_payload",),
         )
+    if is_program_payload_file(path, keep_config):
+        return _Classification(
+            _infer_presentation_category(path, delete_config),
+            ReviewLane.REPORT_ONLY,
+            RiskTier.MEDIUM,
+            EvidenceKind.PATH_HEURISTIC,
+            Actionability.REPORT_ONLY,
+            ExecutionPolicy.NONE,
+            RecoveryCapability.NONE,
+            "程序本体、其载入的库，或虚拟磁盘；不是垃圾，释放这类空间要用它自己的工具",
+            ("program_payload",),
+        )
+    if is_application_state_file(path, keep_config):
+        return _Classification(
+            _infer_presentation_category(path, delete_config),
+            ReviewLane.REPORT_ONLY,
+            RiskTier.MEDIUM,
+            EvidenceKind.PATH_HEURISTIC,
+            Actionability.REPORT_ONLY,
+            ExecutionPolicy.NONE,
+            RecoveryCapability.NONE,
+            "程序的配置或运行状态，不是垃圾；删除会改变程序行为",
+            ("application_state",),
+        )
+
     known = known_root_for_path(path, known_roots)
     if known is not None:
         if known.policy is CleanupPolicy.AGE_BASED_REVIEW:
@@ -520,17 +535,17 @@ def _classify(
                 )
             return _Classification(
                 known.category,
-                ReviewLane.USER_REVIEW,
-                RiskTier.MEDIUM,
+                ReviewLane.REPORT_ONLY,
+                RiskTier.PROTECTED,
                 EvidenceKind.KNOWN_ROOT_HEURISTIC,
-                Actionability.USER_REVIEW,
-                ExecutionPolicy.USER_CHOICE_DELETE,
+                Actionability.REPORT_ONLY,
+                ExecutionPolicy.NONE,
                 RecoveryCapability.UNKNOWN,
                 (
                     f"{known.label}：属于已知临时目录，但未达到 "
-                    f"{delete_config.old_temp_days} 天阈值；由你决定是否提前清理"
+                    f"{delete_config.old_temp_days} 天阈值；工具直接保留，不要求用户判断"
                 ),
-                ("known_root", "recent", "user_review"),
+                ("known_root", "recent", "report_only"),
             )
         if known.policy is CleanupPolicy.VENDOR_MANAGED:
             return _Classification(
@@ -559,14 +574,14 @@ def _classify(
         if known.policy is CleanupPolicy.MANUAL_REVIEW:
             return _Classification(
                 known.category,
-                ReviewLane.USER_REVIEW,
-                RiskTier.MEDIUM,
-                EvidenceKind.KNOWN_ROOT_HEURISTIC,
-                Actionability.USER_REVIEW,
-                ExecutionPolicy.USER_CHOICE_DELETE,
-                RecoveryCapability.UNKNOWN,
-                f"{known.label}：已识别但没有通用删除结论，由你决定是否清理",
-                ("known_root", "manual_review", "user_review"),
+                ReviewLane.REPORT_ONLY,
+                RiskTier.PROTECTED,
+                EvidenceKind.FILESYSTEM_OBSERVATION,
+                Actionability.REPORT_ONLY,
+                ExecutionPolicy.NONE,
+                RecoveryCapability.NONE,
+                f"{known.label}：旧配置要求人工判断，但没有通用删除契约；工具直接保护",
+                ("known_root", "manual_review", "report_only"),
             )
 
     root = temp_root or Path(tempfile.gettempdir())
@@ -590,57 +605,58 @@ def _classify(
             ("older_than_configured_days",),
         )
 
-    if is_program_payload_file(path, keep_config):
+    if is_regenerable_byproduct(path, delete_config):
         return _Classification(
             _infer_presentation_category(path, delete_config),
             ReviewLane.REPORT_ONLY,
-            RiskTier.MEDIUM,
+            RiskTier.PROTECTED,
             EvidenceKind.PATH_HEURISTIC,
             Actionability.REPORT_ONLY,
             ExecutionPolicy.NONE,
             RecoveryCapability.NONE,
-            "程序本体、其载入的库，或虚拟磁盘；不是垃圾，释放这类空间要用它自己的工具",
-            ("program_payload",),
+            "后缀或目录名像日志、转储或临时产物，但名称不能证明生命周期；工具直接保护",
+            ("byproduct", "report_only"),
         )
-    if is_application_state_file(path, keep_config):
+
+    if is_inside_cache_directory(path, delete_config):
         return _Classification(
             _infer_presentation_category(path, delete_config),
             ReviewLane.REPORT_ONLY,
-            RiskTier.MEDIUM,
+            RiskTier.PROTECTED,
             EvidenceKind.PATH_HEURISTIC,
             Actionability.REPORT_ONLY,
             ExecutionPolicy.NONE,
             RecoveryCapability.NONE,
-            "程序的配置或运行状态，不是垃圾；删除会改变程序行为",
-            ("application_state",),
+            "目录名看起来像缓存，但通用 cache 名称不能证明删除边界；工具直接保护",
+            ("cache_directory", "report_only"),
         )
 
     if is_development_cache_hint(path, delete_config):
         category = _infer_presentation_category(path, delete_config)
         return _Classification(
             category,
-            ReviewLane.AI_REVIEW,
-            RiskTier.HIGH,
+            ReviewLane.REPORT_ONLY,
+            RiskTier.PROTECTED,
             EvidenceKind.PATH_HEURISTIC,
-            Actionability.AI_REVIEW,
-            ExecutionPolicy.USER_CHOICE_DELETE,
-            RecoveryCapability.UNKNOWN,
-            "路径看起来像开发缓存，但缺少厂商精确证据；不确定，交 AI 判断",
-            ("path_heuristic", "ai_review_required"),
+            Actionability.REPORT_ONLY,
+            ExecutionPolicy.NONE,
+            RecoveryCapability.NONE,
+            "路径看起来像开发缓存，但缺少厂商精确证据；工具直接保护，不默认花费 AI",
+            ("path_heuristic", "report_only"),
         )
 
     category = _infer_presentation_category(path, delete_config)
     if category.value in delete_config.inferred_ai_review_categories:
         return _Classification(
             category,
-            ReviewLane.AI_REVIEW,
-            RiskTier.HIGH,
+            ReviewLane.REPORT_ONLY,
+            RiskTier.PROTECTED,
             EvidenceKind.PATH_HEURISTIC,
-            Actionability.AI_REVIEW,
-            ExecutionPolicy.USER_CHOICE_DELETE,
-            RecoveryCapability.UNKNOWN,
-            "疑似构建产物、安装介质或日志；需 AI 建议与用户最终确认",
-            ("path_heuristic", "ai_review_required"),
+            Actionability.REPORT_ONLY,
+            ExecutionPolicy.NONE,
+            RecoveryCapability.NONE,
+            "旧规则把该类别送 AI，但类别推断不能证明删除安全；工具直接保护",
+            ("path_heuristic", "report_only"),
         )
     if category.value in delete_config.inferred_report_only_categories:
         return _Classification(
@@ -656,14 +672,14 @@ def _classify(
         )
     return _Classification(
         category,
-        ReviewLane.AI_REVIEW,
-        RiskTier.HIGH,
+        ReviewLane.REPORT_ONLY,
+        RiskTier.PROTECTED,
         EvidenceKind.FILESYSTEM_OBSERVATION,
-        Actionability.AI_REVIEW,
-        ExecutionPolicy.USER_CHOICE_DELETE,
-        RecoveryCapability.UNKNOWN,
-        "本工具无法确定这是什么；导出给 AI 判断，导回结果后由你确认执行",
-        ("ai_review_required",),
+        Actionability.REPORT_ONLY,
+        ExecutionPolicy.NONE,
+        RecoveryCapability.NONE,
+        "本工具无法确定这是什么；未知不等于可删，工具直接保护",
+        ("unknown", "report_only"),
     )
 
 

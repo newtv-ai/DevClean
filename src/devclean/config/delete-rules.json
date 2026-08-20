@@ -150,11 +150,7 @@
     "downloads_segments": [
       "downloads"
     ],
-    "inferred_ai_review_categories": [
-      "PROJECT_BUILD_OUTPUT",
-      "INSTALLERS_DOWNLOADS",
-      "SYSTEM_LOGS"
-    ],
+    "inferred_ai_review_categories": [],
     "inferred_report_only_categories": [
       "WINDOWS_UPDATE"
     ],

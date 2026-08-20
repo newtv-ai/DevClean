@@ -121,7 +121,7 @@
         "%LOCALAPPDATA%\\Microsoft\\Windows\\WER"
       ],
       "category": "CRASH_DUMPS",
-      "policy": "MANUAL_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "Windows 错误报告和崩溃转储"
     },
     {
@@ -135,7 +135,7 @@
         "%SYSTEMROOT%\\CbsTemp"
       ],
       "category": "SYSTEM_LOGS",
-      "policy": "MANUAL_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "Windows 可重建维护数据"
     },
     {
@@ -147,7 +147,7 @@
         "%SYSTEMROOT%\\SoftwareDistribution\\Download"
       ],
       "category": "WINDOWS_UPDATE",
-      "policy": "MANUAL_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "Windows 更新下载"
     },
     {
@@ -159,7 +159,7 @@
         "%SYSTEMDRIVE%\\Windows.old"
       ],
       "category": "WINDOWS_UPDATE",
-      "policy": "MANUAL_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "Windows 旧系统目录"
     },
     {
@@ -183,7 +183,7 @@
         "%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer"
       ],
       "category": "THUMBNAIL_CACHE",
-      "policy": "MANUAL_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "Windows 缩略图与图标缓存"
     },
     {
@@ -415,7 +415,7 @@
         "%USERPROFILE%\\.lmstudio\\models"
       ],
       "category": "LOCAL_MODEL_STORE",
-      "policy": "MANUAL_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "LM Studio 模型存储"
     },
     {
@@ -427,7 +427,7 @@
         "%APPDATA%\\{Code,Code - Insiders,VSCodium,Cursor,Windsurf,Trae,Trae CN,TRAE SOLO,TRAE SOLO CN,Antigravity,Kiro}\\{Cache,CachedData,Code Cache,GPUCache,logs}"
       ],
       "category": "VSCODE_CACHE",
-      "policy": "MANUAL_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "编辑器可重建缓存"
     },
     {
@@ -439,7 +439,7 @@
         "%LOCALAPPDATA%\\JetBrains"
       ],
       "category": "IDE_CACHE",
-      "policy": "MANUAL_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "JetBrains IDE 缓存"
     },
     {
@@ -454,7 +454,7 @@
         "%APPDATA%\\Mozilla\\Firefox\\Profiles\\*\\{cache2,startupCache}"
       ],
       "category": "BROWSER_CACHE",
-      "policy": "MANUAL_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "浏览器可重建缓存"
     },
     {
@@ -468,7 +468,7 @@
         "%LOCALAPPDATA%\\.dartServer"
       ],
       "category": "IDE_CACHE",
-      "policy": "MANUAL_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "开发工具可重建缓存"
     },
     {
@@ -496,7 +496,7 @@
         "%LOCALAPPDATA%\\NVIDIA\\GLCache"
       ],
       "category": "OTHER",
-      "policy": "MANUAL_REVIEW",
+      "policy": "REPORT_ONLY",
       "label": "工具可重建缓存"
     }
   ]

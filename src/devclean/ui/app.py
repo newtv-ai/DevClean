@@ -22,7 +22,7 @@ import threading
 import time
 import tkinter as tk
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from queue import Empty, Queue
@@ -76,6 +76,7 @@ from devclean.core.user_rules import (
     RuleDecision,
     UserRules,
     add_ai_verdicts,
+    add_user_directory_verdicts,
     add_user_verdicts,
     clear_ai_rules,
     default_rules,
@@ -313,14 +314,48 @@ def is_ai_review_eligible(item: TriageItem) -> bool:
     )
 
 
-def _configured_delete_eligible(item: TriageItem) -> bool:
-    """Configured DELETE may promote only an item the executor already accepts."""
+_LEARNED_FILE_OVERRIDE_TAGS = frozenset(
+    {"byproduct", "cache_directory", "path_heuristic", "unknown"}
+)
 
-    return (
+
+def _configured_delete_eligible(item: TriageItem) -> bool:
+    """Return whether a configured DELETE can authorize this exact file item."""
+
+    if (
         is_direct_cleanup_eligible(item)
         or is_user_review_eligible(item)
         or is_ai_review_eligible(item)
+    ):
+        return True
+    return (
+        item.target_kind is CleanupTargetKind.FILE
+        and item.lane is ReviewLane.REPORT_ONLY
+        and item.actionability is Actionability.REPORT_ONLY
+        and item.execution_policy is ExecutionPolicy.NONE
+        and bool(_LEARNED_FILE_OVERRIDE_TAGS.intersection(item.tags))
     )
+
+
+def _effective_deletable_item(item: TriageItem, rules: UserRules) -> TriageItem:
+    """Materialize file-only learned authority without mutating classifier truth."""
+
+    if (
+        item.target_kind is CleanupTargetKind.FILE
+        and rules.decision_for(item.path) is RuleDecision.DELETE
+        and item.lane is ReviewLane.REPORT_ONLY
+        and _configured_delete_eligible(item)
+    ):
+        return replace(
+            item,
+            lane=ReviewLane.USER_REVIEW,
+            risk_tier=RiskTier.MEDIUM,
+            actionability=Actionability.USER_REVIEW,
+            execution_policy=ExecutionPolicy.USER_CHOICE_DELETE,
+            reason=item.reason + "；命中已确认的文件级 DELETE 默认/学习规则",
+            tags=(*item.tags, "configured_file_delete"),
+        )
+    return item
 
 
 def _rows_of(session: TriageSession, rules: UserRules) -> tuple[PartialBucket, PartialBucket]:
@@ -381,7 +416,7 @@ def _partition_items(
     for item in session.iter_items():
         bucket = _item_bucket(item, rules, kept_paths)
         if bucket == _DELETE_BUCKET:
-            deletable.append(item)
+            deletable.append(_effective_deletable_item(item, rules))
         elif bucket == _UNSURE_BUCKET:
             unsure.append(item)
     # A whole-directory row already represents every descendant. Showing its
@@ -395,7 +430,13 @@ def _item_bucket(
     rules: UserRules,
     kept_paths: tuple[str, ...],
 ) -> int:
-    decision = rules.decision_for(item.path)
+    if rules.is_within_kept_directory(item.path):
+        return _HIDDEN
+    decision = (
+        rules.directory_decision_for(item.path)
+        if item.target_kind is CleanupTargetKind.DIRECTORY
+        else rules.decision_for(item.path)
+    )
     if decision is RuleDecision.KEEP:
         return _HIDDEN
     if item.target_kind is CleanupTargetKind.DIRECTORY and _directory_contains_kept_path(
@@ -795,16 +836,16 @@ class DevCleanWindow:
             buckets,
             column=1,
             accent=_AMBER,
-            title="需要判断：先由你决定，必要时再用 AI",
+            title="需要你的偏好：仅保留少量明确项目",
             hint=(
-                "能解释但不能对所有用户保证可删的项目，直接由你决定，不花 AI 费用；"
-                "本工具真正认不出的项目会默认交给 AI；你拿不准的文件也可以选中后主动交 AI。"
-                "AI 判断可能不准确且可能产生费用，导出文件包含本机完整路径；"
-                "AI 仍不确定的也回到你这里最终决定。"
+                "这里只放技术语义已明确、是否保留确实取决于用途的项目；"
+                "无法证明安全的未知项会直接保护，不会默认交给 AI。"
+                "你拿不准某个文件时可主动选中后交 AI；AI 可能判断错误且可能产生费用，"
+                "导出文件包含本机完整路径。"
             ),
             total=self._unsure_total,
             buttons=(
-                ("export", "导出给 AI", "Muted", self._export_for_ai),
+                ("export", "导出给 AI（可选）", "Muted", self._export_for_ai),
                 ("import", "导入结果", "Muted", self._import_from_ai),
                 ("decide", "我来决定…", "Muted", self._decide_ai_unsure),
                 ("forget", "清空判决记录", "Muted", self._forget_verdicts),
@@ -1023,22 +1064,26 @@ class DevCleanWindow:
                 cancel,
                 progress,
             ):
-                if record.kind in {
-                    ScanRecordKind.FILE,
-                    ScanRecordKind.DIRECTORY,
-                }:
-                    session.observe_path(record.path, active_rules)
                 if record.kind is ScanRecordKind.FILE:
-                    session.add(
-                        triage_file(
-                            record,
-                            known_roots=active_known_roots,
-                            delete_config=active_rules.delete.classification,
-                            keep_config=active_rules.keep.classification,
-                            now=now,
-                        )
+                    session.observe_path(
+                        record.path,
+                        active_rules,
+                        target_kind=CleanupTargetKind.FILE,
                     )
+                    file_item = triage_file(
+                        record,
+                        known_roots=active_known_roots,
+                        delete_config=active_rules.delete.classification,
+                        keep_config=active_rules.keep.classification,
+                        now=now,
+                    )
+                    session.add(_effective_deletable_item(file_item, active_rules))
                 elif record.kind is ScanRecordKind.DIRECTORY:
+                    session.observe_path(
+                        record.path,
+                        active_rules,
+                        target_kind=CleanupTargetKind.DIRECTORY,
+                    )
                     item = triage_directory(
                         record,
                         known_roots=active_known_roots,
@@ -1365,8 +1410,8 @@ class DevCleanWindow:
             if not ai_items:
                 messagebox.showinfo(
                     "DevClean",
-                    "没有必须交 AI 的未知文件。若你对某个“你来决定”的文件也拿不准，"
-                    "先选中它，再点“导出给 AI”。",
+                    "没有默认需要交 AI 的项目。若你对右侧某个确实取决于用途的文件拿不准，"
+                    "先选中它，再点“导出给 AI（可选）”。",
                 )
                 return
         groups = _group_ai_candidates(ai_items, self._rules)
@@ -1616,7 +1661,7 @@ class DevCleanWindow:
         if not items:
             messagebox.showinfo(
                 "DevClean",
-                "请先选中右侧可由你判断的项目；真正未知的项目需要先交 AI。",
+                "请先选中右侧确实取决于你用途的项目；无法证明安全的未知项会直接保护。",
             )
             return
         preview: list[str] = []
@@ -1635,22 +1680,30 @@ class DevCleanWindow:
         if answer is None:
             return
         decision = RuleDecision.DELETE if answer else RuleDecision.KEEP
-        verdicts = []
+        file_verdicts: list[tuple[str, RuleDecision, str]] = []
+        directory_verdicts: list[tuple[str, RuleDecision, str]] = []
         for item in items:
             key = normalise_path(item.path)
             source_reason = self._ai_unsure_reasons.get(key, item.reason)
-            verdicts.append(
-                (
-                    item.path,
-                    decision,
-                    "用户在 DevClean 界面中最终决定"
-                    + ("可删除" if answer else "保留")
-                    + f"；依据：{source_reason}",
-                )
+            verdict = (
+                item.path,
+                decision,
+                "用户在 DevClean 界面中最终决定"
+                + ("可删除" if answer else "保留")
+                + f"；依据：{source_reason}",
             )
+            if item.target_kind is CleanupTargetKind.DIRECTORY:
+                directory_verdicts.append(verdict)
+            else:
+                file_verdicts.append(verdict)
         rules_saved = True
         try:
-            self._rules = add_user_verdicts(load_rules(), verdicts)
+            latest_rules = load_rules()
+            if file_verdicts:
+                latest_rules = add_user_verdicts(latest_rules, file_verdicts)
+            if directory_verdicts:
+                latest_rules = add_user_directory_verdicts(latest_rules, directory_verdicts)
+            self._rules = latest_rules
         except (OSError, RuleConfigError, UnicodeError) as error:
             rules_saved = False
             messagebox.showwarning(

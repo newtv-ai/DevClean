@@ -53,6 +53,7 @@ from devclean.core.application_cleanup import DecisionOwner, match_application_r
 
 _ORIGINAL_ADD_AI_VERDICTS = _impl.add_ai_verdicts
 _ORIGINAL_ADD_USER_VERDICTS = _impl.add_user_verdicts
+_ORIGINAL_ADD_USER_DIRECTORY_VERDICTS = _impl.add_user_directory_verdicts
 _ORIGINAL_LOAD_RULES = _impl.load_rules
 _ORIGINAL_RESTORE_DEFAULT_RULES = _impl.restore_default_rules
 _packaged_documents = _impl._packaged_documents
@@ -203,15 +204,9 @@ def _remove_semantically_invalid_rules(
         return rule.match is not RuleMatch.PATH_GLOB
 
     delete_rules = tuple(
-        rule
-        for rule in rules.delete.rules
-        if keep_rule(rule, RuleDecision.DELETE)
+        rule for rule in rules.delete.rules if keep_rule(rule, RuleDecision.DELETE)
     )
-    keep_rules = tuple(
-        rule
-        for rule in rules.keep.rules
-        if keep_rule(rule, RuleDecision.KEEP)
-    )
+    keep_rules = tuple(rule for rule in rules.keep.rules if keep_rule(rule, RuleDecision.KEEP))
     if delete_rules == rules.delete.rules and keep_rules == rules.keep.rules:
         return rules, False
     return (
@@ -264,12 +259,28 @@ def add_user_verdicts(
     return _persist_if_sanitized(updated)
 
 
+def add_user_directory_verdicts(
+    rules: UserRules,
+    verdicts: list[tuple[str, RuleDecision, str]],
+) -> UserRules:
+    """Persist an exact directory choice without granting generic tree authority."""
+
+    allowed = [
+        verdict
+        for verdict in verdicts
+        if not (
+            verdict[1] is RuleDecision.DELETE
+            and _owner_for_path(verdict[0]) in {DecisionOwner.USER, DecisionOwner.KEEP}
+        )
+    ]
+    updated = _ORIGINAL_ADD_USER_DIRECTORY_VERDICTS(rules, allowed) if allowed else rules
+    return _persist_if_sanitized(updated)
+
+
 def load_rules(*, create_missing: bool = True) -> UserRules:
     """Load rules and migrate stale generic authority over application data."""
 
-    return _persist_if_sanitized(
-        _ORIGINAL_LOAD_RULES(create_missing=create_missing)
-    )
+    return _persist_if_sanitized(_ORIGINAL_LOAD_RULES(create_missing=create_missing))
 
 
 def restore_default_rules() -> UserRules:
@@ -280,6 +291,7 @@ def restore_default_rules() -> UserRules:
 
 _impl.add_ai_verdicts = add_ai_verdicts
 _impl.add_user_verdicts = add_user_verdicts
+_impl.add_user_directory_verdicts = add_user_directory_verdicts
 _impl.load_rules = load_rules
 _impl.restore_default_rules = restore_default_rules
 sys.modules[__name__] = _impl
@@ -304,6 +316,7 @@ __all__ = [
     "ScanRules",
     "UserRules",
     "add_ai_verdicts",
+    "add_user_directory_verdicts",
     "add_user_verdicts",
     "clear_ai_rules",
     "default_backup_path",

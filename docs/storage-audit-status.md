@@ -188,6 +188,10 @@ A lower-level backend never inherits broader authority than the higher-level gen
 - Physical reclaimed bytes are not equated with logical package/model/image/cache size when layers, hardlinks, shared blobs, VHDs, vendor accounting or concurrent reacquisition make them different.
 - A project-provided executable recipe/script does not become safe merely because the target is named `clean`.
 
+## 2026-08 second-pass rule re-audit
+
+A full rule re-audit is active in `docs/full-rule-reaudit-2026-08.md`. #142 fixed default-backup/migration handling but temporarily neutralized packaged learned rules more aggressively than the product policy requires. Phase 2 restores the intended boundary: confirmed learned/default DELETE/KEEP knowledge is reusable for files, never for directories, while generic name/suffix/category/unknown evidence alone routes to protection instead of asking a non-expert user or automatically spending paid AI calls. Continue with static VENDOR_MANAGED roots, AGE_BASED_REVIEW lifecycle, selective file-default restoration, then application modules one by one.
+
 ## Current high-value queue
 
 The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, exact Hugging Face Hub object maintenance, PyTorch Hub read-only audit, npm vendor maintenance, Cypress binary-cache lifecycle, Yarn correction, Bun cache-authority correction, Gradle User Home cache-authority correction, Brave Update storage-authority correction, Vivaldi Crashpad authority correction, and Opera System Cache authority correction are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
