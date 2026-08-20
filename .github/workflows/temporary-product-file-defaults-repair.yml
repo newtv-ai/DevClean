@@ -1,5 +1,6 @@
 name: Temporary product file defaults repair
 
+# Second push triggers the repair after the workflow exists on the branch.
 on:
   push:
     branches:
