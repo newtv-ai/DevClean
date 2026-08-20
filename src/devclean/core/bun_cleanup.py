@@ -1,11 +1,11 @@
 """Audited Bun package-manager storage semantics for Windows cleanup.
 
-Bun explicitly exposes a global module cache and a cache-removal command. The
-surrounding ``~/.bun`` tree also contains the Bun executable, global packages,
-linked binaries and other persistent package-manager state, so only the exact
-cache root receives whole-tree TOOL authority. Project-local or otherwise custom
-``.bun/cache`` directories are protected unless Bun itself reports them as the
-active global cache.
+Bun's global module cache is rebuildable package-manager state, but current
+``bun pm cache rm`` has broader lifecycle effects than DevClean's former raw
+whole-tree rule: it also clears Bunx temporary caches and the cache can contain
+a global virtual store used directly by project symlinks. Machine cache roots
+remain visible but protected from generic deletion pending a dedicated vendor
+USER_REVIEW lane.
 """
 
 from __future__ import annotations
@@ -27,10 +27,7 @@ from devclean.core._application_cleanup_impl import (
     MatchKind,
     PolicyAction,
     RebuildCost,
-    effective_idle_days,
 )
-
-_MIB = 1024**2
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,11 +43,6 @@ def _rule(
     label: str,
     *,
     root_key: str,
-    idle_days: float | None = None,
-    min_reclaim_bytes: int = 0,
-    requires_process_closed: bool = False,
-    size_sensitive_idle: bool = True,
-    allow_whole_tree: bool = False,
     user_age_buckets: tuple[int, ...] = (),
 ) -> ApplicationCleanupRule:
     return ApplicationCleanupRule(
@@ -62,11 +54,6 @@ def _rule(
         owner=owner,
         last_use=LastUseStrategy.FILE_MTIME,
         rebuild_cost=rebuild_cost,
-        idle_days=idle_days,
-        min_reclaim_bytes=min_reclaim_bytes,
-        requires_process_closed=requires_process_closed,
-        size_sensitive_idle=size_sensitive_idle,
-        allow_whole_tree=allow_whole_tree,
         user_age_buckets=user_age_buckets,
         label=label,
     )
@@ -74,15 +61,10 @@ def _rule(
 
 _BUN_CACHE_RULE = _rule(
     "bun-global-module-cache",
-    DecisionOwner.TOOL,
+    DecisionOwner.KEEP,
     RebuildCost.MEDIUM,
-    "Bun global module cache",
+    "Bun global module cache/global store; generic raw deletion removed",
     root_key="BUN_CACHE",
-    idle_days=30,
-    min_reclaim_bytes=64 * _MIB,
-    requires_process_closed=True,
-    size_sensitive_idle=False,
-    allow_whole_tree=True,
 )
 _BUN_HOME_RULE = _rule(
     "bun-home-state",
@@ -137,19 +119,11 @@ def bun_roots(environment: Mapping[str, str] | None = None) -> BunRootSet:
     if configured_cache:
         _append_absolute(caches, configured_cache)
 
-    # The documented default global module cache is ~/.bun/install/cache. Keep
-    # it source-shaped even if Bun is not currently on PATH; the catalog still
-    # requires the directory to exist before it becomes a cleanup root.
+    # Documented default global package cache. A bunfig.toml can redirect the
+    # effective cache for a project; DevClean deliberately does not execute Bun
+    # or project configuration merely to discover another destructive root.
     for home in tuple(homes):
         caches.append(home / "install" / "cache")
-
-    # ``bun pm cache`` is Bun's authoritative way to print the effective global
-    # module cache and therefore captures bunfig/CLI/runtime configuration that
-    # static path guessing cannot safely reproduce.
-    if environment is None:
-        live = _active_bun_cache()
-        if live:
-            _append_absolute(caches, live)
 
     return BunRootSet(
         home_roots=_unique_paths(homes),
@@ -183,9 +157,6 @@ def match_bun_rule(
     if matches:
         return max(matches, key=lambda item: (item[0], item[1]))[2]
 
-    # A direct project ``.bun/cache`` is intentionally not assumed to be the
-    # global disposable cache. Users can point Bun's cache at arbitrary paths,
-    # including project paths kept for CI/offline reuse.
     parts = tuple(part.casefold() for part in candidate.parts)
     for index, part in enumerate(parts[:-1]):
         if part == ".bun" and parts[index + 1] == "cache":
@@ -196,25 +167,19 @@ def match_bun_rule(
 def bun_audited_tool_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
-    found: list[tuple[PureWindowsPath, ApplicationCleanupRule]] = []
-    seen: set[str] = set()
-    for root in bun_roots(environment).cache_roots:
-        key = _impl._normalize(root)
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        found.append((root, _BUN_CACHE_RULE))
-    return tuple(found)
+    """No generic Bun delete root is currently source-authorized."""
+
+    del environment
+    return ()
 
 
 def whole_tree_bun_rule(
     path: str | os.PathLike[str],
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationCleanupRule | None:
-    target = _impl._normalize(path)
-    for root, rule in bun_audited_tool_roots(environment):
-        if target == _impl._normalize(root):
-            return rule
+    """Raw whole-tree Bun cache deletion is deliberately not authorized."""
+
+    del path, environment
     return None
 
 
@@ -227,6 +192,7 @@ def evaluate_bun_path(
     process_running: bool | None = None,
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationPolicyDecision | None:
+    del process_running
     rule = match_bun_rule(path, environment)
     if rule is None:
         return None
@@ -234,42 +200,20 @@ def evaluate_bun_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
     if rule.owner is DecisionOwner.KEEP:
         return ApplicationPolicyDecision(
             rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
         )
-    if rule.owner is DecisionOwner.USER:
-        return ApplicationPolicyDecision(
-            rule,
-            PolicyAction.USER_DECISION,
-            observed,
-            idle,
-            None,
-            _impl._benefit_score(logical_size, idle, None, rule.rebuild_cost),
-            _impl._age_bucket(idle, rule.user_age_buckets),
-        )
-
-    threshold = effective_idle_days(rule, logical_size)
-    running = process_running
-    if running is None and rule.requires_process_closed:
-        running = bun_process_running()
-    score = _impl._benefit_score(logical_size, idle, threshold, rule.rebuild_cost)
-    if rule.requires_process_closed and running:
-        action = PolicyAction.TOOL_KEEP_IN_USE
-    elif logical_size < rule.min_reclaim_bytes:
-        action = PolicyAction.TOOL_KEEP_LOW_BENEFIT
-    elif idle is None or threshold is None:
-        action = PolicyAction.TOOL_KEEP_UNKNOWN_USAGE
-    elif idle < threshold:
-        action = PolicyAction.TOOL_KEEP_RECENT
-    else:
-        action = PolicyAction.TOOL_DELETE
-    return ApplicationPolicyDecision(rule, action, observed, idle, threshold, score)
+    return ApplicationPolicyDecision(
+        rule,
+        PolicyAction.USER_DECISION,
+        observed,
+        idle,
+        None,
+        _impl._benefit_score(logical_size, idle, None, rule.rebuild_cost),
+        _impl._age_bucket(idle, rule.user_age_buckets),
+    )
 
 
 @lru_cache(maxsize=1)
@@ -293,30 +237,8 @@ def bun_process_running() -> bool:
     return result.returncode != 0 or "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
-def _active_bun_cache() -> str | None:
-    executable = "bun.exe" if os.name == "nt" else "bun"
-    try:
-        result = subprocess.run(
-            [executable, "pm", "cache"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=8,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if result.returncode != 0:
-        return None
-    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    if not lines:
-        return None
-    return lines[-1].strip().strip('"').strip("'")
-
-
 def clear_bun_process_cache() -> None:
     bun_process_running.cache_clear()
-    _active_bun_cache.cache_clear()
 
 
 def _append_root_match(
