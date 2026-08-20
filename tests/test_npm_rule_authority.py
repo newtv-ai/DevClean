@@ -54,14 +54,17 @@ def test_user_delete_of_npm_global_install_does_not_become_generic_rule(
     assert updated.decision_for(package) is None
 
 
-def test_ai_can_still_learn_npm_owned_cache_decision(
+def test_ai_cannot_reintroduce_raw_npm_cache_delete_authority(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _environment(tmp_path, monkeypatch)
     cache_file = r"E:\npm-cache\_cacache\content-v2\sha512\aa\blob"
+    baseline = load_rules()
+    before = baseline.ai_rule_count
     updated = add_ai_verdicts(
-        load_rules(),
+        baseline,
         [(cache_file, RuleDecision.DELETE, "regenerable npm cache")],
     )
-    assert updated.decision_for(cache_file) is RuleDecision.DELETE
+    assert updated.decision_for(cache_file) is None
+    assert updated.ai_rule_count == before
