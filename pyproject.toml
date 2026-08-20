@@ -38,6 +38,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/devclean/core/android_sdk_package_maintenance.py" = ["E501"]
+"src/devclean/core/cypress_maintenance.py" = ["E501"]
 "src/devclean/core/delivery_optimization_cache_maintenance.py" = ["E501"]
 "src/devclean/core/huggingface_maintenance.py" = ["E501"]
 "src/devclean/core/npm_maintenance.py" = ["RUF001"]
