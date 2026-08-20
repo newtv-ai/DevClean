@@ -164,7 +164,8 @@ def inventory_torch_hub(root: str | os.PathLike[str]) -> TorchHubInventory:
         raise RuntimeError(f"无法枚举 Torch Hub 根目录: {error}") from error
 
     for child in children:
-        if budget.exhausted:
+        if budget.entries_seen >= _MAX_SCAN_ENTRIES:
+            budget.exhausted = True
             break
         entry = _inspect_top_level(child, budget, warnings)
         if entry is not None:
@@ -295,19 +296,21 @@ def _measure_path(
         if not stat.S_ISDIR(current_stat.st_mode):
             continue
         try:
-            children = list(current.iterdir())
+            child_iterator = current.iterdir()
+            for child in child_iterator:
+                if budget.entries_seen + len(stack) >= _MAX_SCAN_ENTRIES:
+                    budget.exhausted = True
+                    break
+                try:
+                    child_stat = os.stat(child, follow_symlinks=False)
+                except FileNotFoundError:
+                    warnings.append(f"扫描期间对象消失: {child}")
+                except OSError as error:
+                    warnings.append(f"无法读取 {child}: {error}")
+                else:
+                    stack.append((child, child_stat))
         except OSError as error:
             warnings.append(f"无法枚举 {current}: {error}")
-            continue
-        for child in children:
-            try:
-                child_stat = os.stat(child, follow_symlinks=False)
-            except FileNotFoundError:
-                warnings.append(f"扫描期间对象消失: {child}")
-            except OSError as error:
-                warnings.append(f"无法读取 {child}: {error}")
-            else:
-                stack.append((child, child_stat))
 
     return logical_bytes, file_count
 
