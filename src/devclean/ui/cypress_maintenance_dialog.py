@@ -8,7 +8,6 @@ import queue
 import threading
 import tkinter as tk
 from dataclasses import dataclass
-from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from devclean.core.cypress_maintenance import (
@@ -123,7 +122,7 @@ class _CypressMaintenanceDialog:
             parent=self._window,
             title="选择已安装的 Cypress CLI",
             filetypes=(
-                ("Cypress / command files", "*.cmd *.exe *.js *.cjs"),
+                ("Cypress command files", "*.cmd *.exe *.bat"),
                 ("All files", "*.*"),
             ),
         )
@@ -238,12 +237,17 @@ class _CypressMaintenanceDialog:
             widget.destroy()
 
         if not inventory.versions:
-            ttk.Label(self._rows, text="没有发现可识别的 semver Cypress binary cache。",).pack(
-                anchor=tk.W
-            )
+            ttk.Label(
+                self._rows,
+                text="没有发现可识别的 semver Cypress binary cache。",
+            ).pack(anchor=tk.W)
         else:
             for item in inventory.versions:
-                role = "当前 CLI 版本 · 保留" if item.current_package_version else "旧版本 · 你来决定"
+                role = (
+                    "当前 CLI 版本 · 保留"
+                    if item.current_package_version
+                    else "旧版本 · 你来决定"
+                )
                 frame = ttk.LabelFrame(
                     self._rows,
                     text=f"{item.version} · {role} · {_format_bytes(item.logical_bytes)}",
