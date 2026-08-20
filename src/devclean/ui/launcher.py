@@ -20,6 +20,7 @@ from devclean.ui.codex_history_dialog import open_codex_history_dialog
 from devclean.ui.conan_maintenance_dialog import open_conan_maintenance_dialog
 from devclean.ui.conda_maintenance_dialog import open_conda_maintenance_dialog
 from devclean.ui.cursor_maintenance_dialog import open_cursor_maintenance_dialog
+from devclean.ui.cypress_maintenance_dialog import open_cypress_maintenance_dialog
 from devclean.ui.delivery_optimization_cache_maintenance_dialog import (
     open_delivery_optimization_cache_maintenance_dialog,
 )
@@ -112,6 +113,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="npm 缓存维护…",
         command=lambda: open_npm_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="Cypress binary cache 维护…",
+        command=lambda: open_cypress_maintenance_dialog(root),
     )
     tools.add_command(
         label="pnpm Store 垃圾收集…",
