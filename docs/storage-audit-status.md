@@ -46,6 +46,8 @@ A clean CI run on a stale stacked base is not enough. Positive audit and impleme
 | JetBrains old default system trees | source-backed 180-day old-version lifecycle; exact uninstalled 2020.1+ default system tree deterministic candidate, config/plugins protected |
 | NuGet local resources | official `dotnet nuget locals`; HTTP/temp/plugin caches deterministic, global packages USER_REVIEW |
 | pip cache | vendor-supported cache inventory/purge with authoritative cache-path validation |
+| npm cache | exact configured root; `npm cache verify` deterministic vendor GC, whole package cache USER_REVIEW, exact npx entry USER_REVIEW, TUF protected |
+| Cypress binary cache | exact selected CLI + vendor-reported root; `cypress cache prune` USER_REVIEW with future-root fail-closed guard; whole `cache clear` not exposed |
 | pnpm store | vendor garbage collection rather than whole-store deletion |
 | uv cache | vendor garbage collection |
 | Go caches | vendor build-cache deterministic lane and USER_REVIEW module-cache lane |
@@ -132,7 +134,7 @@ Project outputs are treated as **build-system authority problems**, not as gener
 | Maven | generic clean deferred; inherited/configured filesets widen destructive scope |
 | Gradle | generic clean deferred; task graph/Delete/custom actions widen scope |
 | CMake | generic clean deferred; supported project/generator configuration can widen clean scope |
-| .NET / MSBuild | generic clean deferred; evaluated/imported target graph and Before/AfterTargets can widen scope |
+| .NET / MSBuild | generic clean deferred; evaluated/imported target graph and Before/AfterTargets can widen clean scope |
 | Meson | exact configured whole build-tree USER_REVIEW implemented; `meson compile --clean` separately unaudited backend behavior |
 | Ninja standalone | generic clean deferred; Cleaner paths are not directory-bounded and no complete machine-readable destructive manifest exists |
 | GNU Make | generic clean deferred; `clean` is arbitrary project-defined recipe execution and dry-run is not a guaranteed read-only scope probe |
@@ -152,6 +154,7 @@ A lower-level backend never inherits broader authority than the higher-level gen
 | Ollama raw model store | user-selected content with shared blobs/manifests | exact per-model vendor action only |
 | Hugging Face Xet/assets/HF_HOME/token | Xet/assets are separate vendor/application caches while HF_HOME mixes authentication and cache state; raw deletion protected | dedicated exact vendor lifecycle/API per cache class; never whole-HF_HOME deletion |
 | PyTorch Hub repo/checkpoint/temp objects | current source has no public complete cache inventory/remove API; repo directory encoding is not reliably reversible; checkpoints lack durable URL/provenance metadata; trusted_list is persistent trust state | public exact inventory + remove/prune API, or durable source/hash provenance with equally strong mutation scope |
+| Cypress whole-cache clear / unknown future root objects | audited source clears the entire cache root while prune treats `bundles` and `sessions` as separate non-binary entries; unknown future root shapes fail closed | source contract that separates binary clear from neighboring state, or a later audit explicitly covering all whole-root side effects |
 | Maven local repository | remote cache mixed with unique local artifacts | vendor semantics separating safely reclaimable remote content |
 | Cargo global registry/git | shared vendor-managed download/source state | stable vendor prune/GC interface |
 | WSL distro VHD/rootfs | persistent Linux filesystem/user state | no generic delete lane |
@@ -177,17 +180,16 @@ A lower-level backend never inherits broader authority than the higher-level gen
 
 ## Current high-value queue
 
-The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, exact Hugging Face Hub object maintenance, and PyTorch Hub read-only source audit are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
+The broad Windows diagnostics, Podman/Android package work, Docker unification, Android project-reference explanation, exact Hugging Face Hub object maintenance, PyTorch Hub read-only audit, npm vendor maintenance, and Cypress binary-cache lifecycle are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
 
-1. **High-impact `%USERPROFILE%\.cache` applications**
-   - continue auditing known applications individually; Hugging Face Hub is object-aware and PyTorch Hub is now explicitly report-only, but generic `.cache` parent deletion remains prohibited.
+1. **High-impact application caches**
+   - continue auditing known applications individually; npm/Cypress/Hugging Face are now vendor-aware and PyTorch Hub is explicitly report-only, but generic `.cache` or product-parent deletion remains prohibited.
 2. **Additional local-model products**
    - models remain user-selected content; exact vendor model actions only, with offline/rebuild value treated as USER_REVIEW.
-3. **Narrow application-specific Windows diagnostics**
+3. **Package/runtime managers with existing broad cache rules**
+   - re-audit Yarn/Bun and similar sources against current vendor commands before retaining whole-tree TOOL authority; project-local/offline mirrors remain user/persistent state.
+4. **Narrow application-specific Windows diagnostics**
    - revisit only when Microsoft or the owning application exposes an exact lifecycle/API; broad `Logs`, `Prefetch`, `CbsTemp`, WER or servicing/setup roots remain protected.
-4. **Android project explanation follow-ups only when source-backed**
-   - selected-project literal references are positive evidence only; Gradle defaults/dynamic logic remain non-authoritative for uninstall;
-   - Gradle project mutation remains blocked until destructive task scope can be completely proven.
 
 ## Explicit anti-goals
 
