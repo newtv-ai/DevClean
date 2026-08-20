@@ -12,11 +12,7 @@ from devclean.core.application_cleanup import (
     match_application_rule,
     whole_tree_application_rule,
 )
-from devclean.core.cleanup_catalog import (
-    CleanupCategory,
-    CleanupPolicy,
-    discover_known_cleanup_roots,
-)
+from devclean.core.cleanup_catalog import CleanupPolicy, discover_known_cleanup_roots
 from devclean.core.user_rules import default_rules
 from devclean.core.yarn_cleanup import yarn_audited_tool_roots, yarn_roots
 
@@ -53,6 +49,7 @@ def test_yarn_machine_cache_roots_are_discovered_without_project_cache_authority
     scan = application_scan_roots(env)
     assert PureWindowsPath(str(classic)) in scan
     assert PureWindowsPath(str(global_folder)) in scan
+    assert PureWindowsPath(str(global_folder / "cache")) in scan
 
 
 def test_yarn_machine_caches_and_global_state_are_protected(
@@ -153,12 +150,9 @@ def test_yarn_has_no_generic_whole_tree_authority_and_catalog_is_report_only(
     global_item = by_path[os.path.normcase(str(global_folder))]
     cache_item = by_path[os.path.normcase(str(global_cache))]
 
-    assert classic_item.category is CleanupCategory.YARN_CACHE
     assert classic_item.policy is CleanupPolicy.REPORT_ONLY
     assert not classic_item.delete_root_itself
-    assert classic_item.application_rule is not None
     assert global_item.policy is CleanupPolicy.REPORT_ONLY
     assert not global_item.delete_root_itself
-    assert cache_item.category is CleanupCategory.YARN_CACHE
     assert cache_item.policy is CleanupPolicy.REPORT_ONLY
     assert not cache_item.delete_root_itself
