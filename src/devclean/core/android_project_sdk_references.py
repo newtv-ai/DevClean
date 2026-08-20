@@ -5,6 +5,8 @@ build logic, so static text can provide positive evidence for a few literal SDK
 version declarations but absence of a match can never mean "unused".
 """
 
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import os
@@ -77,7 +79,6 @@ class AndroidProjectReferenceScan:
     warnings: tuple[str, ...]
 
 
-
 def scan_android_project_sdk_references(project_root: Path | str) -> AndroidProjectReferenceScan:
     """Scan literal Android SDK version declarations without executing Gradle.
 
@@ -95,7 +96,7 @@ def scan_android_project_sdk_references(project_root: Path | str) -> AndroidProj
     }
     if not direct_names:
         raise ValueError(
-            "所选目录没有直接的 settings.gradle(.kts) 或 build.gradle(.kts)；"
+            "所选目录没有直接的 settings.gradle(.kts) 或 build.gradle(.kts); "
             "请选择 Gradle/Android 项目根或模块目录"
         )
 
@@ -109,7 +110,7 @@ def scan_android_project_sdk_references(project_root: Path | str) -> AndroidProj
         depth = len(current.parts) - root_parts
         if depth >= _MAX_DEPTH:
             if dirnames:
-                warnings.append(f"{current}: 达到静态扫描深度上限 {_MAX_DEPTH}，更深目录未扫描")
+                warnings.append(f"{current}: 达到静态扫描深度上限 {_MAX_DEPTH}, 更深目录未扫描")
             dirnames[:] = []
         else:
             kept: list[str] = []
@@ -126,7 +127,7 @@ def scan_android_project_sdk_references(project_root: Path | str) -> AndroidProj
                         warnings.append(f"{child}: reparse 子目录未扫描")
                         continue
                 except OSError as error:
-                    warnings.append(f"{child}: 无法验证目录，未扫描 ({error})")
+                    warnings.append(f"{child}: 无法验证目录, 未扫描 ({error})")
                     continue
                 kept.append(dirname)
             dirnames[:] = kept
@@ -138,7 +139,7 @@ def scan_android_project_sdk_references(project_root: Path | str) -> AndroidProj
             files_scanned += 1
             if files_scanned > _MAX_BUILD_FILES:
                 warnings.append(
-                    f"项目 build/settings 文件超过 {_MAX_BUILD_FILES} 个；其余文件未扫描"
+                    f"项目 build/settings 文件超过 {_MAX_BUILD_FILES} 个; 其余文件未扫描"
                 )
                 return _finish_scan(root, references, _MAX_BUILD_FILES, warnings)
             try:
@@ -194,7 +195,7 @@ def _parse_script_text(
     text = _strip_comments(source)
     found: list[AndroidProjectSdkReference] = []
 
-    for match in _COMPILE_SDK_RE.finditer(text):
+    for match in _outside_string_matches(_COMPILE_SDK_RE, text):
         raw = match.group("value").strip("'\"")
         api_level = raw.removeprefix("android-")
         found.append(
@@ -210,7 +211,7 @@ def _parse_script_text(
         )
 
     for block_start, block_text in _named_blocks(text, "compileSdk"):
-        for match in _SETTINGS_RELEASE_RE.finditer(block_text):
+        for match in _outside_string_matches(_SETTINGS_RELEASE_RE, block_text):
             api_level = match.group("value")
             found.append(
                 _reference(
@@ -224,7 +225,7 @@ def _parse_script_text(
                 )
             )
 
-    for match in _BUILD_TOOLS_RE.finditer(text):
+    for match in _outside_string_matches(_BUILD_TOOLS_RE, text):
         version = match.group("value")
         found.append(
             _reference(
@@ -238,7 +239,7 @@ def _parse_script_text(
             )
         )
 
-    for match in _NDK_RE.finditer(text):
+    for match in _outside_string_matches(_NDK_RE, text):
         version = match.group("value")
         found.append(
             _reference(
@@ -254,7 +255,7 @@ def _parse_script_text(
 
     for outer_start, outer in _named_blocks(text, "externalNativeBuild"):
         for cmake_start, cmake_block in _named_blocks(outer, "cmake"):
-            for match in _CMAKE_VERSION_RE.finditer(cmake_block):
+            for match in _outside_string_matches(_CMAKE_VERSION_RE, cmake_block):
                 version = match.group("value")
                 found.append(
                     _reference(
@@ -290,10 +291,22 @@ def _reference(
     )
 
 
+def _outside_string_matches(pattern: re.Pattern[str], text: str) -> tuple[re.Match[str], ...]:
+    spans = _string_spans(text)
+    return tuple(
+        match
+        for match in pattern.finditer(text)
+        if not _offset_in_spans(match.start(), spans)
+    )
+
+
 def _named_blocks(text: str, name: str) -> tuple[tuple[int, str], ...]:
     pattern = re.compile(rf"\b{re.escape(name)}\b\s*\{{")
+    spans = _string_spans(text)
     blocks: list[tuple[int, str]] = []
     for match in pattern.finditer(text):
+        if _offset_in_spans(match.start(), spans):
+            continue
         brace = text.find("{", match.start(), match.end())
         if brace < 0:
             continue
@@ -302,6 +315,42 @@ def _named_blocks(text: str, name: str) -> tuple[tuple[int, str], ...]:
             continue
         blocks.append((brace + 1, text[brace + 1 : end]))
     return tuple(blocks)
+
+
+def _string_spans(text: str) -> tuple[tuple[int, int], ...]:
+    spans: list[tuple[int, int]] = []
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char not in {"'", '"'}:
+            index += 1
+            continue
+        start = index
+        triple = text.startswith(char * 3, index)
+        index += 3 if triple else 1
+        escaped = False
+        while index < len(text):
+            if not triple and escaped:
+                escaped = False
+                index += 1
+                continue
+            if not triple and text[index] == "\\":
+                escaped = True
+                index += 1
+                continue
+            if triple and text.startswith(char * 3, index):
+                index += 3
+                break
+            if not triple and text[index] == char:
+                index += 1
+                break
+            index += 1
+        spans.append((start, index))
+    return tuple(spans)
+
+
+def _offset_in_spans(offset: int, spans: tuple[tuple[int, int], ...]) -> bool:
+    return any(start <= offset < end for start, end in spans)
 
 
 def _matching_brace(text: str, opening: int) -> int | None:
