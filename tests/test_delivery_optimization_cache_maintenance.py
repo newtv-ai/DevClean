@@ -206,8 +206,26 @@ def test_inventory_rejects_duplicate_file_ids(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(do_cache, "_is_process_elevated", lambda: True)
     payload = {
         "Items": [
-            {"FileId": "same", "FileSize": 10, "FileSizeInCache": 10, "Status": "Caching", "Priority": "Background", "ExpireOn": None, "IsPinned": False, "Caller": "Store"},
-            {"FileId": "SAME", "FileSize": 10, "FileSizeInCache": 10, "Status": "Caching", "Priority": "Background", "ExpireOn": None, "IsPinned": False, "Caller": "Store"},
+            {
+                "FileId": "same",
+                "FileSize": 10,
+                "FileSizeInCache": 10,
+                "Status": "Caching",
+                "Priority": "Background",
+                "ExpireOn": None,
+                "IsPinned": False,
+                "Caller": "Store",
+            },
+            {
+                "FileId": "SAME",
+                "FileSize": 10,
+                "FileSizeInCache": 10,
+                "Status": "Caching",
+                "Priority": "Background",
+                "ExpireOn": None,
+                "IsPinned": False,
+                "Caller": "Store",
+            },
         ]
     }
     monkeypatch.setattr(
@@ -225,9 +243,13 @@ def test_inventory_rejects_tool_identity_race(monkeypatch: pytest.MonkeyPatch) -
     module = Path(_ENV["DEVCLEAN_DELIVERY_OPTIMIZATION_MODULE"])
     monkeypatch.setattr(do_cache, "_windows_powershell", lambda environment: ps)
     monkeypatch.setattr(do_cache, "_delivery_optimization_module", lambda environment: module)
-    identities = iter((_identity(ps, 1), _identity(module, 2), _identity(ps, 3), _identity(module, 2)))
+    identities = iter(
+        (_identity(ps, 1), _identity(module, 2), _identity(ps, 3), _identity(module, 2))
+    )
     monkeypatch.setattr(do_cache, "_file_identity", lambda path, label: next(identities))
-    monkeypatch.setattr(do_cache, "_run_powershell", lambda *args, **kwargs: _completed('{"Items":[]}'))
+    monkeypatch.setattr(
+        do_cache, "_run_powershell", lambda *args, **kwargs: _completed('{"Items":[]}')
+    )
 
     with pytest.raises(RuntimeError, match="身份在检查期间发生变化"):
         inventory_delivery_optimization_cache(_ENV, now=_NOW)
@@ -303,7 +325,9 @@ def test_delete_refuses_pin_or_expiry_change(monkeypatch: pytest.MonkeyPatch) ->
         delete_delivery_optimization_cache_file(expected, reviewed, _ENV, now=_NOW)
 
 
-def test_delete_requires_exact_file_id_absent_after_success(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_delete_requires_exact_file_id_absent_after_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     expected = _entry()
     inventory = _inventory((expected,))
     inventories = iter((inventory, inventory, inventory))
@@ -319,7 +343,9 @@ def test_delete_requires_exact_file_id_absent_after_success(monkeypatch: pytest.
         delete_delivery_optimization_cache_file(expected, inventory, _ENV, now=_NOW)
 
 
-def test_file_identity_rejects_reparse_or_missing_stable_id(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_file_identity_rejects_reparse_or_missing_stable_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     path = Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
     monkeypatch.setattr(Path, "is_symlink", lambda self: False)
     monkeypatch.setattr(Path, "is_junction", lambda self: False)

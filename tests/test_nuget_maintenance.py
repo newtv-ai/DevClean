@@ -57,8 +57,7 @@ def test_nuget_inventory_is_read_only_and_sums_all_locals(tmp_path: Path) -> Non
 
 def test_nuget_cache_lanes_are_local_and_do_not_require_ai() -> None:
     assert (
-        nuget_maintenance_lane(NuGetLocalKind.GLOBAL_PACKAGES)
-        is NuGetMaintenanceLane.USER_REVIEW
+        nuget_maintenance_lane(NuGetLocalKind.GLOBAL_PACKAGES) is NuGetMaintenanceLane.USER_REVIEW
     )
     for kind in (
         NuGetLocalKind.HTTP_CACHE,

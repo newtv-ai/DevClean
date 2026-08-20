@@ -88,9 +88,7 @@ def test_buildtrees_reason_warns_about_editable_work(
     _patch_version_run(monkeypatch)
 
     inventory = inspect_vcpkg_root(root)
-    entry = next(
-        item for item in inventory.entries if item.kind is VcpkgStorageKind.BUILDTREES
-    )
+    entry = next(item for item in inventory.entries if item.kind is VcpkgStorageKind.BUILDTREES)
 
     assert "--editable" in entry.reason
     assert entry.executable

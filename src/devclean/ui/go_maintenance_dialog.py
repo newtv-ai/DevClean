@@ -234,8 +234,7 @@ class _GoMaintenanceDialog:
         deterministic = _format_bytes(inventory.deterministic_bytes)
         recommended = _format_bytes(inventory.recommended_bytes)
         self._status.set(
-            f"Go 缓存共 {total}；本地确定可清理 {deterministic}；"
-            f"默认建议清理约 {recommended}。"
+            f"Go 缓存共 {total}；本地确定可清理 {deterministic}；默认建议清理约 {recommended}。"
         )
 
 

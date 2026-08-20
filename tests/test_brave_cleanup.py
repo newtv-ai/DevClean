@@ -52,15 +52,11 @@ def test_brave_channel_and_updater_roots_are_discovered() -> None:
         ),
     }
     assert expected.issubset(set(roots.data_roots))
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Local\BraveSoftware\Update"
-    ) in roots.updater_roots
-    assert PureWindowsPath(
-        r"C:\Program Files (x86)\BraveSoftware\Update"
-    ) in roots.updater_roots
-    assert PureWindowsPath(
-        r"C:\ProgramData\BraveSoftware\Update"
-    ) in roots.updater_roots
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\BraveSoftware\Update") in roots.updater_roots
+    )
+    assert PureWindowsPath(r"C:\Program Files (x86)\BraveSoftware\Update") in roots.updater_roots
+    assert PureWindowsPath(r"C:\ProgramData\BraveSoftware\Update") in roots.updater_roots
 
 
 def test_brave_chromium_cache_and_profile_boundaries() -> None:

@@ -6,16 +6,16 @@ This tracker exists so the requested second-pass audit is genuinely one-by-one r
 
 | Layer | Status | Result |
 | --- | --- | --- |
-| Packaged DELETE/KEEP defaults | ⚠ #142 interim | backup/migration bug fixed; defaults temporarily neutralized, safe file-level knowledge will be selectively restored |
+| Packaged DELETE/KEEP defaults | ✅ phase 6 | raw machine history stays local; current audited product FILE rules overlay sidecars as a separate source |
 | Generic file-name/suffix/cache heuristics | ✅ phase 2 | protected/report-only; no USER/AI delete authority |
 | Generic directory-name/version heuristics | ✅ phase 2 | protected/report-only; no whole-tree USER delete authority |
 | Generic unknown-file routing | ✅ phase 2 | protected; no default paid AI route |
 | Legacy MANUAL_REVIEW raw roots | ✅ phase 2 | runtime fails closed to REPORT_ONLY |
 | Static VENDOR_MANAGED root fallback | ✅ phase 3 | static roots are discovery-only; deterministic vendor authority requires an attached audited TOOL whole-tree rule |
 | AGE_BASED_REVIEW temp lifecycle | ✅ phase 4 | raw mtime/age authority removed; legacy AGE roots fail closed and packaged temp/crash roots are discovery-only |
-| Scan exclusions/pruning | ⏳ queued | verify no important audited cache is accidentally skipped and no user data is widened |
+| Scan exclusions/pruning | ✅ phase 5 | explicit/audited nested roots survive skipped-name ancestors; exclusions and descendant pruning still win |
 | Learned-rule target boundary | ✅ phase 2 | learned/default rules apply to files only; directory choices are exact-path-only and subtree KEEP wins |
-| Learned-rule portability/default restoration | ⏳ queued | re-audit old packaged file rules, generated glob/regex reuse, then selectively restore safe common-file knowledge |
+| Learned-rule portability/default restoration | ✅ phase 6 | restored only source-supported common FILE knowledge; rejected personal/history/install-state and already-covered app-cache guesses |
 | Execution identity/reparse/hardlink/concurrency gates | ⏳ queued | second-pass regression audit; no weakening planned |
 
 ## Packaged known cleanup roots

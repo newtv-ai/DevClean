@@ -134,11 +134,14 @@ def maven_roots(environment: Mapping[str, str] | None = None) -> MavenRootSet:
         return MavenRootSet((), (), ())
 
     home_path = PureWindowsPath(home)
-    user_config = _first_absolute(
-        env.get("devclean_maven_user_conf"),
-        _extract_user_property(env.get("maven_args"), "maven.user.conf"),
-        _extract_user_property(env.get("maven_opts"), "maven.user.conf"),
-    ) or home_path / ".m2"
+    user_config = (
+        _first_absolute(
+            env.get("devclean_maven_user_conf"),
+            _extract_user_property(env.get("maven_args"), "maven.user.conf"),
+            _extract_user_property(env.get("maven_opts"), "maven.user.conf"),
+        )
+        or home_path / ".m2"
+    )
 
     settings_path = user_config / "settings.xml"
     explicit_repo = _first_absolute(
@@ -236,11 +239,7 @@ def evaluate_maven_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
     return ApplicationPolicyDecision(
         rule,
         PolicyAction.KEEP_PROTECTED,

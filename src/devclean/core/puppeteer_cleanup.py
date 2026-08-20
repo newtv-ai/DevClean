@@ -43,9 +43,7 @@ _PUPPETEER_BROWSER_CACHE_RULE = ApplicationCleanupRule(
     label="Puppeteer downloaded browser cache; version liveness is owned by Puppeteer",
 )
 
-PUPPETEER_RULES: tuple[ApplicationCleanupRule, ...] = (
-    _PUPPETEER_BROWSER_CACHE_RULE,
-)
+PUPPETEER_RULES: tuple[ApplicationCleanupRule, ...] = (_PUPPETEER_BROWSER_CACHE_RULE,)
 
 
 def puppeteer_roots(
@@ -107,11 +105,7 @@ def evaluate_puppeteer_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
     return ApplicationPolicyDecision(
         rule,
         PolicyAction.KEEP_PROTECTED,

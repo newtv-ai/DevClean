@@ -179,8 +179,7 @@ def clear_nuget_local(
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
         raise RuntimeError(
-            f"dotnet nuget locals {kind.value} --clear 失败 "
-            f"(退出码 {result.returncode}): {detail}"
+            f"dotnet nuget locals {kind.value} --clear 失败 (退出码 {result.returncode}): {detail}"
         )
 
     after = _directory_bytes(path)

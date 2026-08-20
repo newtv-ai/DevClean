@@ -184,11 +184,7 @@ class _OllamaModelMaintenanceDialog:
         inventory = self._inventory
         if self._busy or inventory is None or not inventory.deletion_supported:
             return
-        selected = [
-            self._rows[item]
-            for item in self._tree.selection()
-            if item in self._rows
-        ]
+        selected = [self._rows[item] for item in self._tree.selection() if item in self._rows]
         if not selected:
             messagebox.showinfo(
                 "Ollama 本机模型维护",
@@ -271,14 +267,10 @@ class _OllamaModelMaintenanceDialog:
             ]
             measured = sum(reclaimed_values) if reclaimed_values else None
             suffix = (
-                f"，本地模型库实测释放约 {_format_bytes(measured)}"
-                if measured is not None
-                else ""
+                f"，本地模型库实测释放约 {_format_bytes(measured)}" if measured is not None else ""
             )
             if outcome.error is None:
-                self._status.set(
-                    f"已删除 {len(outcome.results)} 个模型{suffix}；正在重新统计…"
-                )
+                self._status.set(f"已删除 {len(outcome.results)} 个模型{suffix}；正在重新统计…")
             else:
                 self._status.set(
                     f"已删除 {len(outcome.results)} 个模型{suffix}，随后停止："

@@ -46,12 +46,8 @@ _COMPILE_SDK_RE = re.compile(
 _BUILD_TOOLS_RE = re.compile(
     rf"\bbuildToolsVersion\b\s*(?:=\s*)?['\"](?P<value>{_VERSION_LITERAL})['\"]"
 )
-_NDK_RE = re.compile(
-    rf"\bndkVersion\b\s*(?:=\s*)?['\"](?P<value>{_VERSION_LITERAL})['\"]"
-)
-_CMAKE_VERSION_RE = re.compile(
-    rf"\bversion\b\s*(?:=\s*)?['\"](?P<value>{_VERSION_LITERAL})['\"]"
-)
+_NDK_RE = re.compile(rf"\bndkVersion\b\s*(?:=\s*)?['\"](?P<value>{_VERSION_LITERAL})['\"]")
+_CMAKE_VERSION_RE = re.compile(rf"\bversion\b\s*(?:=\s*)?['\"](?P<value>{_VERSION_LITERAL})['\"]")
 _SETTINGS_RELEASE_RE = re.compile(r"\bversion\s*=\s*release\(\s*(?P<value>\d+)\s*\)")
 
 
@@ -292,9 +288,7 @@ def _reference(
 def _outside_string_matches(pattern: re.Pattern[str], text: str) -> tuple[re.Match[str], ...]:
     spans = _string_spans(text)
     return tuple(
-        match
-        for match in pattern.finditer(text)
-        if not _offset_in_spans(match.start(), spans)
+        match for match in pattern.finditer(text) if not _offset_in_spans(match.start(), spans)
     )
 
 

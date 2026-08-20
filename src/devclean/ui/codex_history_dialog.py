@@ -239,9 +239,7 @@ class _CodexHistoryDialog:
             self._refresh()
             return
         if outcome.failed:
-            sample = "\n".join(
-                f"{thread_id}: {reason}" for thread_id, reason in outcome.failed[:5]
-            )
+            sample = "\n".join(f"{thread_id}: {reason}" for thread_id, reason in outcome.failed[:5])
             messagebox.showwarning(
                 "部分会话未删除",
                 (

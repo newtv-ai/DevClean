@@ -29,9 +29,7 @@ IO_REPARSE_TAG_CLOUD: Final = 0x9000001A
 IO_REPARSE_TAG_ONEDRIVE: Final = 0x80000021
 
 _CLOUD_ATTRIBUTE_MASK: Final = (
-    FILE_ATTRIBUTE_OFFLINE
-    | FILE_ATTRIBUTE_RECALL_ON_OPEN
-    | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
+    FILE_ATTRIBUTE_OFFLINE | FILE_ATTRIBUTE_RECALL_ON_OPEN | FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
 )
 # Microsoft reserves bits 12-15 for the numbered Cloud Files tag variants
 # (IO_REPARSE_TAG_CLOUD_1 through IO_REPARSE_TAG_CLOUD_F).  Clear only that
@@ -83,9 +81,7 @@ def is_cloud_reparse_tag(tag: int | None) -> bool:
 def is_cloud_placeholder(attributes: int | None, reparse_tag: int | None) -> bool:
     """Classify offline/recall-on-access objects as Cloud Files boundaries."""
 
-    return bool((attributes or 0) & _CLOUD_ATTRIBUTE_MASK) or is_cloud_reparse_tag(
-        reparse_tag
-    )
+    return bool((attributes or 0) & _CLOUD_ATTRIBUTE_MASK) or is_cloud_reparse_tag(reparse_tag)
 
 
 class _FILE_ID_128(ctypes.Structure):
@@ -238,9 +234,7 @@ def _windows_metadata(path: str) -> FileSystemMetadata:
         _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE,
         None,
         _OPEN_EXISTING,
-        _FILE_FLAG_BACKUP_SEMANTICS
-        | _FILE_FLAG_OPEN_REPARSE_POINT
-        | _FILE_FLAG_OPEN_NO_RECALL,
+        _FILE_FLAG_BACKUP_SEMANTICS | _FILE_FLAG_OPEN_REPARSE_POINT | _FILE_FLAG_OPEN_NO_RECALL,
         None,
     )
     if handle == _INVALID_HANDLE_VALUE:
@@ -350,9 +344,7 @@ def _windows_metadata_from_handle(
         is_reparse_point=reparse,
         is_cloud_placeholder=is_cloud_placeholder(attributes, reparse_tag),
         creation_time_ns=_filetime_to_unix_ns(basic.creation_time) if basic_ok else None,
-        last_write_time_ns=(
-            _filetime_to_unix_ns(basic.last_write_time) if basic_ok else None
-        ),
+        last_write_time_ns=(_filetime_to_unix_ns(basic.last_write_time) if basic_ok else None),
     )
 
 

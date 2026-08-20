@@ -57,10 +57,7 @@ def test_go_inventory_is_read_only_and_separates_decision_lanes(
 
 
 def test_go_lanes_are_local_and_never_need_ai() -> None:
-    assert (
-        go_maintenance_lane(GoCacheKind.BUILD)
-        is GoMaintenanceLane.DETERMINISTIC_CANDIDATE
-    )
+    assert go_maintenance_lane(GoCacheKind.BUILD) is GoMaintenanceLane.DETERMINISTIC_CANDIDATE
     assert go_maintenance_lane(GoCacheKind.MODULE) is GoMaintenanceLane.USER_REVIEW
 
 

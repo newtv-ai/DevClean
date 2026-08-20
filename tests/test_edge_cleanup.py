@@ -43,23 +43,16 @@ def test_edge_default_channel_and_updater_roots_are_discovered() -> None:
     roots = edge_roots(_env())
     expected = {
         PureWindowsPath(r"C:\Users\alice\AppData\Local\Microsoft\Edge\User Data"),
-        PureWindowsPath(
-            r"C:\Users\alice\AppData\Local\Microsoft\Edge Beta\User Data"
-        ),
-        PureWindowsPath(
-            r"C:\Users\alice\AppData\Local\Microsoft\Edge Dev\User Data"
-        ),
-        PureWindowsPath(
-            r"C:\Users\alice\AppData\Local\Microsoft\Edge SxS\User Data"
-        ),
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Microsoft\Edge Beta\User Data"),
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Microsoft\Edge Dev\User Data"),
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Microsoft\Edge SxS\User Data"),
     }
     assert expected.issubset(set(roots.data_roots))
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Local\Microsoft\Edge\Update"
-    ) in roots.updater_roots
-    assert PureWindowsPath(
-        r"C:\Program Files (x86)\Microsoft\EdgeUpdate"
-    ) in roots.updater_roots
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Microsoft\Edge\Update")
+        in roots.updater_roots
+    )
+    assert PureWindowsPath(r"C:\Program Files (x86)\Microsoft\EdgeUpdate") in roots.updater_roots
     assert PureWindowsPath(r"C:\ProgramData\Microsoft\EdgeUpdate") in roots.updater_roots
 
     scan = set(application_scan_roots(_env()))
@@ -124,11 +117,14 @@ def test_edge_site_cache_storage_is_user_owned_and_profile_state_is_keep() -> No
     )
     assert decision is not None
     assert decision.action is PolicyAction.KEEP_PROTECTED
-    assert whole_tree_application_rule(
-        r"C:\Users\alice\AppData\Local\Microsoft\Edge\User Data\Default"
-        r"\Service Worker\CacheStorage",
-        _env(),
-    ) is None
+    assert (
+        whole_tree_application_rule(
+            r"C:\Users\alice\AppData\Local\Microsoft\Edge\User Data\Default"
+            r"\Service Worker\CacheStorage",
+            _env(),
+        )
+        is None
+    )
 
     for path in (
         r"C:\Users\alice\AppData\Local\Microsoft\Edge\User Data\Default\History",
@@ -174,10 +170,13 @@ def test_edge_updater_state_is_protected_but_official_logs_are_tool() -> None:
     assert state_rule is not None
     assert state_rule.rule_id == "edge-updater-state"
     assert state_rule.owner is DecisionOwner.KEEP
-    assert whole_tree_application_rule(
-        r"C:\Program Files (x86)\Microsoft\EdgeUpdate",
-        _env(),
-    ) is None
+    assert (
+        whole_tree_application_rule(
+            r"C:\Program Files (x86)\Microsoft\EdgeUpdate",
+            _env(),
+        )
+        is None
+    )
 
     logs = {
         (

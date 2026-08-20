@@ -440,8 +440,7 @@ def match_cursor_rule(
 ) -> ApplicationCleanupRule | None:
     normalized = _impl._normalize(path)
     roots = {
-        root.key: _impl._normalize(root.path)
-        for root in cursor_application_roots(environment)
+        root.key: _impl._normalize(root.path) for root in cursor_application_roots(environment)
     }
     matches: list[tuple[int, int, ApplicationCleanupRule]] = []
     for index, rule in enumerate(CURSOR_RULES):
@@ -478,11 +477,7 @@ def evaluate_cursor_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
 
     if rule.owner is DecisionOwner.KEEP:
         return ApplicationPolicyDecision(
@@ -526,10 +521,7 @@ def evaluate_cursor_path(
 def cursor_process_running() -> bool:
     if os.name != "nt":
         return False
-    script = (
-        "$p=Get-Process -Name Cursor -ErrorAction SilentlyContinue; "
-        "if ($p) { 'RUNNING' }"
-    )
+    script = "$p=Get-Process -Name Cursor -ErrorAction SilentlyContinue; if ($p) { 'RUNNING' }"
     try:
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],

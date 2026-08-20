@@ -242,9 +242,7 @@ class _GitRepositoryMaintenanceDialog:
             return
         self._preview = None
         self._set_busy(True)
-        self._status.set(
-            "正在运行 Git LFS 官方 dry-run，并远端验证 reachable / unreachable 候选…"
-        )
+        self._status.set("正在运行 Git LFS 官方 dry-run，并远端验证 reachable / unreachable 候选…")
 
         def work() -> None:
             try:
@@ -346,9 +344,7 @@ class _GitRepositoryMaintenanceDialog:
             None: "Git 判断: 无法确认 maintenance is-needed",
         }[inventory.maintenance_needed]
         alternates = (
-            ", ".join(str(path) for path in inventory.alternates)
-            if inventory.alternates
-            else "无"
+            ", ".join(str(path) for path in inventory.alternates) if inventory.alternates else "无"
         )
         self._git_details.configure(
             text=(

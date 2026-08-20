@@ -259,9 +259,7 @@ def _exact_image(
 ) -> DockerImageEntry:
     matches = [item for item in images if item.image_id == image_id]
     if len(matches) != 1:
-        raise RuntimeError(
-            f"无法唯一确认 Docker image {image_id!r}: found={len(matches)}"
-        )
+        raise RuntimeError(f"无法唯一确认 Docker image {image_id!r}: found={len(matches)}")
     return matches[0]
 
 
@@ -294,8 +292,7 @@ def _require_local_daemon(
     daemon = inspect_docker_daemon_target(environment)
     if not daemon.local:
         raise RuntimeError(
-            "DevClean 只维护本机 Docker daemon; "
-            f"当前 endpoint={daemon.endpoint} ({daemon.source})"
+            f"DevClean 只维护本机 Docker daemon; 当前 endpoint={daemon.endpoint} ({daemon.source})"
         )
     return daemon
 
@@ -376,9 +373,7 @@ def _run_docker(
         raise RuntimeError(f"无法执行 Docker image CLI: {error}") from error
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(
-            f"Docker image CLI 失败 (exit {result.returncode}): {detail}"
-        )
+        raise RuntimeError(f"Docker image CLI 失败 (exit {result.returncode}): {detail}")
     return result
 
 

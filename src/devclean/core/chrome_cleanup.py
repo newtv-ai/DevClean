@@ -484,11 +484,7 @@ def evaluate_chrome_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
 
     if rule.owner is DecisionOwner.KEEP:
         return ApplicationPolicyDecision(
@@ -556,9 +552,7 @@ def chrome_process_running() -> bool:
 
 
 @lru_cache(maxsize=1)
-def _running_override_roots() -> tuple[
-    tuple[PureWindowsPath, ...], tuple[PureWindowsPath, ...]
-]:
+def _running_override_roots() -> tuple[tuple[PureWindowsPath, ...], tuple[PureWindowsPath, ...]]:
     if os.name != "nt":
         return (), ()
     script = (
@@ -638,9 +632,8 @@ def _existing_profile_roots(data_root: PureWindowsPath) -> tuple[PureWindowsPath
 
 def _is_profile_dir_name(name: str) -> bool:
     lowered = name.casefold()
-    return (
-        lowered in {"default", "guest profile", "system profile"}
-        or lowered.startswith("profile ")
+    return lowered in {"default", "guest profile", "system profile"} or lowered.startswith(
+        "profile "
     )
 
 

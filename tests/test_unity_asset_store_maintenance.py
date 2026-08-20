@@ -76,9 +76,7 @@ def test_environment_override_may_point_at_asset_store_directory(tmp_path: Path)
     root = tmp_path / "Asset Store-5.x"
     package = _write_package(root / "Vendor" / "Product" / "pkg.unitypackage", 23)
 
-    inventory = inventory_unity_asset_store(
-        {"ASSETSTORE_CACHE_PATH": str(root)}
-    )
+    inventory = inventory_unity_asset_store({"ASSETSTORE_CACHE_PATH": str(root)})
 
     assert len(inventory.roots) == 1
     assert inventory.roots[0].path == root

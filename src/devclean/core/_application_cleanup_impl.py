@@ -157,8 +157,7 @@ def _rule(
 
 
 _STATE_DATABASES = (
-    "{state_5.sqlite*,goals_1.sqlite*,memories_1.sqlite*,"
-    "queue_1.sqlite*,thread_history_1.sqlite*}"
+    "{state_5.sqlite*,goals_1.sqlite*,memories_1.sqlite*,queue_1.sqlite*,thread_history_1.sqlite*}"
 )
 _DESKTOP_BROWSER_CACHES = (
     "{Cache,Code Cache,GPUCache,GrShaderCache,ShaderCache,DawnCache,"
@@ -519,14 +518,8 @@ def evaluate_application_path(
     if rule is None:
         return None
     current = now or datetime.now(UTC)
-    observed = _as_utc(
-        _resolve_last_used(path, rule, last_used, environment=environment)
-    )
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    observed = _as_utc(_resolve_last_used(path, rule, last_used, environment=environment))
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
 
     if rule.owner is DecisionOwner.KEEP:
         return ApplicationPolicyDecision(

@@ -39,9 +39,7 @@ def test_vscode_default_stable_insiders_and_wsl_roots_are_discovered() -> None:
     insiders = PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Code - Insiders")
     wsl_stable = PureWindowsPath(r"C:\Users\alice\vscode-remote-wsl\stable")
     wsl_insider = PureWindowsPath(r"C:\Users\alice\vscode-remote-wsl\insider")
-    wsl_legacy = PureWindowsPath(
-        r"C:\Users\alice\AppData\Local\Temp\vscode-remote-wsl"
-    )
+    wsl_legacy = PureWindowsPath(r"C:\Users\alice\AppData\Local\Temp\vscode-remote-wsl")
     assert stable in roots.data_roots
     assert insiders in roots.data_roots
     assert PureWindowsPath(r"C:\Users\alice\.vscode\extensions") in roots.extension_roots
@@ -148,10 +146,13 @@ def test_vscode_cache_storage_is_user_owned_persistent_data() -> None:
     )
     assert decision is not None
     assert decision.action is PolicyAction.KEEP_PROTECTED
-    assert whole_tree_application_rule(
-        r"C:\Users\alice\AppData\Roaming\Code\Service Worker\CacheStorage",
-        _env(),
-    ) is None
+    assert (
+        whole_tree_application_rule(
+            r"C:\Users\alice\AppData\Roaming\Code\Service Worker\CacheStorage",
+            _env(),
+        )
+        is None
+    )
 
 
 def test_vscode_other_service_worker_state_is_not_blanket_deleted() -> None:
@@ -276,14 +277,20 @@ def test_vscode_dynamic_whole_tree_cache_roots_are_exact() -> None:
         wsl_rule = whole_tree_application_rule(wsl_root, env)
         assert wsl_rule is not None
         assert wsl_rule.rule_id == "vscode-wsl-server-download-cache"
-    assert whole_tree_application_rule(
-        r"C:\Users\alice\AppData\Roaming\Code",
-        env,
-    ) is None
-    assert whole_tree_application_rule(
-        r"C:\Users\alice\.vscode\extensions",
-        env,
-    ) is None
+    assert (
+        whole_tree_application_rule(
+            r"C:\Users\alice\AppData\Roaming\Code",
+            env,
+        )
+        is None
+    )
+    assert (
+        whole_tree_application_rule(
+            r"C:\Users\alice\.vscode\extensions",
+            env,
+        )
+        is None
+    )
 
 
 def test_vscode_process_guard_never_allows_workspace_or_backup_state(

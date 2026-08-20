@@ -130,11 +130,7 @@ class _UnityProjectMaintenanceDialog:
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
         self._choose_button.configure(state=tk.DISABLED if busy else tk.NORMAL)
-        enabled = (
-            not busy
-            and self._inventory is not None
-            and self._inventory.exists
-        )
+        enabled = not busy and self._inventory is not None and self._inventory.exists
         self._clean_button.configure(state=tk.NORMAL if enabled else tk.DISABLED)
 
     def _choose_project(self) -> None:

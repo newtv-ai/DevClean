@@ -68,8 +68,7 @@ def run_dotnet_workload_clean(
     output = _combined_output(completed.stdout, completed.stderr)
     if completed.returncode != 0:
         raise RuntimeError(
-            "dotnet workload clean 失败 "
-            f"(退出码 {completed.returncode}): {output or '没有输出'}"
+            f"dotnet workload clean 失败 (退出码 {completed.returncode}): {output or '没有输出'}"
         )
     return DotnetWorkloadCleanResult(
         command=command,
@@ -111,9 +110,7 @@ def clear_dotnet_process_cache() -> None:
 
 
 def _combined_output(stdout: str | None, stderr: str | None) -> str:
-    return "\n".join(
-        chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip()
-    )
+    return "\n".join(chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip())
 
 
 __all__ = [

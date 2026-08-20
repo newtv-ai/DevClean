@@ -127,14 +127,10 @@ class AiReviewSimilarityGroup:
             or _CONTROL.search(self.filename_pattern) is not None
             or not any(token in self.filename_pattern for token in ("*", "?"))
         ):
-            raise AiReviewContractError(
-                "similar filename pattern is invalid"
-            )
+            raise AiReviewContractError("similar filename pattern is invalid")
         _bounded_integer(self.member_count, "group member_count", maximum=100_000)
         if self.member_count < 2:
-            raise AiReviewContractError(
-                "similar filename group must contain at least two members"
-            )
+            raise AiReviewContractError("similar filename group must contain at least two members")
         for label, value in (
             ("group total_logical_size", self.total_logical_size_bytes),
             ("group minimum_logical_size", self.minimum_logical_size_bytes),
@@ -142,10 +138,8 @@ class AiReviewSimilarityGroup:
         ):
             _bounded_integer(value, label, maximum=(1 << 63) - 1)
         if (
-            self.minimum_logical_size_bytes
-            > self.maximum_logical_size_bytes
-            or self.total_logical_size_bytes
-            < self.maximum_logical_size_bytes
+            self.minimum_logical_size_bytes > self.maximum_logical_size_bytes
+            or self.total_logical_size_bytes < self.maximum_logical_size_bytes
         ):
             raise AiReviewContractError("similar filename group sizes are invalid")
         for label, timestamp in (
@@ -158,9 +152,7 @@ class AiReviewSimilarityGroup:
             and self.newest_last_write_time_ns is not None
             and self.oldest_last_write_time_ns > self.newest_last_write_time_ns
         ):
-            raise AiReviewContractError(
-                "similar filename group timestamps are invalid"
-            )
+            raise AiReviewContractError("similar filename group timestamps are invalid")
 
     def payload(self) -> Mapping[str, object]:
         return {
@@ -195,9 +187,7 @@ class AiReviewCandidateInput:
         if self.similar_group is not None and not isinstance(
             self.similar_group, AiReviewSimilarityGroup
         ):
-            raise TypeError(
-                "similar_group must be an AiReviewSimilarityGroup or None"
-            )
+            raise TypeError("similar_group must be an AiReviewSimilarityGroup or None")
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,9 +199,7 @@ class AiReviewEntry:
     snapshot_identity_digest: str
     hard_protected: bool
     model_metadata: Mapping[str, object]
-    similar_group: AiReviewSimilarityGroup | None = field(
-        default=None, repr=False
-    )
+    similar_group: AiReviewSimilarityGroup | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -554,8 +542,7 @@ def _unsigned_request_payload(package: AiReviewPackage) -> dict[str, object]:
         "path_disclosure": "FULL" if package.disclose_full_paths else "REDACTED",
         "instructions": [
             (
-                "Judge each candidate from its supplied metadata, including the "
-                "full path."
+                "Judge each candidate from its supplied metadata, including the full path."
                 if package.disclose_full_paths
                 else "Use only the supplied metadata; paths are redacted."
             ),
@@ -617,9 +604,7 @@ def _model_metadata(
         "reason": reason,
         "tags": tags,
         "similar_path_group": (
-            dict(similar_group.payload())
-            if similar_group is not None
-            else None
+            dict(similar_group.payload()) if similar_group is not None else None
         ),
         "hard_protected": hard_protected,
         "snapshot_identity_digest": snapshot_digest,
@@ -840,18 +825,14 @@ def _validate_triage_item(item: TriageItem) -> None:
     if item.allocated_size != item.record.allocated_size:
         raise AiReviewContractError("triage and scan allocated sizes do not match")
     _bounded_integer(item.logical_size, "logical_size", maximum=(1 << 63) - 1)
-    _optional_bounded_integer(
-        item.allocated_size, "allocated_size", maximum=(1 << 63) - 1
-    )
+    _optional_bounded_integer(item.allocated_size, "allocated_size", maximum=(1 << 63) - 1)
     _optional_bounded_integer(
         item.record.raw_allocated_size,
         "raw_allocated_size",
         maximum=(1 << 63) - 1,
     )
     _bounded_integer(item.record.depth, "depth", maximum=1_000_000)
-    _optional_bounded_integer(
-        item.record.volume_serial, "volume_serial", maximum=(1 << 64) - 1
-    )
+    _optional_bounded_integer(item.record.volume_serial, "volume_serial", maximum=(1 << 64) - 1)
     _optional_bounded_integer(item.record.link_count, "link_count", maximum=(1 << 32) - 1)
     _optional_bounded_integer(item.record.attributes, "attributes", maximum=(1 << 32) - 1)
     _optional_bounded_integer(item.record.reparse_tag, "reparse_tag", maximum=(1 << 32) - 1)
@@ -859,9 +840,7 @@ def _validate_triage_item(item: TriageItem) -> None:
         ("creation_time_ns", item.record.creation_time_ns),
         ("last_write_time_ns", item.record.last_write_time_ns),
     ):
-        _optional_bounded_integer(
-            timestamp_value, timestamp_label, maximum=(1 << 63) - 1
-        )
+        _optional_bounded_integer(timestamp_value, timestamp_label, maximum=(1 << 63) - 1)
     for text_label, text_value, text_limit in (
         ("file_id", item.record.file_id, 256),
         ("file_id_kind", item.record.file_id_kind, 64),
@@ -885,9 +864,7 @@ def _validate_triage_item(item: TriageItem) -> None:
     )
     for enum_value, enum_type, enum_label in enum_fields:
         if not isinstance(enum_value, enum_type):
-            raise AiReviewContractError(
-                f"candidate {enum_label} is not a known enum value"
-            )
+            raise AiReviewContractError(f"candidate {enum_label} is not a known enum value")
 
 
 def _bounded_integer(value: object, label: str, *, maximum: int) -> None:
@@ -944,9 +921,7 @@ def _reject_excessive_json_nesting(text: str, label: str) -> None:
 
 
 def _format_utc(value: datetime) -> str:
-    return _aware_utc(value, "timestamp").isoformat(timespec="microseconds").replace(
-        "+00:00", "Z"
-    )
+    return _aware_utc(value, "timestamp").isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def _aware_utc(value: datetime, label: str) -> datetime:

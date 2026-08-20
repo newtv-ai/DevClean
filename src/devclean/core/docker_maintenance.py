@@ -148,8 +148,7 @@ def _require_local_docker_target(
     target = inspect_docker_daemon_target(environment)
     if not target.local:
         raise RuntimeError(
-            "DevClean 只维护本机 Docker daemon; "
-            f"当前 endpoint={target.endpoint} ({target.source})"
+            f"DevClean 只维护本机 Docker daemon; 当前 endpoint={target.endpoint} ({target.source})"
         )
     return target
 
@@ -238,9 +237,7 @@ def _run_docker(
         raise RuntimeError(f"无法执行 Docker CLI: {error}") from error
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(
-            f"Docker CLI 执行失败 (退出码 {result.returncode}): {detail}"
-        )
+        raise RuntimeError(f"Docker CLI 执行失败 (退出码 {result.returncode}): {detail}")
     return result
 
 

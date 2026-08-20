@@ -116,9 +116,7 @@ def inventory_go_storage(
                     logical_bytes=size,
                     exists=exists,
                     lane=go_maintenance_lane(kind),
-                    recommended=(
-                        kind is GoCacheKind.BUILD and size >= _BUILD_RECOMMEND_BYTES
-                    ),
+                    recommended=(kind is GoCacheKind.BUILD and size >= _BUILD_RECOMMEND_BYTES),
                     reason=_decision_reason(kind),
                 )
             )
@@ -159,8 +157,7 @@ def clean_go_cache(
     if confirmed.returncode != 0:
         detail = _combined_output(confirmed.stdout, confirmed.stderr)
         raise RuntimeError(
-            f"go env {variable} 失败 (退出码 {confirmed.returncode}): "
-            f"{detail or 'no output'}"
+            f"go env {variable} 失败 (退出码 {confirmed.returncode}): {detail or 'no output'}"
         )
     confirmed_path = _parse_go_env_path(confirmed.stdout)
     if confirmed_path is None or _impl._normalize(confirmed_path) != target:
@@ -263,9 +260,7 @@ def _directory_bytes(root: Path) -> int:
 
 
 def _combined_output(stdout: str | None, stderr: str | None) -> str:
-    return "\n".join(
-        chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip()
-    )
+    return "\n".join(chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip())
 
 
 __all__ = [

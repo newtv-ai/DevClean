@@ -203,9 +203,7 @@ def _inventory_identity(
 
 
 def _combined_output(result: WslExecResult) -> str:
-    return "\n".join(
-        chunk.strip() for chunk in (result.stdout, result.stderr) if chunk.strip()
-    )
+    return "\n".join(chunk.strip() for chunk in (result.stdout, result.stderr) if chunk.strip())
 
 
 __all__ = [

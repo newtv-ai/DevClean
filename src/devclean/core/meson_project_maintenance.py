@@ -106,13 +106,10 @@ def remove_meson_build_directory(
     initial = inspect_meson_build(source_root, build_root, environment)
     if not initial.deletion_supported:
         raise ValueError(
-            "Meson 构建目录不在可批准的本地固定磁盘边界内；"
-            "共享、远程、可移动或重定向存储只允许检查"
+            "Meson 构建目录不在可批准的本地固定磁盘边界内；共享、远程、可移动或重定向存储只允许检查"
         )
     if meson_build_process_running():
-        raise RuntimeError(
-            "Meson 或构建后端/编译器正在运行；请结束相关构建后再删除构建目录"
-        )
+        raise RuntimeError("Meson 或构建后端/编译器正在运行；请结束相关构建后再删除构建目录")
 
     # Re-run Meson's own read-only introspection immediately before mutation.
     # The semantic identity (tool version + configured build-system file set)
@@ -164,7 +161,7 @@ def meson_executable(environment: Mapping[str, str] | None = None) -> str:
     if configured:
         return configured
     if environment is None:
-        for name in (("meson.exe", "meson") if os.name == "nt" else ("meson",)):
+        for name in ("meson.exe", "meson") if os.name == "nt" else ("meson",):
             located = shutil.which(name)
             if located:
                 return located
@@ -229,9 +226,7 @@ def _validated_build_root(build_root: Path) -> Path:
     root = _ordinary_resolved_directory(build_root, "Meson 构建目录")
     marker = root / "meson-private" / "coredata.dat"
     if not marker.is_file():
-        raise ValueError(
-            "所选目录不是已配置的 Meson 构建目录：缺少 meson-private/coredata.dat"
-        )
+        raise ValueError("所选目录不是已配置的 Meson 构建目录：缺少 meson-private/coredata.dat")
     return root
 
 
@@ -328,8 +323,7 @@ def _require_source_binding(source: Path, buildsystem_files: tuple[Path, ...]) -
     normalized_files = {_normalized(path) for path in buildsystem_files}
     if _normalized(expected) not in normalized_files:
         raise ValueError(
-            "所选源码根目录与该 Meson 构建目录不匹配："
-            "introspect 未报告所选顶层 meson.build"
+            "所选源码根目录与该 Meson 构建目录不匹配：introspect 未报告所选顶层 meson.build"
         )
 
     # A selected subproject's meson.build also appears in the configured file
@@ -342,8 +336,7 @@ def _require_source_binding(source: Path, buildsystem_files: tuple[Path, ...]) -
             continue
         if not _is_descendant_or_equal(path, source):
             raise ValueError(
-                "Meson introspect 报告了所选源码根目录之外的构建定义；"
-                "无法证明这是顶层源码根目录"
+                "Meson introspect 报告了所选源码根目录之外的构建定义；无法证明这是顶层源码根目录"
             )
 
 

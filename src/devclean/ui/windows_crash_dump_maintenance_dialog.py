@@ -179,7 +179,8 @@ class _WindowsCrashDumpMaintenanceDialog:
         if blocked:
             messagebox.showwarning(
                 "当前选择包含不可执行项",
-                "至少一个所选转储当前只能查看：\n\n" + "\n".join(entry.reason for entry in blocked[:3]),
+                "至少一个所选转储当前只能查看：\n\n"
+                + "\n".join(entry.reason for entry in blocked[:3]),
                 parent=self._window,
             )
             return
@@ -298,8 +299,10 @@ def _kind_label(kind: WindowsCrashDumpKind) -> str:
 def _format_time(value_ns: int) -> str:
     if value_ns <= 0:
         return "未知"
-    return datetime.fromtimestamp(value_ns / 1_000_000_000, tz=UTC).astimezone().strftime(
-        "%Y-%m-%d %H:%M"
+    return (
+        datetime.fromtimestamp(value_ns / 1_000_000_000, tz=UTC)
+        .astimezone()
+        .strftime("%Y-%m-%d %H:%M")
     )
 
 

@@ -104,9 +104,7 @@ def pip_roots(environment: Mapping[str, str] | None = None) -> PipRootSet:
     managed_roots = _unique_paths(managed)
     managed_keys = {_impl._normalize(root) for root in managed_roots}
     custom_roots = tuple(
-        root
-        for root in _unique_paths(custom)
-        if _impl._normalize(root) not in managed_keys
+        root for root in _unique_paths(custom) if _impl._normalize(root) not in managed_keys
     )
     return PipRootSet(
         managed_cache_roots=managed_roots,
@@ -118,9 +116,7 @@ def pip_scan_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[PureWindowsPath, ...]:
     roots = pip_roots(environment)
-    return tuple(
-        dict.fromkeys((*roots.managed_cache_roots, *roots.custom_cache_roots))
-    )
+    return tuple(dict.fromkeys((*roots.managed_cache_roots, *roots.custom_cache_roots)))
 
 
 def match_pip_rule(
@@ -173,11 +169,7 @@ def evaluate_pip_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
     return ApplicationPolicyDecision(
         rule,
         PolicyAction.KEEP_PROTECTED,

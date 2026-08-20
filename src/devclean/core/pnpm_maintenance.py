@@ -207,9 +207,7 @@ def _directory_bytes(root: Path) -> int:
 
 
 def _combined_output(stdout: str | None, stderr: str | None) -> str:
-    return "\n".join(
-        chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip()
-    )
+    return "\n".join(chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip())
 
 
 def _casefold_env(environment: Mapping[str, str] | None) -> dict[str, str]:

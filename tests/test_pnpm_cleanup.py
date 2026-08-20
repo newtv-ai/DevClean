@@ -36,12 +36,8 @@ def _env() -> dict[str, str]:
 def test_pnpm_default_windows_roots_are_resolved() -> None:
     roots = pnpm_roots(_env())
     home = PureWindowsPath(r"C:\Users\alice\AppData\Local\pnpm")
-    assert roots.cache_roots == (
-        PureWindowsPath(r"C:\Users\alice\AppData\Local\pnpm-cache"),
-    )
-    assert roots.state_roots == (
-        PureWindowsPath(r"C:\Users\alice\AppData\Local\pnpm-state"),
-    )
+    assert roots.cache_roots == (PureWindowsPath(r"C:\Users\alice\AppData\Local\pnpm-cache"),)
+    assert roots.state_roots == (PureWindowsPath(r"C:\Users\alice\AppData\Local\pnpm-state"),)
     assert roots.home_roots == (home,)
     assert roots.store_roots == (home / "store",)
     assert roots.global_roots == (home / "global",)

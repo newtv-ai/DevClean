@@ -226,15 +226,9 @@ def evaluate_android_sdk_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
     if rule.owner is DecisionOwner.KEEP:
-        return ApplicationPolicyDecision(
-            rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
-        )
+        return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
 
     threshold = effective_idle_days(rule, logical_size)
     running = process_running
@@ -322,7 +316,7 @@ def clear_android_sdk_process_cache() -> None:
 
 def _sdk_root_from_command_line(command_line: str) -> str | None:
     pattern = re.compile(
-        r'''(?:^|\s)--sdk_root(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))''',
+        r"""(?:^|\s)--sdk_root(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))""",
         re.IGNORECASE,
     )
     match = pattern.search(command_line)

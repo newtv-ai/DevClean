@@ -161,8 +161,8 @@ def test_firefox_profile_switch_parser_supports_single_and_double_dash() -> None
         r'"C:\Program Files\Mozilla Firefox\firefox.exe" --profile "D:\Firefox Profiles\One"': (
             r"D:\Firefox Profiles\One"
         ),
-        r'firefox.exe -profile D:\PortableFirefox\Profile': r"D:\PortableFirefox\Profile",
-        r'firefox.exe --profile=D:\Profiles\Test': r"D:\Profiles\Test",
+        r"firefox.exe -profile D:\PortableFirefox\Profile": r"D:\PortableFirefox\Profile",
+        r"firefox.exe --profile=D:\Profiles\Test": r"D:\Profiles\Test",
     }
     for command_line, expected in cases.items():
         assert _profile_switch_path(command_line) == expected
@@ -188,15 +188,15 @@ def test_firefox_update_logs_are_exactly_scoped_under_updates_directory() -> Non
 
 def test_default_firefox_roots_include_roaming_state_and_local_profiles() -> None:
     roots = firefox_roots(_env())
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox"
-    ) in roots.state_roots
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\Profiles"
-    ) in roots.persistent_parents
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Local\Mozilla\Firefox\Profiles"
-    ) in roots.local_parents
+    assert PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox") in roots.state_roots
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\Profiles")
+        in roots.persistent_parents
+    )
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Mozilla\Firefox\Profiles")
+        in roots.local_parents
+    )
 
 
 def test_firefox_facade_catalogues_only_audited_tool_roots_for_whole_tree(
@@ -204,9 +204,7 @@ def test_firefox_facade_catalogues_only_audited_tool_roots_for_whole_tree(
 ) -> None:
     roaming = tmp_path / "Roaming" / "Mozilla" / "Firefox"
     persistent = roaming / "Profiles" / "abc.default-release"
-    local_profile = (
-        tmp_path / "Local" / "Mozilla" / "Firefox" / "Profiles" / "abc.default-release"
-    )
+    local_profile = tmp_path / "Local" / "Mozilla" / "Firefox" / "Profiles" / "abc.default-release"
     persistent.mkdir(parents=True)
     local_profile.mkdir(parents=True)
     (persistent / "places.sqlite").write_text("history", encoding="utf-8")

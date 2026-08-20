@@ -87,9 +87,7 @@ def test_android_avd_root_ini_relative_path_resolves_from_android_config_home(
     relative_content = registry / "Relative_Tablet.avd"
     relative_content.mkdir()
     (registry / "Relative_Tablet.ini").write_text(
-        "avd.ini.encoding=UTF-8\n"
-        "path.rel=avd\\Relative_Tablet.avd\n"
-        "target=android-36\n",
+        "avd.ini.encoding=UTF-8\npath.rel=avd\\Relative_Tablet.avd\ntarget=android-36\n",
         encoding="utf-8",
     )
 

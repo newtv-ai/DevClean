@@ -60,9 +60,7 @@ _BRAVE_CHROMIUM_RULES: tuple[ApplicationCleanupRule, ...] = tuple(
     for rule in CHROME_RULES
     if rule.root_key in {"CHROME_DATA", "CHROME_PROFILE", "CHROME_DISK_CACHE"}
 )
-_BRAVE_DATA_RULES = tuple(
-    rule for rule in _BRAVE_CHROMIUM_RULES if rule.root_key == "BRAVE_DATA"
-)
+_BRAVE_DATA_RULES = tuple(rule for rule in _BRAVE_CHROMIUM_RULES if rule.root_key == "BRAVE_DATA")
 _BRAVE_PROFILE_RULES = tuple(
     rule for rule in _BRAVE_CHROMIUM_RULES if rule.root_key == "BRAVE_PROFILE"
 )
@@ -164,11 +162,7 @@ def brave_scan_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[PureWindowsPath, ...]:
     roots = brave_roots(environment)
-    return tuple(
-        dict.fromkeys(
-            (*roots.data_roots, *roots.disk_cache_roots, *roots.updater_roots)
-        )
-    )
+    return tuple(dict.fromkeys((*roots.data_roots, *roots.disk_cache_roots, *roots.updater_roots)))
 
 
 def match_brave_rule(
@@ -247,11 +241,7 @@ def evaluate_brave_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
 
     if rule.owner is DecisionOwner.KEEP:
         return ApplicationPolicyDecision(
@@ -316,9 +306,7 @@ def brave_process_running() -> bool:
 
 
 @lru_cache(maxsize=1)
-def _running_override_roots() -> tuple[
-    tuple[PureWindowsPath, ...], tuple[PureWindowsPath, ...]
-]:
+def _running_override_roots() -> tuple[tuple[PureWindowsPath, ...], tuple[PureWindowsPath, ...]]:
     if os.name != "nt":
         return (), ()
     script = (
@@ -397,9 +385,8 @@ def _existing_profile_roots(data_root: PureWindowsPath) -> tuple[PureWindowsPath
 
 def _is_profile_dir_name(name: str) -> bool:
     lowered = name.casefold()
-    return (
-        lowered in {"default", "guest profile", "system profile"}
-        or lowered.startswith("profile ")
+    return lowered in {"default", "guest profile", "system profile"} or lowered.startswith(
+        "profile "
     )
 
 

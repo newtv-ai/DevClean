@@ -84,6 +84,7 @@ def test_inventory_rejects_relative_or_root_store_path(
 ) -> None:
     monkeypatch.setattr(wsl_pnpm, "inspect_wsl", lambda environment=None: _wsl_inventory())
     for bad_path in ("relative/store\n", "/\n"):
+
         def fake_exec(
             distribution: str,
             executable: str,

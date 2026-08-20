@@ -191,9 +191,7 @@ def test_clean_revalidates_scope_idle_and_pins_all_clean_flags(
         timeout: int = 120,
     ) -> WslExecResult:
         del environment
-        env_calls.append(
-            (distribution, arguments, dict(linux_environment or {}), timeout)
-        )
+        env_calls.append((distribution, arguments, dict(linux_environment or {}), timeout))
         return _result(distribution, executable, arguments, "")
 
     monkeypatch.setattr(wsl_go, "run_wsl_exec_with_env", fake_env_exec)

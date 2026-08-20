@@ -92,9 +92,7 @@ def prune_uv_cache(
 
     clear_uv_process_cache()
     root = cache_path
-    audited = {
-        _impl._normalize(Path(str(path))) for path in uv_roots(environment).cache_roots
-    }
+    audited = {_impl._normalize(Path(str(path))) for path in uv_roots(environment).cache_roots}
     target = _impl._normalize(root)
     if not target or target not in audited:
         raise ValueError(f"不是已审计的 uv cache 根目录: {root}")
@@ -191,9 +189,7 @@ def _directory_bytes(root: Path) -> int:
 
 
 def _combined_output(stdout: str | None, stderr: str | None) -> str:
-    return "\n".join(
-        chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip()
-    )
+    return "\n".join(chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip())
 
 
 __all__ = [

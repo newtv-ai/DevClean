@@ -578,9 +578,7 @@ def _normalize(path: str | os.PathLike[str]) -> str:
 
 
 def _combined_output(stdout: str | None, stderr: str | None) -> str:
-    return "\n".join(
-        chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip()
-    )
+    return "\n".join(chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip())
 
 
 __all__ = [

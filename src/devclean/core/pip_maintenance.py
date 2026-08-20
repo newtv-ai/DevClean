@@ -92,8 +92,7 @@ def purge_pip_cache(
     clear_pip_process_cache()
     roots = pip_roots(environment)
     audited = {
-        _impl._normalize(root)
-        for root in (*roots.managed_cache_roots, *roots.custom_cache_roots)
+        _impl._normalize(root) for root in (*roots.managed_cache_roots, *roots.custom_cache_roots)
     }
     target = _impl._normalize(cache_path)
     if target not in audited:
@@ -179,9 +178,7 @@ def _directory_bytes(root: Path) -> int:
 
 
 def _combined_output(stdout: str | None, stderr: str | None) -> str:
-    return "\n".join(
-        chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip()
-    )
+    return "\n".join(chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip())
 
 
 __all__ = [

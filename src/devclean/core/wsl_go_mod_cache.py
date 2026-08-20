@@ -141,9 +141,7 @@ def _validated_module_cache_path(value: str) -> str:
         raise RuntimeError("go env GOMODCACHE returned an invalid path")
     path = PurePosixPath(value)
     if not path.is_absolute() or str(path) == "/":
-        raise RuntimeError(
-            f"go env GOMODCACHE returned an unsafe/non-absolute path: {value!r}"
-        )
+        raise RuntimeError(f"go env GOMODCACHE returned an unsafe/non-absolute path: {value!r}")
     return str(path)
 
 
@@ -197,9 +195,7 @@ def _inventory_identity(
 
 
 def _combined_output(result: WslExecResult) -> str:
-    return "\n".join(
-        chunk.strip() for chunk in (result.stdout, result.stderr) if chunk.strip()
-    )
+    return "\n".join(chunk.strip() for chunk in (result.stdout, result.stderr) if chunk.strip())
 
 
 __all__ = [

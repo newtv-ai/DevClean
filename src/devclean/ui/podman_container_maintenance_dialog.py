@@ -44,7 +44,9 @@ class _PodmanContainerMaintenanceDialog:
 
         root = ttk.Frame(self._window, padding=12)
         root.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(root, text="Podman 已停止容器维护", font=("Segoe UI", 13, "bold")).pack(anchor=tk.W)
+        ttk.Label(root, text="Podman 已停止容器维护", font=("Segoe UI", 13, "bold")).pack(
+            anchor=tk.W
+        )
         ttk.Label(
             root,
             text=(
@@ -84,7 +86,9 @@ class _PodmanContainerMaintenanceDialog:
 
         self._target_label = ttk.Label(root, text="", wraplength=1030, justify=tk.LEFT)
         self._target_label.pack(anchor=tk.W, pady=(8, 0))
-        ttk.Label(root, textvariable=self._status, wraplength=1030, justify=tk.LEFT).pack(anchor=tk.W, pady=(5, 0))
+        ttk.Label(root, textvariable=self._status, wraplength=1030, justify=tk.LEFT).pack(
+            anchor=tk.W, pady=(5, 0)
+        )
 
         footer = ttk.Frame(root)
         footer.pack(fill=tk.X, pady=(10, 0))
@@ -141,7 +145,9 @@ class _PodmanContainerMaintenanceDialog:
             else:
                 self._events.put(_InventoryEvent(inventory))
 
-        threading.Thread(target=work, name="DevClean-Podman-container-inventory", daemon=True).start()
+        threading.Thread(
+            target=work, name="DevClean-Podman-container-inventory", daemon=True
+        ).start()
 
     def _confirm_remove(self) -> None:
         if self._busy:

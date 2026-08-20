@@ -205,9 +205,7 @@ def summarize_codex_input_history(
     for cutoff in cutoffs:
         boundary = current - timedelta(days=cutoff)
         removable = [
-            raw
-            for raw, timestamp in records
-            if timestamp is not None and timestamp <= boundary
+            raw for raw, timestamp in records if timestamp is not None and timestamp <= boundary
         ]
         summaries.append(
             CodexInputHistorySummary(
@@ -261,9 +259,7 @@ def prune_codex_input_history(
     except OSError as error:
         raise CodexHistoryError(f"cannot stat Codex input history: {error}") from error
 
-    temporary = history_path.with_name(
-        f".{history_path.name}.devclean-{uuid.uuid4().hex}.tmp"
-    )
+    temporary = history_path.with_name(f".{history_path.name}.devclean-{uuid.uuid4().hex}.tmp")
     try:
         with temporary.open("xb") as handle:
             for raw in kept:
@@ -403,9 +399,7 @@ def _is_rollout_path(path: Path) -> bool:
 def _require_codex_closed() -> None:
     clear_process_cache()
     if application_process_running("codex"):
-        raise CodexHistoryError(
-            "Codex/ChatGPT is running; close it before changing Codex history"
-        )
+        raise CodexHistoryError("Codex/ChatGPT is running; close it before changing Codex history")
 
 
 def _start_app_server(

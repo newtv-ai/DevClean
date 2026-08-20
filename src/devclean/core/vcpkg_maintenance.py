@@ -73,9 +73,7 @@ def inspect_vcpkg_root(root: Path) -> VcpkgStorageInventory:
             VcpkgStorageEntry(
                 kind=VcpkgStorageKind.DEFAULT_BINARY_CACHE,
                 path=binary_cache,
-                logical_bytes=(
-                    _directory_bytes(binary_cache) if binary_cache.is_dir() else 0
-                ),
+                logical_bytes=(_directory_bytes(binary_cache) if binary_cache.is_dir() else 0),
                 exists=binary_cache.is_dir(),
                 executable=False,
                 reason=(
@@ -167,9 +165,7 @@ def _vcpkg_version(executable: Path, root: Path) -> str:
         raise RuntimeError(f"无法执行 vcpkg version: {error}") from error
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(
-            f"vcpkg 无法确认该根目录 (退出码 {result.returncode}): {detail}"
-        )
+        raise RuntimeError(f"vcpkg 无法确认该根目录 (退出码 {result.returncode}): {detail}")
     lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     return lines[0] if lines else "unknown"
 
@@ -178,12 +174,10 @@ def _entry(kind: VcpkgStorageKind, path: Path) -> VcpkgStorageEntry:
     exists = path.is_dir()
     reason = {
         VcpkgStorageKind.PACKAGES: (
-            "构建后的包暂存目录；官方说明只关心已安装包时可删除，"
-            "但是否保留诊断/检查状态由你决定"
+            "构建后的包暂存目录；官方说明只关心已安装包时可删除，但是否保留诊断/检查状态由你决定"
         ),
         VcpkgStorageKind.BUILDTREES: (
-            "构建树通常可重建，但 --editable 会故意保留可修改源码；"
-            "这里可能存在未提交的人工作业"
+            "构建树通常可重建，但 --editable 会故意保留可修改源码；这里可能存在未提交的人工作业"
         ),
         VcpkgStorageKind.DOWNLOADS: (
             "下载的源码和工具可重新获取，但删除会损失离线/弱网下的复用价值"
@@ -220,9 +214,7 @@ def _validate_target(root: Path, target: Path) -> None:
     if not target.exists():
         raise FileNotFoundError(f"vcpkg {target.name} 不存在: {target}")
     if target.is_symlink() or target.is_junction() or not target.is_dir():
-        raise ValueError(
-            f"拒绝清理链接/junction/非目录形式的 vcpkg {target.name}: {target}"
-        )
+        raise ValueError(f"拒绝清理链接/junction/非目录形式的 vcpkg {target.name}: {target}")
 
 
 def _exact_directory_snapshot(path: Path, label: str) -> ExactDirectorySnapshot:

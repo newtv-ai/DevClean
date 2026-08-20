@@ -244,9 +244,7 @@ class _CypressMaintenanceDialog:
         else:
             for item in inventory.versions:
                 role = (
-                    "当前 CLI 版本 · 保留"
-                    if item.current_package_version
-                    else "旧版本 · 你来决定"
+                    "当前 CLI 版本 · 保留" if item.current_package_version else "旧版本 · 你来决定"
                 )
                 frame = ttk.LabelFrame(
                     self._rows,

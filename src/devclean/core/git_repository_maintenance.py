@@ -101,8 +101,7 @@ def inspect_git_repository(
     )
     if _normalized(reported) != _normalized(selected):
         raise ValueError(
-            "所选目录不是 Git worktree 根目录: "
-            f"selected={selected}, reported={reported}"
+            f"所选目录不是 Git worktree 根目录: selected={selected}, reported={reported}"
         )
 
     bare = _run_git(
@@ -157,13 +156,16 @@ def inspect_git_repository(
     ).stdout
     alternates = _parse_alternates(count_output, selected)
     object_bytes = _directory_bytes(objects_dir) if _is_directory(objects_dir) else 0
-    version = _run_git(
-        executable,
-        selected,
-        ("--version",),
-        environment,
-        timeout=30,
-    ).stdout.strip() or "unknown"
+    version = (
+        _run_git(
+            executable,
+            selected,
+            ("--version",),
+            environment,
+            timeout=30,
+        ).stdout.strip()
+        or "unknown"
+    )
 
     maintenance_supported, maintenance_needed = _maintenance_need(
         executable,
@@ -172,15 +174,11 @@ def inspect_git_repository(
     )
     expected_objects = common_dir / "objects"
     local_boundary = all(
-        is_local_fixed_path(path)
-        for path in (selected, git_dir, common_dir, objects_dir)
+        is_local_fixed_path(path) for path in (selected, git_dir, common_dir, objects_dir)
     )
     standard_objects = _normalized(objects_dir) == _normalized(expected_objects)
     maintenance_executable = (
-        maintenance_supported
-        and local_boundary
-        and standard_objects
-        and not alternates
+        maintenance_supported and local_boundary and standard_objects and not alternates
     )
     if not maintenance_supported:
         maintenance_reason = "当前 Git 无法确认 maintenance is-needed --auto; 仅报告"
@@ -429,9 +427,7 @@ def _inspect_lfs(
         timeout=60,
     )
     storage_dir = (
-        _lfs_media_dir(env_result.stdout, workspace)
-        if env_result.returncode == 0
-        else None
+        _lfs_media_dir(env_result.stdout, workspace) if env_result.returncode == 0 else None
     )
     logical_bytes = (
         _directory_bytes(storage_dir)

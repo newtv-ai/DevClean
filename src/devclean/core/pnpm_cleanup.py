@@ -195,12 +195,8 @@ def pnpm_roots(environment: Mapping[str, str] | None = None) -> PnpmRootSet:
         if localappdata
         else None
     )
-    default_cache = (
-        PureWindowsPath(localappdata) / "pnpm-cache" if localappdata else None
-    )
-    default_state = (
-        PureWindowsPath(localappdata) / "pnpm-state" if localappdata else None
-    )
+    default_cache = PureWindowsPath(localappdata) / "pnpm-cache" if localappdata else None
+    default_state = PureWindowsPath(localappdata) / "pnpm-state" if localappdata else None
     effective = _effective_pnpm_config() if environment is None else {}
 
     cache_value = _first_config_path(env, effective, "cache_dir", "cacheDir")
@@ -322,12 +318,8 @@ def pnpm_audited_tool_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
     roots = pnpm_roots(environment)
-    dlx_rule = next(
-        rule for rule in PNPM_RULES if rule.rule_id == "pnpm-dlx-cache"
-    )
-    metadata_rule = next(
-        rule for rule in PNPM_RULES if rule.rule_id == "pnpm-metadata-cache"
-    )
+    dlx_rule = next(rule for rule in PNPM_RULES if rule.rule_id == "pnpm-dlx-cache")
+    metadata_rule = next(rule for rule in PNPM_RULES if rule.rule_id == "pnpm-metadata-cache")
     found: list[tuple[PureWindowsPath, ApplicationCleanupRule]] = []
     seen: set[str] = set()
     for cache in roots.cache_roots:
@@ -363,11 +355,7 @@ def evaluate_pnpm_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
     if rule.owner is DecisionOwner.KEEP:
         return ApplicationPolicyDecision(
             rule,
@@ -507,9 +495,7 @@ def _metadata_cache_dirs(cache_root: PureWindowsPath) -> tuple[PureWindowsPath, 
         children = tuple(Path(str(cache_root)).glob("metadata-v*"))
     except OSError:
         return ()
-    return tuple(
-        PureWindowsPath(str(child)) for child in children if child.is_dir()
-    )
+    return tuple(PureWindowsPath(str(child)) for child in children if child.is_dir())
 
 
 def _append_tool_root(

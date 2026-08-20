@@ -82,8 +82,8 @@ def test_input_history_summary_and_prune_preserve_recent_and_unknown_records(
     assert result.removed_records == 1
     assert result.kept_records == 2
     remaining = history.read_text(encoding="utf-8")
-    assert "old\"" not in remaining
-    assert "new\"" in remaining
+    assert 'old"' not in remaining
+    assert 'new"' in remaining
     assert malformed.strip() in remaining
 
 
@@ -114,7 +114,7 @@ def test_thread_delete_uses_codex_app_server_protocol(
         lambda _app_id: False,
     )
 
-    server = r'''
+    server = r"""
 import json, sys
 initialized = False
 for line in sys.stdin:
@@ -132,7 +132,7 @@ for line in sys.stdin:
         else:
             print(json.dumps({"method": "thread/deleted", "params": {"threadId": msg["params"]["threadId"]}}), flush=True)
             print(json.dumps({"id": msg["id"], "result": {}}), flush=True)
-'''
+"""
 
     def fake_popen(_args: object, **kwargs: Any) -> subprocess.Popen[str]:
         return cast(
@@ -166,7 +166,7 @@ def test_thread_delete_never_falls_back_to_raw_delete_on_vendor_error(
         "devclean.core.codex_history.application_process_running",
         lambda _app_id: False,
     )
-    server = r'''
+    server = r"""
 import json, sys
 for line in sys.stdin:
     msg = json.loads(line)
@@ -175,7 +175,7 @@ for line in sys.stdin:
             print(json.dumps({"id": msg["id"], "result": {}}), flush=True)
         elif msg.get("method") == "thread/delete":
             print(json.dumps({"id": msg["id"], "error": {"message": "referenced by another thread"}}), flush=True)
-'''
+"""
 
     def fake_popen(_args: object, **kwargs: Any) -> subprocess.Popen[str]:
         return cast(

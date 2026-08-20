@@ -88,9 +88,7 @@ def inspect_podman_images(
         environment=environment,
     )
     reference_complete = ordinary_complete and external_complete
-    reference_reason = "; ".join(
-        reason for reason in (ordinary_reason, external_reason) if reason
-    )
+    reference_reason = "; ".join(reason for reason in (ordinary_reason, external_reason) if reason)
 
     parents: dict[str, str] = {}
     records: dict[str, _ImageRecord] = {}
@@ -335,7 +333,9 @@ def _manifest_record(payload: dict[str, object]) -> _ImageRecord:
     image_id = _canonical_image_id(payload.get("Id", payload.get("ID")), "manifest image ID")
     tags = _string_tuple(payload.get("RepoTags", payload.get("Names", [])), "manifest RepoTags")
     digests = _string_tuple(payload.get("RepoDigests", []), "manifest RepoDigests")
-    parent_id = _optional_image_id(payload.get("ParentId", payload.get("Parent")), "manifest ParentId")
+    parent_id = _optional_image_id(
+        payload.get("ParentId", payload.get("Parent")), "manifest ParentId"
+    )
     created_raw = payload.get("CreatedAt", payload.get("Created", "unknown"))
     created = str(created_raw).strip() or "unknown"
     size_raw = payload.get("VirtualSize", payload.get("Size", 0))
@@ -419,15 +419,24 @@ def _image_decision(
     if read_only:
         return False, "image 位于 Podman read-only image store；不允许删除"
     if manifest_list:
-        return False, "image 是 manifest list/image index；使用独立 manifest 生命周期，不在本 lane 删除"
+        return (
+            False,
+            "image 是 manifest list/image index；使用独立 manifest 生命周期，不在本 lane 删除",
+        )
     if podman_container_ids:
         return False, f"image 被 {len(podman_container_ids)} 个 Podman container 引用"
     if external_container_ids:
-        return False, f"image 被 {len(external_container_ids)} 个 Buildah/CRI-O external container 引用"
+        return (
+            False,
+            f"image 被 {len(external_container_ids)} 个 Buildah/CRI-O external container 引用",
+        )
     if child_ids:
         return False, f"image 仍有 {len(child_ids)} 个 child image；不删除父镜像"
     if len(record.repo_tags) > 1:
-        return False, f"image 有 {len(record.repo_tags)} 个 tag；不通过 image ID 一次移除多个用户可见名称"
+        return (
+            False,
+            f"image 有 {len(record.repo_tags)} 个 tag；不通过 image ID 一次移除多个用户可见名称",
+        )
     return True, "技术边界已证明；image 是否保留取决于用户，属于 USER_REVIEW"
 
 

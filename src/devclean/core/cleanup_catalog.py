@@ -113,9 +113,7 @@ def discover_known_cleanup_roots(
                     )
 
     _append_application_roots(accepted, seen, env)
-    return tuple(
-        sorted(accepted, key=lambda item: (len(item.path.parts), str(item.path)))
-    )
+    return tuple(sorted(accepted, key=lambda item: (len(item.path.parts), str(item.path))))
 
 
 def _append_application_roots(
@@ -178,16 +176,14 @@ def _report_only_root_metadata(
     visual_studio_installer_rule = match_visual_studio_installer_rule(root, environment)
     if (
         visual_studio_installer_rule is not None
-        and visual_studio_installer_rule.rule_id
-        == "visual-studio-installer-package-cache-mixed"
+        and visual_studio_installer_rule.rule_id == "visual-studio-installer-package-cache-mixed"
     ):
         return CleanupCategory.INSTALLERS_DOWNLOADS, visual_studio_installer_rule.label
 
     visual_studio_rule = match_visual_studio_rule(root, environment)
     if (
         visual_studio_rule is not None
-        and visual_studio_rule.rule_id
-        == "visual-studio-local-packages-servicing-state"
+        and visual_studio_rule.rule_id == "visual-studio-local-packages-servicing-state"
     ):
         return CleanupCategory.INSTALLERS_DOWNLOADS, visual_studio_rule.label
 
@@ -199,10 +195,7 @@ def _report_only_root_metadata(
         return CleanupCategory.INSTALLERS_DOWNLOADS, electron_rule.label
 
     cypress_rule = match_cypress_rule(root, environment)
-    if (
-        cypress_rule is not None
-        and cypress_rule.rule_id == "cypress-binary-cache-vendor-managed"
-    ):
+    if cypress_rule is not None and cypress_rule.rule_id == "cypress-binary-cache-vendor-managed":
         return CleanupCategory.TEST_BROWSER_BINARIES, cypress_rule.label
 
     puppeteer_rule = match_puppeteer_rule(root, environment)
@@ -220,10 +213,7 @@ def _report_only_root_metadata(
         return CleanupCategory.TEST_BROWSER_BINARIES, playwright_rule.label
 
     docker_rule = match_docker_rule(root, environment)
-    if (
-        docker_rule is not None
-        and docker_rule.rule_id == "docker-desktop-data-mixed"
-    ):
+    if docker_rule is not None and docker_rule.rule_id == "docker-desktop-data-mixed":
         return CleanupCategory.CONTAINER_STORAGE, docker_rule.label
 
     ollama_rule = match_ollama_rule(root, environment)
@@ -239,10 +229,7 @@ def _report_only_root_metadata(
         return CleanupCategory.HUGGINGFACE_CACHE, huggingface_rule.label
 
     maven_rule = match_maven_rule(root, environment)
-    if (
-        maven_rule is not None
-        and maven_rule.rule_id == "maven-local-repository-mixed"
-    ):
+    if maven_rule is not None and maven_rule.rule_id == "maven-local-repository-mixed":
         return CleanupCategory.MAVEN_REPOSITORY, maven_rule.label
 
     cargo_rule = match_cargo_rule(root, environment)
@@ -264,10 +251,7 @@ def _report_only_root_metadata(
         return CleanupCategory.NUGET_CACHE, nuget_rule.label
 
     conda_rule = match_conda_rule(root, environment)
-    if (
-        conda_rule is not None
-        and conda_rule.rule_id == "conda-package-cache-vendor-managed"
-    ):
+    if conda_rule is not None and conda_rule.rule_id == "conda-package-cache-vendor-managed":
         return CleanupCategory.CONDA_CACHE, conda_rule.label
 
     uv_rule = match_uv_rule(root, environment)
@@ -304,13 +288,9 @@ def _application_category(rule_id: str) -> CleanupCategory:
         return CleanupCategory.CRASH_DUMPS
     if "log" in lower or "debug" in lower:
         return CleanupCategory.SYSTEM_LOGS
-    if lower.startswith("chrome-updater-") or lower.startswith(
-        "brave-updater-install"
-    ):
+    if lower.startswith("chrome-updater-") or lower.startswith("brave-updater-install"):
         return CleanupCategory.INSTALLERS_DOWNLOADS
-    if lower.startswith(
-        ("brave-", "chrome-", "edge-", "firefox-", "opera-", "vivaldi-")
-    ):
+    if lower.startswith(("brave-", "chrome-", "edge-", "firefox-", "opera-", "vivaldi-")):
         return CleanupCategory.BROWSER_CACHE
     if lower.startswith("pip-"):
         return CleanupCategory.PIP_CACHE
@@ -393,9 +373,7 @@ def _append_root(
     accepted.append(replacement)
 
 
-def known_root_for_path(
-    path: Path, roots: tuple[KnownCleanupRoot, ...]
-) -> KnownCleanupRoot | None:
+def known_root_for_path(path: Path, roots: tuple[KnownCleanupRoot, ...]) -> KnownCleanupRoot | None:
     """Return the most-specific configured root containing *path*."""
 
     if not roots:

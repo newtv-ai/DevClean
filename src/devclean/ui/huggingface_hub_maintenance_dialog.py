@@ -84,7 +84,9 @@ class _HuggingFaceHubMaintenanceDialog:
 
         root = ttk.Frame(self._window, padding=12)
         root.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(root, text="Hugging Face Hub 缓存维护", font=("Segoe UI", 13, "bold")).pack(anchor=tk.W)
+        ttk.Label(root, text="Hugging Face Hub 缓存维护", font=("Segoe UI", 13, "bold")).pack(
+            anchor=tk.W
+        )
         ttk.Label(
             root,
             text=(
@@ -122,7 +124,9 @@ class _HuggingFaceHubMaintenanceDialog:
         self._build_revision_tab(notebook)
         self._build_other_cache_tab(notebook)
 
-        ttk.Label(root, textvariable=self._status, wraplength=1170, justify=tk.LEFT).pack(anchor=tk.W, pady=(8, 0))
+        ttk.Label(root, textvariable=self._status, wraplength=1170, justify=tk.LEFT).pack(
+            anchor=tk.W, pady=(8, 0)
+        )
         footer = ttk.Frame(root)
         footer.pack(fill=tk.X, pady=(10, 0))
         self._prune_button = ttk.Button(
@@ -184,7 +188,9 @@ class _HuggingFaceHubMaintenanceDialog:
             justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(0, 6))
         columns = ("repo", "revision", "size", "refs", "modified", "decision")
-        self._revision_tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse")
+        self._revision_tree = ttk.Treeview(
+            frame, columns=columns, show="headings", selectmode="browse"
+        )
         for column, title, width in (
             ("repo", "Repo", 250),
             ("revision", "Full commit", 310),
@@ -246,7 +252,9 @@ class _HuggingFaceHubMaintenanceDialog:
         if self._busy:
             return
         self._set_busy(True)
-        self._status.set("正在绑定 exact Hub cache root 和 hf CLI，并执行两次 aggregate + revision JSON inventory…")
+        self._status.set(
+            "正在绑定 exact Hub cache root 和 hf CLI，并执行两次 aggregate + revision JSON inventory…"
+        )
 
         def work() -> None:
             try:
@@ -272,7 +280,9 @@ class _HuggingFaceHubMaintenanceDialog:
         repo = self._selected_repo()
         revision = self._selected_revision()
         self._repo_remove_button.configure(
-            state=tk.NORMAL if enabled and repo is not None and repo.deletion_supported else tk.DISABLED
+            state=tk.NORMAL
+            if enabled and repo is not None and repo.deletion_supported
+            else tk.DISABLED
         )
         self._revision_remove_button.configure(
             state=(
@@ -411,9 +421,7 @@ class _HuggingFaceHubMaintenanceDialog:
             return
         self._run_action(
             "正在再次验证 prune 范围并执行 vendor prune…",
-            lambda: _prune_result_message(
-                execute_huggingface_hub_prune(event.inventory, preview)
-            ),
+            lambda: _prune_result_message(execute_huggingface_hub_prune(event.inventory, preview)),
             "DevClean-HF-prune",
         )
 
@@ -515,9 +523,7 @@ class _HuggingFaceHubMaintenanceDialog:
                 self._revision_rows[revision_iid] = revision
                 revision_refs = ", ".join(revision.refs) if revision.refs else "detached"
                 revision_decision = (
-                    "USER_REVIEW"
-                    if revision.deletion_supported
-                    else f"保护：{revision.reason}"
+                    "USER_REVIEW" if revision.deletion_supported else f"保护：{revision.reason}"
                 )
                 self._revision_tree.insert(
                     "",

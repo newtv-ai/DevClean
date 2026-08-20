@@ -127,11 +127,7 @@ def test_docker_context_resolves_local_named_pipe(
             payload = [
                 {
                     "Name": "desktop-linux",
-                    "Endpoints": {
-                        "docker": {
-                            "Host": "npipe:////./pipe/dockerDesktopLinuxEngine"
-                        }
-                    },
+                    "Endpoints": {"docker": {"Host": "npipe:////./pipe/dockerDesktopLinuxEngine"}},
                 }
             ]
             return _completed(command, stdout=json.dumps(payload))

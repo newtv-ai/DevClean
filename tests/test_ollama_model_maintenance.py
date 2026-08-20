@@ -45,10 +45,7 @@ def test_endpoint_defaults_to_loopback() -> None:
 
 
 def test_endpoint_maps_wildcard_bind_to_loopback() -> None:
-    assert (
-        ollama_api_endpoint({"OLLAMA_HOST": "0.0.0.0:22434"})
-        == "http://127.0.0.1:22434"
-    )
+    assert ollama_api_endpoint({"OLLAMA_HOST": "0.0.0.0:22434"}) == "http://127.0.0.1:22434"
 
 
 def test_endpoint_refuses_remote_host() -> None:

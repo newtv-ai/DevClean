@@ -190,9 +190,7 @@ def _entry_from_file(
         reason = "内核崩溃转储属于 USER_REVIEW，但删除需要管理员权限；DevClean 不会自动提升"
     else:
         supported = True
-        reason = (
-            "崩溃转储是诊断证据；技术身份已确认，但是否仍需用于 WinDbg/支持分析由用户决定"
-        )
+        reason = "崩溃转储是诊断证据；技术身份已确认，但是否仍需用于 WinDbg/支持分析由用户决定"
     return WindowsCrashDumpEntry(
         kind=location.kind,
         path=_absolute(path),

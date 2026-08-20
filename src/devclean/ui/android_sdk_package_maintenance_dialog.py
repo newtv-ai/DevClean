@@ -46,7 +46,9 @@ class _AndroidSdkPackageMaintenanceDialog:
 
         root = ttk.Frame(self._window, padding=12)
         root.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(root, text="Android SDK Package 维护", font=("Segoe UI", 13, "bold")).pack(anchor=tk.W)
+        ttk.Label(root, text="Android SDK Package 维护", font=("Segoe UI", 13, "bold")).pack(
+            anchor=tk.W
+        )
         ttk.Label(
             root,
             text=(
@@ -92,7 +94,9 @@ class _AndroidSdkPackageMaintenanceDialog:
         self._tree.pack(fill=tk.BOTH, expand=True)
         self._tree.bind("<<TreeviewSelect>>", lambda event: self._update_button())
 
-        ttk.Label(root, textvariable=self._status, wraplength=1160, justify=tk.LEFT).pack(anchor=tk.W, pady=(8, 0))
+        ttk.Label(root, textvariable=self._status, wraplength=1160, justify=tk.LEFT).pack(
+            anchor=tk.W, pady=(8, 0)
+        )
         ttk.Label(
             root,
             text=(
@@ -189,7 +193,9 @@ class _AndroidSdkPackageMaintenanceDialog:
         ):
             return
         self._set_busy(True)
-        self._status.set("正在重新验证 SDK、package 和 AVD 引用，然后调用精确 sdkmanager --uninstall…")
+        self._status.set(
+            "正在重新验证 SDK、package 和 AVD 引用，然后调用精确 sdkmanager --uninstall…"
+        )
 
         def work() -> None:
             try:

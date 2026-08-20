@@ -41,30 +41,20 @@ def test_chrome_default_channel_and_updater_roots_are_discovered() -> None:
     roots = chrome_roots(_env())
     expected = {
         PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\Chrome\User Data"),
-        PureWindowsPath(
-            r"C:\Users\alice\AppData\Local\Google\Chrome Beta\User Data"
-        ),
-        PureWindowsPath(
-            r"C:\Users\alice\AppData\Local\Google\Chrome Dev\User Data"
-        ),
-        PureWindowsPath(
-            r"C:\Users\alice\AppData\Local\Google\Chrome SxS\User Data"
-        ),
-        PureWindowsPath(
-            r"C:\Users\alice\AppData\Local\Google\Chrome for Testing\User Data"
-        ),
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\Chrome Beta\User Data"),
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\Chrome Dev\User Data"),
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\Chrome SxS\User Data"),
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\Chrome for Testing\User Data"),
         PureWindowsPath(r"C:\Users\alice\AppData\Local\Chromium\User Data"),
     }
     assert expected.issubset(set(roots.data_roots))
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Local\Google\GoogleUpdater"
-    ) in roots.updater_roots
-    assert PureWindowsPath(
-        r"C:\Program Files (x86)\Google\GoogleUpdater"
-    ) in roots.updater_roots
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Local\Google\Update"
-    ) in roots.legacy_updater_roots
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\GoogleUpdater") in roots.updater_roots
+    )
+    assert PureWindowsPath(r"C:\Program Files (x86)\Google\GoogleUpdater") in roots.updater_roots
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\Update") in roots.legacy_updater_roots
+    )
 
 
 def test_chrome_profile_caches_are_tool_but_authoritative_profile_state_is_keep() -> None:
@@ -171,11 +161,14 @@ def test_chrome_cache_storage_is_user_data_but_script_cache_is_tool() -> None:
     assert site_decision.action is PolicyAction.KEEP_PROTECTED
     assert script_decision is not None
     assert script_decision.action is PolicyAction.TOOL_DELETE
-    assert whole_tree_application_rule(
-        r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
-        r"\Service Worker\CacheStorage",
-        _env(),
-    ) is None
+    assert (
+        whole_tree_application_rule(
+            r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
+            r"\Service Worker\CacheStorage",
+            _env(),
+        )
+        is None
+    )
 
 
 def test_arbitrary_nested_cache_name_does_not_gain_chrome_deletion_authority() -> None:
@@ -277,9 +270,7 @@ def test_chrome_cache_process_guard_rechecks_live_browser(
 def test_chrome_scan_roots_include_user_data_and_updater_without_whole_tree_authority() -> None:
     scan = set(application_scan_roots(_env()))
     data = PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\Chrome\User Data")
-    updater = PureWindowsPath(
-        r"C:\Users\alice\AppData\Local\Google\GoogleUpdater"
-    )
+    updater = PureWindowsPath(r"C:\Users\alice\AppData\Local\Google\GoogleUpdater")
     assert data in scan
     assert updater in scan
     assert whole_tree_application_rule(data, _env()) is None

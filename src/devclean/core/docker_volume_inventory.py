@@ -272,9 +272,7 @@ def _run_docker(
         raise RuntimeError(f"无法执行 Docker volume inventory CLI: {error}") from error
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(
-            f"Docker volume inventory CLI 失败 (exit {result.returncode}): {detail}"
-        )
+        raise RuntimeError(f"Docker volume inventory CLI 失败 (exit {result.returncode}): {detail}")
     return result
 
 

@@ -99,9 +99,7 @@ def inventory_ollama_models(
                 logical_bytes=size,
                 modified_at=_optional_string(value.get("modified_at")),
                 parameter_size=_optional_string(details_map.get("parameter_size")),
-                quantization_level=_optional_string(
-                    details_map.get("quantization_level")
-                ),
+                quantization_level=_optional_string(details_map.get("quantization_level")),
                 family=_optional_string(details_map.get("family")),
                 running=bool(identities & running),
             )
@@ -109,9 +107,7 @@ def inventory_ollama_models(
 
     models.sort(key=lambda item: item.logical_bytes, reverse=True)
     model_root = _model_root(environment)
-    deletion_supported = (
-        model_root is not None and is_local_fixed_path(model_root)
-    )
+    deletion_supported = model_root is not None and is_local_fixed_path(model_root)
     return OllamaModelInventory(
         endpoint=endpoint,
         version=version,
@@ -141,13 +137,9 @@ def delete_ollama_model(
     if selected is None:
         raise FileNotFoundError(f"Ollama 模型已不存在: {model}")
     if selected.digest != expected_digest:
-        raise ValueError(
-            f"Ollama 模型 {model} 自检查后已被替换；请重新统计后再删除"
-        )
+        raise ValueError(f"Ollama 模型 {model} 自检查后已被替换；请重新统计后再删除")
     if selected.running:
-        raise RuntimeError(
-            f"Ollama 模型 {model} 当前已加载；请先让模型退出内存后再删除"
-        )
+        raise RuntimeError(f"Ollama 模型 {model} 当前已加载；请先让模型退出内存后再删除")
 
     store_before = _model_store_bytes(inventory.model_root)
     _json_request(
@@ -206,9 +198,7 @@ def ollama_api_endpoint(environment: Mapping[str, str] | None = None) -> str:
     elif host in {"::", "::1", "0:0:0:0:0:0:0:0", "0:0:0:0:0:0:0:1"}:
         api_host = "[::1]"
     else:
-        raise ValueError(
-            "拒绝连接非 loopback 的 OLLAMA_HOST；DevClean 只管理本机 Ollama 模型"
-        )
+        raise ValueError("拒绝连接非 loopback 的 OLLAMA_HOST；DevClean 只管理本机 Ollama 模型")
     try:
         port = parsed.port or 11434
     except ValueError as error:
@@ -244,9 +234,7 @@ def _json_request(
             f"Ollama API {method} {route} 失败 (HTTP {error.code}): {detail}"
         ) from error
     except (urllib.error.URLError, TimeoutError, OSError) as error:
-        raise RuntimeError(
-            f"无法连接本机 Ollama API {endpoint}: {error}"
-        ) from error
+        raise RuntimeError(f"无法连接本机 Ollama API {endpoint}: {error}") from error
     if not raw:
         return {}
     try:

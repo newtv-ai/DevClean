@@ -436,15 +436,9 @@ def evaluate_firefox_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
     if rule.owner is DecisionOwner.KEEP:
-        return ApplicationPolicyDecision(
-            rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
-        )
+        return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
     if rule.owner is DecisionOwner.USER:
         return ApplicationPolicyDecision(
             rule,
@@ -538,7 +532,7 @@ def clear_firefox_process_cache() -> None:
 
 def _profile_switch_path(command_line: str) -> str | None:
     pattern = re.compile(
-        r'''(?:^|\s)--?profile(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))''',
+        r"""(?:^|\s)--?profile(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))""",
         re.IGNORECASE,
     )
     match = pattern.search(command_line)
@@ -600,9 +594,7 @@ def _append_msix_roots(
         crash_roots.append(roaming / "Crash Reports")
 
 
-def _child_root_for_path(
-    path: PureWindowsPath, parent: PureWindowsPath
-) -> PureWindowsPath | None:
+def _child_root_for_path(path: PureWindowsPath, parent: PureWindowsPath) -> PureWindowsPath | None:
     try:
         relative = path.relative_to(parent)
     except ValueError:

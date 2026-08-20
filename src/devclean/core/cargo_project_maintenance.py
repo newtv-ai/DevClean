@@ -61,8 +61,7 @@ def inspect_cargo_workspace(
     reported_root = _absolute_metadata_path(metadata, "workspace_root")
     if _normalized(reported_root) != _normalized(root):
         raise ValueError(
-            "所选目录不是 Cargo workspace 根目录: "
-            f"selected={root}, reported={reported_root}"
+            f"所选目录不是 Cargo workspace 根目录: selected={root}, reported={reported_root}"
         )
     target_directory = _absolute_metadata_path(metadata, "target_directory")
     exists = _is_directory(target_directory)
@@ -215,9 +214,7 @@ def _run_cargo(
         raise RuntimeError(f"无法执行 Cargo CLI: {error}") from error
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(
-            f"Cargo CLI 失败 (exit {result.returncode}): {detail}"
-        )
+        raise RuntimeError(f"Cargo CLI 失败 (exit {result.returncode}): {detail}")
     return result
 
 
@@ -238,9 +235,8 @@ def _safe_workspace_target(workspace: Path, target: Path) -> bool:
         common = Path(os.path.commonpath((str(workspace), str(target))))
     except ValueError:
         return False
-    return (
-        _normalized(common) == _normalized(workspace)
-        and _normalized(target) != _normalized(workspace)
+    return _normalized(common) == _normalized(workspace) and _normalized(target) != _normalized(
+        workspace
     )
 
 

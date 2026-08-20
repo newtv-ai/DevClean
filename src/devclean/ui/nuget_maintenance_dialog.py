@@ -68,9 +68,7 @@ class _NuGetMaintenanceDialog:
         ttk.Label(legend, text="确定可清理：厂商定义缓存，达到收益阈值时默认勾选").pack(
             side=tk.LEFT
         )
-        ttk.Label(legend, text="你来决定：删除安全，但是否还需要取决于你的项目").pack(
-            side=tk.RIGHT
-        )
+        ttk.Label(legend, text="你来决定：删除安全，但是否还需要取决于你的项目").pack(side=tk.RIGHT)
 
         self._rows = ttk.Frame(container)
         self._rows.pack(fill=tk.BOTH, expand=True)
@@ -227,8 +225,7 @@ class _NuGetMaintenanceDialog:
             choice = tk.BooleanVar(value=entry.recommended)
             self._choices[entry.kind] = choice
             title = (
-                f"{lane_text} · {_kind_label(entry.kind)} · "
-                f"{_format_bytes(entry.logical_bytes)}"
+                f"{lane_text} · {_kind_label(entry.kind)} · {_format_bytes(entry.logical_bytes)}"
             )
             row = ttk.LabelFrame(self._rows, text=title, padding=9)
             row.grid(row=row_index, column=0, sticky="ew", pady=(0, 7))
@@ -247,9 +244,7 @@ class _NuGetMaintenanceDialog:
         safe_count = sum(
             entry.lane is NuGetMaintenanceLane.DETERMINISTIC_CANDIDATE for entry in visible
         )
-        user_count = sum(
-            entry.lane is NuGetMaintenanceLane.USER_REVIEW for entry in visible
-        )
+        user_count = sum(entry.lane is NuGetMaintenanceLane.USER_REVIEW for entry in visible)
         total_text = _format_bytes(inventory.total_local_bytes)
         self._status.set(
             f"已定位 {len(visible)} 处 NuGet 存储，共 {total_text}；"

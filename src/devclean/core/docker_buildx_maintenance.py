@@ -187,10 +187,7 @@ def _list_buildx_builders_for_daemon(
         timeout=60,
     )
     names = _unique_lines(names_result.stdout)
-    return tuple(
-        _inspect_builder(executable, daemon, name, environment)
-        for name in names
-    )
+    return tuple(_inspect_builder(executable, daemon, name, environment) for name in names)
 
 
 def _inspect_builder(
@@ -247,10 +244,7 @@ def _inspect_builder(
             reason=f"Buildx driver={driver} 可能是远程/集群后端; 仅报告",
         )
 
-    local = all(
-        _buildx_endpoint_is_local(executable, node.endpoint, environment)
-        for node in nodes
-    )
+    local = all(_buildx_endpoint_is_local(executable, node.endpoint, environment) for node in nodes)
     if not local:
         reason = "Buildx builder 至少有一个 node 不是可确认的本机 Docker endpoint; 仅报告"
     elif driver == "docker" and len(nodes) != 1:
@@ -395,9 +389,7 @@ def _exact_builder(
         if builder.name == builder_name
     ]
     if len(matches) != 1:
-        raise RuntimeError(
-            f"无法唯一确认 Buildx builder {builder_name!r}: found={len(matches)}"
-        )
+        raise RuntimeError(f"无法唯一确认 Buildx builder {builder_name!r}: found={len(matches)}")
     return matches[0]
 
 
@@ -412,8 +404,7 @@ def _require_local_daemon(
     daemon = inspect_docker_daemon_target(environment)
     if not daemon.local:
         raise RuntimeError(
-            "DevClean 只维护本机 Docker daemon; "
-            f"当前 endpoint={daemon.endpoint} ({daemon.source})"
+            f"DevClean 只维护本机 Docker daemon; 当前 endpoint={daemon.endpoint} ({daemon.source})"
         )
     return daemon
 
@@ -489,9 +480,7 @@ def _run_docker(
         raise RuntimeError(f"无法执行 Docker Buildx CLI: {error}") from error
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(
-            f"Docker Buildx CLI 失败 (exit {result.returncode}): {detail}"
-        )
+        raise RuntimeError(f"Docker Buildx CLI 失败 (exit {result.returncode}): {detail}")
     return result
 
 

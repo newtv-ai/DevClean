@@ -51,9 +51,7 @@ class _WslPnpmMaintenanceDialog:
 
         container = ttk.Frame(self._window, padding=12)
         container.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(container, text="WSL pnpm Store", font=("Segoe UI", 13, "bold")).pack(
-            anchor=tk.W
-        )
+        ttk.Label(container, text="WSL pnpm Store", font=("Segoe UI", 13, "bold")).pack(anchor=tk.W)
         ttk.Label(
             container,
             text=(
@@ -109,9 +107,9 @@ class _WslPnpmMaintenanceDialog:
             justify=tk.LEFT,
         ).pack(anchor=tk.W)
 
-        ttk.Label(
-            container, textvariable=self._status, wraplength=900, justify=tk.LEFT
-        ).pack(anchor=tk.W, pady=(10, 0))
+        ttk.Label(container, textvariable=self._status, wraplength=900, justify=tk.LEFT).pack(
+            anchor=tk.W, pady=(10, 0)
+        )
 
         footer = ttk.Frame(container)
         footer.pack(fill=tk.X, pady=(10, 0))

@@ -269,8 +269,10 @@ def open_task_manager_live_dump_maintenance_dialog(parent: tk.Tk | tk.Toplevel) 
 def _format_time(value_ns: int) -> str:
     if value_ns <= 0:
         return "未知"
-    return datetime.fromtimestamp(value_ns / 1_000_000_000, tz=UTC).astimezone().strftime(
-        "%Y-%m-%d %H:%M"
+    return (
+        datetime.fromtimestamp(value_ns / 1_000_000_000, tz=UTC)
+        .astimezone()
+        .strftime("%Y-%m-%d %H:%M")
     )
 
 

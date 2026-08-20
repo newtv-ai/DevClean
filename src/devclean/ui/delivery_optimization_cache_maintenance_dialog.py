@@ -207,7 +207,9 @@ class _DeliveryOptimizationCacheMaintenanceDialog:
         ):
             return
         self._set_busy(True)
-        self._status.set("正在重新验证 FileId、pin、ExpireOn、状态和 Windows 模块身份，然后执行精确删除…")
+        self._status.set(
+            "正在重新验证 FileId、pin、ExpireOn、状态和 Windows 模块身份，然后执行精确删除…"
+        )
 
         def work() -> None:
             try:

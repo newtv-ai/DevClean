@@ -225,14 +225,10 @@ def _require_distribution(
         raise ValueError("WSL distribution name 无效")
     inventory = inspect_wsl(environment)
     matches = [
-        distro
-        for distro in inventory.distributions
-        if distro.name.casefold() == name.casefold()
+        distro for distro in inventory.distributions if distro.name.casefold() == name.casefold()
     ]
     if len(matches) != 1:
-        raise RuntimeError(
-            f"无法唯一确认 WSL distribution {requested!r}: found={len(matches)}"
-        )
+        raise RuntimeError(f"无法唯一确认 WSL distribution {requested!r}: found={len(matches)}")
     return matches[0]
 
 
@@ -258,8 +254,7 @@ def _validate_arguments(tool: str, arguments: Sequence[str]) -> tuple[str, ...]:
     argv = tuple(result)
 
     python_family = tool in _PYTHON_NAMES or (
-        tool.startswith("python3.")
-        and tool.removeprefix("python3.").replace(".", "").isdigit()
+        tool.startswith("python3.") and tool.removeprefix("python3.").replace(".", "").isdigit()
     )
     if python_family:
         if len(argv) < 2 or argv[0] != "-m" or argv[1] not in _ALLOWED_PYTHON_MODULES:

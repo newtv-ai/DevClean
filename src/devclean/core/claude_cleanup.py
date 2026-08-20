@@ -566,8 +566,7 @@ def match_claude_rule(
 
     resolved = claude_roots(environment)
     application_roots: dict[str, tuple[str, ...]] = {
-        root.key: (_impl._normalize(root.path),)
-        for root in claude_application_roots(environment)
+        root.key: (_impl._normalize(root.path),) for root in claude_application_roots(environment)
     }
     claude_homes = tuple(
         _impl._normalize(root)
@@ -606,11 +605,7 @@ def evaluate_claude_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(_resolve_last_used(path, rule, last_used))
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
     if rule.owner is DecisionOwner.KEEP:
         return ApplicationPolicyDecision(
             rule,

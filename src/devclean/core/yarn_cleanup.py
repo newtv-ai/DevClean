@@ -258,9 +258,7 @@ def evaluate_yarn_path(
     observed = _impl._as_utc(last_used)
     idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
     if rule.owner is DecisionOwner.KEEP:
-        return ApplicationPolicyDecision(
-            rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
-        )
+        return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
     if rule.owner is DecisionOwner.USER:
         return ApplicationPolicyDecision(
             rule,

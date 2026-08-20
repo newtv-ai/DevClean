@@ -83,11 +83,7 @@ def _install_fake_git(
                 return _result(arguments, code=1)
             return _result(arguments, output=f"{custom_lfs_storage}\n")
         if arguments == ("lfs", "env"):
-            media = (
-                Path(custom_lfs_storage)
-                if custom_lfs_storage is not None
-                else lfs_objects
-            )
+            media = Path(custom_lfs_storage) if custom_lfs_storage is not None else lfs_objects
             return _result(arguments, output=f"LocalMediaDir={media}\n")
         if arguments == ("lfs", "ls-files", "--name-only"):
             return _result(arguments, output="asset.bin\n" if lfs_used else "")
