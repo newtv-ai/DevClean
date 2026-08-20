@@ -1,10 +1,10 @@
 """Audited npm storage semantics for Windows cleanup.
 
 npm's configured cache, global installation prefix, log directory and config
-files may all be redirected independently. The cache contains several npm-owned
-subtrees, but the global prefix contains installed CLI packages and executable
-shims. This profile grants deletion authority only to proven cache subtrees/log
-files while protecting global installs and package metadata.
+files may all be redirected independently. Current npm exposes supported cache
+maintenance commands, so package/npx/TUF cache internals are protected from
+generic raw deletion and handled only by exact vendor operations. Diagnostic
+logs retain the existing narrow source-backed generic cleanup lane.
 """
 
 from __future__ import annotations
@@ -100,30 +100,40 @@ def _tool_cache_dir(
     )
 
 
+def _protected_cache_dir(
+    rule_id: str,
+    relative: str,
+    label: str,
+    rebuild_cost: RebuildCost,
+) -> ApplicationCleanupRule:
+    return _rule(
+        rule_id,
+        relative,
+        MatchKind.PREFIX,
+        DecisionOwner.KEEP,
+        rebuild_cost,
+        label,
+    )
+
+
 NPM_RULES: tuple[ApplicationCleanupRule, ...] = (
-    _tool_cache_dir(
+    _protected_cache_dir(
         "npm-content-cache",
         "_cacache",
-        "npm content-addressable package cache",
-        idle_days=30,
-        min_reclaim_bytes=16 * _MIB,
-        rebuild_cost=RebuildCost.MEDIUM,
+        "npm content-addressable cache; maintain with npm cache verify/clean",
+        RebuildCost.MEDIUM,
     ),
-    _tool_cache_dir(
+    _protected_cache_dir(
         "npm-npx-cache",
         "_npx",
-        "npm/npx temporary executable package installs",
-        idle_days=30,
-        min_reclaim_bytes=16 * _MIB,
-        rebuild_cost=RebuildCost.MEDIUM,
+        "npm exec/npx cache; remove exact entries with npm cache npx rm",
+        RebuildCost.MEDIUM,
     ),
-    _tool_cache_dir(
+    _protected_cache_dir(
         "npm-tuf-cache",
         "_tuf",
-        "npm Sigstore TUF metadata and target cache",
-        idle_days=30,
-        min_reclaim_bytes=_MIB,
-        rebuild_cost=RebuildCost.LOW,
+        "npm Sigstore TUF cache; vendor-managed as part of configured cache",
+        RebuildCost.LOW,
     ),
     _tool_cache_dir(
         "npm-default-logs",
@@ -335,7 +345,7 @@ def match_npm_rule(
 def npm_audited_tool_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
-    """Return only exact npm-owned cache subtrees, never the configured root."""
+    """Return only exact generic-cleanup roots, currently npm diagnostic logs."""
 
     roots = npm_roots(environment)
     found: list[tuple[PureWindowsPath, ApplicationCleanupRule]] = []
