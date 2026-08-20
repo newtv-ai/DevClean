@@ -89,7 +89,7 @@ def test_inventory_uses_vendor_cache_root_and_separates_cache_classes(
     monkeypatch.setattr(npm, "_resolve_npm_tool", lambda environment: tool)
 
     def fake_identity(path: Path, *, expect_directory: bool, label: str) -> NpmPathIdentity:
-        del label
+        del path, label
         return root_identity if expect_directory else tool
 
     monkeypatch.setattr(npm, "_path_identity", fake_identity)
@@ -202,9 +202,7 @@ def test_verify_runs_exact_vendor_gc_on_pinned_root(
 
     result = npm.verify_npm_content_cache(reviewed)
 
-    assert calls == [
-        (("cache", "verify"), pytest.helpers.anything)
-    ] if False else calls
+    assert len(calls) == 1
     assert calls[0][0] == ("cache", "verify")
     assert calls[0][1]["NPM_CONFIG_CACHE"] == str(reviewed.cache_root)
     assert result.before_bytes == 120
