@@ -71,8 +71,8 @@ def test_npm_explicit_cache_prefix_userconfig_and_logs_dir_are_first_class() -> 
     assert userconfig.owner is DecisionOwner.KEEP
 
 
-def test_npm_owned_cache_subtrees_are_tool_owned() -> None:
-    paths = {
+def test_npm_vendor_cache_subtrees_are_protected_from_generic_deletion() -> None:
+    protected = {
         (
             r"C:\Users\alice\AppData\Local\npm-cache"
             r"\_cacache\content-v2\sha512\aa\blob"
@@ -85,12 +85,8 @@ def test_npm_owned_cache_subtrees_are_tool_owned() -> None:
             r"C:\Users\alice\AppData\Local\npm-cache"
             r"\_tuf\root.json"
         ): "npm-tuf-cache",
-        (
-            r"C:\Users\alice\AppData\Local\npm-cache"
-            r"\_logs\2026-08-01T00_00_00_000Z-debug-0.log"
-        ): "npm-default-logs",
     }
-    for path, rule_id in paths.items():
+    for path, rule_id in protected.items():
         decision = evaluate_application_path(
             path,
             logical_size=100 * _MIB,
@@ -100,12 +96,28 @@ def test_npm_owned_cache_subtrees_are_tool_owned() -> None:
             environment=_env(),
         )
         assert decision is not None
-        assert decision.rule.owner is DecisionOwner.TOOL
+        assert decision.rule.owner is DecisionOwner.KEEP
         assert decision.rule.rule_id == rule_id
-        assert decision.action is PolicyAction.TOOL_DELETE
+        assert decision.action is PolicyAction.KEEP_PROTECTED
+
+    log_decision = evaluate_application_path(
+        (
+            r"C:\Users\alice\AppData\Local\npm-cache"
+            r"\_logs\2026-08-01T00_00_00_000Z-debug-0.log"
+        ),
+        logical_size=100 * _MIB,
+        last_used=_NOW - timedelta(days=60),
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+    assert log_decision is not None
+    assert log_decision.rule.rule_id == "npm-default-logs"
+    assert log_decision.rule.owner is DecisionOwner.TOOL
+    assert log_decision.action is PolicyAction.TOOL_DELETE
 
 
-def test_npx_cached_package_metadata_stays_under_npx_tool_semantics() -> None:
+def test_npx_cached_package_metadata_stays_protected_for_vendor_entry_removal() -> None:
     path = (
         r"C:\Users\alice\AppData\Local\npm-cache"
         r"\_npx\deadbeef\package.json"
@@ -113,13 +125,13 @@ def test_npx_cached_package_metadata_stays_under_npx_tool_semantics() -> None:
     rule = match_application_rule(path, _env())
     assert rule is not None
     assert rule.rule_id == "npm-npx-cache"
-    assert rule.owner is DecisionOwner.TOOL
+    assert rule.owner is DecisionOwner.KEEP
 
 
-def test_npm_cache_items_are_blocked_while_npm_is_running() -> None:
+def test_npm_generic_log_cleanup_is_blocked_while_npm_is_running() -> None:
     path = (
         r"C:\Users\alice\AppData\Local\npm-cache"
-        r"\_cacache\content-v2\sha512\aa\blob"
+        r"\_logs\2026-06-01T00_00_00_000Z-debug-0.log"
     )
     decision = evaluate_application_path(
         path,
@@ -200,16 +212,18 @@ def test_npm_unclassified_cache_root_state_is_not_assumed_disposable() -> None:
     assert rule.owner is DecisionOwner.KEEP
 
 
-def test_npm_whole_tree_authority_stops_at_owned_cache_subdirectories() -> None:
+def test_npm_whole_tree_generic_authority_is_only_diagnostic_logs() -> None:
     env = {**_env(), "NPM_CONFIG_CACHE": r"D:\SharedNpmCache"}
-    for child in ("_cacache", "_npx", "_tuf", "_logs"):
-        rule = whole_tree_application_rule(rf"D:\SharedNpmCache\{child}", env)
-        assert rule is not None
-        assert rule.owner is DecisionOwner.TOOL
+    for child in ("_cacache", "_npx", "_tuf"):
+        assert whole_tree_application_rule(rf"D:\SharedNpmCache\{child}", env) is None
+    logs = whole_tree_application_rule(r"D:\SharedNpmCache\_logs", env)
+    assert logs is not None
+    assert logs.owner is DecisionOwner.TOOL
+    assert logs.rule_id == "npm-default-logs"
     assert whole_tree_application_rule(r"D:\SharedNpmCache", env) is None
 
 
-def test_catalog_protects_custom_prefix_and_upgrades_only_npm_cache_children(
+def test_catalog_does_not_upgrade_vendor_cache_internals_to_raw_delete_roots(
     tmp_path: Path,
 ) -> None:
     home = tmp_path / "home"
@@ -220,10 +234,12 @@ def test_catalog_protects_custom_prefix_and_upgrades_only_npm_cache_children(
     content_cache = cache / "_cacache"
     npx_cache = cache / "_npx"
     tuf_cache = cache / "_tuf"
+    logs_cache = cache / "_logs"
     global_modules = prefix / "node_modules"
     content_cache.mkdir(parents=True)
     npx_cache.mkdir(parents=True)
     tuf_cache.mkdir(parents=True)
+    logs_cache.mkdir(parents=True)
     global_modules.mkdir(parents=True)
     env = {
         "USERPROFILE": str(home),
@@ -239,16 +255,16 @@ def test_catalog_protects_custom_prefix_and_upgrades_only_npm_cache_children(
     by_path = {os.path.normcase(str(root.path)): root for root in discovered}
     cache_root = by_path[os.path.normcase(str(cache))]
     prefix_root = by_path[os.path.normcase(str(prefix))]
-    cacache_root = by_path[os.path.normcase(str(content_cache))]
-    npx_root = by_path[os.path.normcase(str(npx_cache))]
-    tuf_root = by_path[os.path.normcase(str(tuf_cache))]
+    logs_root = by_path[os.path.normcase(str(logs_cache))]
 
     assert not cache_root.delete_root_itself
     assert prefix_root.policy is CleanupPolicy.REPORT_ONLY
     assert not prefix_root.delete_root_itself
-    for tool_root in (cacache_root, npx_root, tuf_root):
-        assert tool_root.policy is CleanupPolicy.VENDOR_MANAGED
-        assert tool_root.delete_root_itself
+    assert logs_root.policy is CleanupPolicy.VENDOR_MANAGED
+    assert logs_root.delete_root_itself
+    for protected in (content_cache, npx_cache, tuf_cache):
+        assert os.path.normcase(str(protected)) not in by_path
+        assert whole_tree_application_rule(protected, env) is None
 
     scope = directory_cleanup_scope(
         global_modules,
@@ -279,6 +295,6 @@ def test_npm_process_guard_rechecks_live_npm_process(
         lambda: True,
     )
     assert not process_guard_allows(
-        r"C:\Users\alice\AppData\Local\npm-cache\_npx\hash\package.json.tmp",
+        r"C:\Users\alice\AppData\Local\npm-cache\_logs\2026-06-01T00_00_00_000Z-debug-0.log",
         _env(),
     )
