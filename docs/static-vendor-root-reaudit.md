@@ -19,6 +19,10 @@ That is not an acceptable authority boundary: scan configuration proves where to
 
 More-specific application rules are unchanged. `discover_known_cleanup_roots()` may still create runtime `VENDOR_MANAGED` roots, but only from audited application code that attaches the exact TOOL rule.
 
+## Verification invariant
+
+The packaged scan configuration contains zero static `VENDOR_MANAGED` roots after this migration. Any runtime vendor-managed root must therefore be created by application-aware discovery and carry the audited rule that grants its exact authority.
+
 ## Consequence
 
 This removes a cross-cutting bypass before the family-by-family source audit: a newly added or stale static path cannot make unknown descendants deletable merely by being called a vendor cache. Package managers, browsers, model stores, IDEs and developer tools must earn mutation authority through their dedicated application lifecycle model.
