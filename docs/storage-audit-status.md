@@ -62,6 +62,7 @@ A clean CI run on a stale stacked base is not enough. Positive audit and impleme
 | Unity UPM legacy packages | USER_REVIEW only for deprecated subtree; current registry DB protected |
 | Ollama models | USER_REVIEW per exact vendor model identity/API; raw model store protected |
 | Android SDK package maintenance | exact `sdkmanager` package USER_REVIEW; whole SDK protected; system images additionally protected by strict AVD `image.sysdir.1/2` correlation |
+| Android project SDK reference explainer | read-only positive literal `compileSdk`/Build Tools/NDK/CMake package correlation for one selected Gradle project; absence never means unused and Gradle is never executed |
 | Android SDK installer temp | exact source-backed SDK `temp` subtree only, with SDK-writer guards |
 | Android AVD storage | persistent virtual-device state protected; only narrow uncoupled temporary `cache.img` rule exists in generic scanner |
 | Docker classic builder cache | vendor builder prune on source-verified local daemon only |
@@ -172,17 +173,17 @@ A lower-level backend never inherits broader authority than the higher-level gen
 
 ## Current high-value queue
 
-The broad Windows diagnostics, Podman/Android package work and Docker unification passes are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
+The broad Windows diagnostics, Podman/Android package work, Docker unification, and first Android project-reference explanation pass are substantially closed. Prefer sources where vendor semantics can still provide a narrow object lifecycle or materially improve explanation without inventing deletion authority.
 
-1. **Android project/package explanation follow-ups**
-   - project/build-file correlation may explain likely platform/Build Tools/NDK/CMake use but must never infer "unused" from incomplete project discovery;
-   - Gradle project mutation remains blocked until destructive task scope can be completely proven.
-2. **High-impact `%USERPROFILE%\.cache` applications**
+1. **High-impact `%USERPROFILE%\.cache` applications**
    - audit known applications individually; never restore generic parent delete authority.
-3. **Additional local-model products**
+2. **Additional local-model products**
    - models remain user-selected content; exact vendor model actions only.
-4. **Narrow application-specific Windows diagnostics**
+3. **Narrow application-specific Windows diagnostics**
    - revisit only when Microsoft or the owning application exposes an exact lifecycle/API; broad `Logs`, `Prefetch`, `CbsTemp`, WER or servicing/setup roots remain protected.
+4. **Android project explanation follow-ups only when source-backed**
+   - selected-project literal references are positive evidence only; Gradle defaults/dynamic logic remain non-authoritative for uninstall;
+   - Gradle project mutation remains blocked until destructive task scope can be completely proven.
 
 ## Explicit anti-goals
 

@@ -6,6 +6,9 @@ import sys
 import tkinter as tk
 from collections.abc import Sequence
 
+from devclean.ui.android_project_sdk_reference_dialog import (
+    open_android_project_sdk_reference_dialog,
+)
 from devclean.ui.android_sdk_package_maintenance_dialog import (
     open_android_sdk_package_maintenance_dialog,
 )
@@ -156,6 +159,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Android SDK Package 维护…",
         command=lambda: open_android_sdk_package_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="Android 项目 SDK 显式引用检查…",
+        command=lambda: open_android_project_sdk_reference_dialog(root),
     )
     tools.add_command(
         label="Podman 已停止容器维护…",
