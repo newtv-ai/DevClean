@@ -20,6 +20,7 @@ from devclean.ui.cursor_maintenance_dialog import open_cursor_maintenance_dialog
 from devclean.ui.delivery_optimization_cache_maintenance_dialog import (
     open_delivery_optimization_cache_maintenance_dialog,
 )
+from devclean.ui.docker_unified_maintenance_dialog import open_docker_unified_maintenance_dialog
 from devclean.ui.git_repository_maintenance_dialog import (
     open_git_repository_maintenance_dialog,
 )
@@ -131,6 +132,10 @@ def _install_tools_menu(root: tk.Tk) -> None:
     tools.add_command(
         label="Ollama 本机模型维护…",
         command=lambda: open_ollama_model_maintenance_dialog(root),
+    )
+    tools.add_command(
+        label="Docker 本机存储维护…",
+        command=lambda: open_docker_unified_maintenance_dialog(root),
     )
     tools.add_command(
         label="Unreal DDC 安全维护…",
