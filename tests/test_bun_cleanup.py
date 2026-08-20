@@ -179,7 +179,7 @@ def test_bun_process_guard_is_independent_from_other_js_package_managers(
     monkeypatch.setattr(application_cleanup, "npm_process_running", lambda: False)
     monkeypatch.setattr(application_cleanup, "pnpm_process_running", lambda: False)
     monkeypatch.setattr(application_cleanup, "yarn_process_running", lambda: False)
-    assert application_cleanup.process_guard_allows(cache, env)
+    assert not application_cleanup.process_guard_allows(cache, env)
 
     monkeypatch.setattr(application_cleanup, "bun_process_running", lambda: False)
     monkeypatch.setattr(application_cleanup, "npm_process_running", lambda: True)
