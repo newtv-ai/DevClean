@@ -214,12 +214,11 @@ def test_android_sdk_whole_tree_authority_is_only_exact_temp_and_catalogued(
     assert temp_item.delete_root_itself
     assert temp_item.application_rule is not None
 
-    # The legacy scan catalog inventories system-images as vendor-managed storage,
-    # but the application semantic layer above it is authoritative and KEEP. This
-    # regression prevents a large installed emulator image from becoming generic
-    # cleanup merely because it is old or large.
+    # The static scan catalog is discovery-only. Installed system images are
+    # protected here, while the application semantic layer remains authoritative
+    # KEEP for their actual payload files.
     assert image_item.category is CleanupCategory.ANDROID_SDK_PAYLOAD
-    assert image_item.policy is CleanupPolicy.VENDOR_MANAGED
+    assert image_item.policy is CleanupPolicy.REPORT_ONLY
     image_rule = match_application_rule(system_images / "android-36" / "system.img", env)
     assert image_rule is not None
     assert image_rule.owner is DecisionOwner.KEEP
@@ -234,13 +233,9 @@ def test_android_sdk_process_guard_blocks_sdk_temp_but_not_android_studio_cache(
     temp.mkdir()
 
     monkeypatch.setattr(application_cleanup, "android_sdk_process_running", lambda: True)
-    monkeypatch.setattr(
-        application_cleanup, "android_studio_process_running", lambda: False
-    )
+    monkeypatch.setattr(application_cleanup, "android_studio_process_running", lambda: False)
     assert not application_cleanup.process_guard_allows(temp, env)
 
     monkeypatch.setattr(application_cleanup, "android_sdk_process_running", lambda: False)
-    monkeypatch.setattr(
-        application_cleanup, "android_studio_process_running", lambda: True
-    )
+    monkeypatch.setattr(application_cleanup, "android_studio_process_running", lambda: True)
     assert application_cleanup.process_guard_allows(temp, env)

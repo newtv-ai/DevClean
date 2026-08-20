@@ -11,8 +11,8 @@ This tracker exists so the requested second-pass audit is genuinely one-by-one r
 | Generic directory-name/version heuristics | ✅ phase 2 | protected/report-only; no whole-tree USER delete authority |
 | Generic unknown-file routing | ✅ phase 2 | protected; no default paid AI route |
 | Legacy MANUAL_REVIEW raw roots | ✅ phase 2 | runtime fails closed to REPORT_ONLY |
-| Static VENDOR_MANAGED root fallback | ⏳ next | verify every root cannot bypass richer app/vendor semantics |
-| AGE_BASED_REVIEW temp lifecycle | ⏳ next | re-check exact Windows/temp semantics and age threshold |
+| Static VENDOR_MANAGED root fallback | ✅ phase 3 | static roots are discovery-only; deterministic vendor authority requires an attached audited TOOL whole-tree rule |
+| AGE_BASED_REVIEW temp lifecycle | ⏳ next | Microsoft Storage Sense semantics do not justify raw one-day mtime authority; rework this next |
 | Scan exclusions/pruning | ⏳ queued | verify no important audited cache is accidentally skipped and no user data is widened |
 | Learned-rule target boundary | ✅ phase 2 | learned/default rules apply to files only; directory choices are exact-path-only and subtree KEEP wins |
 | Learned-rule portability/default restoration | ⏳ queued | re-audit old packaged file rules, generated glob/regex reuse, then selectively restore safe common-file knowledge |

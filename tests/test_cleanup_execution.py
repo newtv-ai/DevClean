@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -13,7 +12,7 @@ from devclean.core.cleanup_catalog import (
 )
 from devclean.core.cleanup_journal import ActionState, CleanupJournal, CleanupMode
 from devclean.core.postscan_cleanup import (
-    CleanupExecutionProgress,
+    CleanupRefusal,
     ScanCleanupCandidate,
     candidate_from_directory_item,
     candidate_from_triage_item,
@@ -34,10 +33,7 @@ from devclean.core.triage import (
 )
 from devclean.core.user_rules import default_rules
 from devclean.platform.windows.exact_cleanup import (
-    DirectoryPurgeProgress,
-    DirectoryPurgeResult,
     ExactMutationResult,
-    ExactRootBoundary,
 )
 from devclean.platform.windows.filesystem import FileSystemMetadata
 from devclean.scanner.filesystem import ScanRecord, ScanRecordKind
@@ -97,9 +93,7 @@ def _item(path: Path, root: Path) -> TriageItem:
     )
 
 
-def _journal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> CleanupJournal:
+def _journal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> CleanupJournal:
     import devclean.core.cleanup_journal as journal_module
 
     monkeypatch.setattr(journal_module, "is_local_fixed_path", lambda _path: True)
@@ -177,9 +171,7 @@ def test_unverified_recycle_is_completed_without_claiming_freed_space(
     (candidate,) = _candidates((target,), root, present, monkeypatch)
     journal = _journal(tmp_path, monkeypatch)
 
-    def recycle(
-        path: Path, _snapshot: object, _boundary: object
-    ) -> ExactMutationResult:
+    def recycle(path: Path, _snapshot: object, _boundary: object) -> ExactMutationResult:
         present[str(path)] = False
         return ExactMutationResult(str(path), None, True, False, False, recycled=False)
 
@@ -231,7 +223,7 @@ def test_already_absent_retry_completes_without_calling_purger(
     assert result.purged_logical_bytes == 0
 
 
-def test_windows_old_root_itself_reaches_directory_purger(
+def test_legacy_windows_old_vendor_root_cannot_reach_directory_purger(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import devclean.core.postscan_cleanup as cleanup
@@ -268,13 +260,13 @@ def test_windows_old_root_itself_reaches_directory_purger(
         allocated_size=None,
         category=CleanupCategory.WINDOWS_UPDATE,
         source_domain=SourceDomain.WINDOWS_SYSTEM,
-        lane=ReviewLane.AI_REVIEW,
-        risk_tier=RiskTier.HIGH,
+        lane=ReviewLane.DETERMINISTIC_CANDIDATE,
+        risk_tier=RiskTier.LOW,
         evidence_kind=EvidenceKind.KNOWN_ROOT_HEURISTIC,
-        actionability=Actionability.AI_REVIEW,
+        actionability=Actionability.REVIEW_PLAN,
         execution_policy=ExecutionPolicy.USER_CHOICE_DELETE,
         recovery=RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT,
-        reason="obsolete Windows installation",
+        reason="legacy forged vendor root",
         tags=("whole_directory", "known_cache_root"),
         target_kind=CleanupTargetKind.DIRECTORY,
         directory_scope=DirectoryScope.KNOWN_CACHE_ROOT,
@@ -286,64 +278,11 @@ def test_windows_old_root_itself_reaches_directory_purger(
     monkeypatch.setattr(cleanup, "is_local_fixed_path", lambda _path: True)
     monkeypatch.setattr(cleanup, "read_file_metadata", read)
     rules = default_rules()
-    candidate = candidate_from_directory_item(
-        item,
-        DirectorySubtreeTotals(files=2, logical_bytes=20, allocated_bytes=20),
-        known_roots=(known,),
-        delete_config=rules.delete.classification,
-        keep_config=rules.keep.classification,
-    )
-    assert candidate.scan_root == boundary_root
-    seen_boundary: list[Path] = []
-    progress_updates: list[CleanupExecutionProgress] = []
-
-    def purge_directory(
-        path: Path,
-        _snapshot: object,
-        boundary: ExactRootBoundary,
-        *,
-        on_progress: Callable[[DirectoryPurgeProgress], None],
-    ) -> DirectoryPurgeResult:
-        assert path == target
-        seen_boundary.append(boundary.path)
-        assert callable(on_progress)
-        on_progress(
-            DirectoryPurgeProgress(
-                files_removed=1,
-                links_removed=0,
-                directories_removed=0,
-                bytes_removed=10,
-            )
+    with pytest.raises(CleanupRefusal, match="attached audited application TOOL rule"):
+        candidate_from_directory_item(
+            item,
+            DirectorySubtreeTotals(files=2, logical_bytes=20, allocated_bytes=20),
+            known_roots=(known,),
+            delete_config=rules.delete.classification,
+            keep_config=rules.keep.classification,
         )
-        return DirectoryPurgeResult(
-            root_path=str(path),
-            files_removed=2,
-            links_removed=0,
-            directories_removed=1,
-            bytes_removed=20,
-            root_absent=True,
-            completed=True,
-        )
-
-    result = execute_cleanup_batch(
-        prepare_cleanup_batch((candidate,)),
-        CleanupMode.PERMANENT,
-        journal=_journal(tmp_path, monkeypatch),
-        directory_purger=purge_directory,
-        on_progress=progress_updates.append,
-        known_roots=(known,),
-        delete_config=rules.delete.classification,
-        keep_config=rules.keep.classification,
-    )
-
-    assert seen_boundary == [boundary_root]
-    assert [update.completed for update in progress_updates] == [
-        False,
-        False,
-        True,
-    ]
-    assert progress_updates[1].files_processed == 1
-    assert progress_updates[1].files_total == 2
-    assert result.action_states[0][1] is ActionState.PURGED
-    assert result.completed_paths == (str(target),)
-    assert result.purged_logical_bytes == 20

@@ -21,6 +21,7 @@ from heapq import heappush, heapreplace
 from pathlib import Path
 
 from devclean.core.application_cleanup import (
+    DecisionOwner,
     PolicyAction,
     application_display_name,
     evaluate_application_path,
@@ -147,6 +148,18 @@ class _Classification:
     recovery: RecoveryCapability
     reason: str
     tags: tuple[str, ...] = ()
+
+
+def _has_audited_vendor_authority(root: KnownCleanupRoot) -> bool:
+    """Return whether a vendor root carries its exact audited mutation rule."""
+
+    rule = root.application_rule
+    return (
+        root.policy is CleanupPolicy.VENDOR_MANAGED
+        and rule is not None
+        and rule.owner is DecisionOwner.TOOL
+        and rule.allow_whole_tree
+    )
 
 
 class TriageSession:
@@ -374,12 +387,13 @@ def triage_directory(
     known = known_root_for_path(path, known_roots)
     if scope is DirectoryScope.KNOWN_CACHE_ROOT and known is not None:
         category = known.category
+        audited_vendor = _has_audited_vendor_authority(known)
         recovery = (
             RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT
-            if known.policy is CleanupPolicy.VENDOR_MANAGED
+            if audited_vendor
             else RecoveryCapability.UNKNOWN
         )
-        if known.policy is CleanupPolicy.VENDOR_MANAGED:
+        if audited_vendor:
             lane = ReviewLane.DETERMINISTIC_CANDIDATE
             risk_tier = RiskTier.LOW
             evidence_kind = EvidenceKind.KNOWN_ROOT_HEURISTIC
@@ -548,16 +562,24 @@ def _classify(
                 ("known_root", "recent", "report_only"),
             )
         if known.policy is CleanupPolicy.VENDOR_MANAGED:
+            provenance = (
+                "audited_whole_tree_root"
+                if _has_audited_vendor_authority(known)
+                else "missing_application_rule"
+            )
             return _Classification(
                 known.category,
-                ReviewLane.DETERMINISTIC_CANDIDATE,
-                RiskTier.LOW,
-                EvidenceKind.KNOWN_ROOT_HEURISTIC,
-                Actionability.REVIEW_PLAN,
-                ExecutionPolicy.USER_CHOICE_DELETE,
-                RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT,
-                f"{known.label}：精确匹配已审计的厂商管理存储，工具确定可清理",
-                ("known_root", "vendor_managed", "tool_decision"),
+                ReviewLane.REPORT_ONLY,
+                RiskTier.PROTECTED,
+                EvidenceKind.FILESYSTEM_OBSERVATION,
+                Actionability.REPORT_ONLY,
+                ExecutionPolicy.NONE,
+                RecoveryCapability.NONE,
+                (
+                    f"{known.label}：目录级厂商规则不能替代具体文件语义；"
+                    "应用分类器未确认此文件，工具直接保护"
+                ),
+                ("known_root", "vendor_managed", provenance, "unmatched_file", "report_only"),
             )
         if known.policy is CleanupPolicy.REPORT_ONLY:
             return _Classification(

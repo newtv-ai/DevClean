@@ -171,7 +171,7 @@
         "%LOCALAPPDATA%\\Microsoft\\Windows\\INetCache"
       ],
       "category": "BROWSER_CACHE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Windows Internet 临时文件"
     },
     {
@@ -198,7 +198,7 @@
         "%LOCALAPPDATA%\\pip-tools\\Cache"
       ],
       "category": "PIP_CACHE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Python 包缓存"
     },
     {
@@ -211,7 +211,7 @@
         "%LOCALAPPDATA%\\uv\\cache"
       ],
       "category": "UV_CACHE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "uv 包缓存"
     },
     {
@@ -225,7 +225,7 @@
         "%APPDATA%\\npm-cache"
       ],
       "category": "NPM_CACHE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "npm 包缓存"
     },
     {
@@ -238,7 +238,7 @@
         "%LOCALAPPDATA%\\pnpm\\store"
       ],
       "category": "PNPM_STORE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "pnpm 包存储"
     },
     {
@@ -252,7 +252,7 @@
         "%USERPROFILE%\\anaconda3\\pkgs"
       ],
       "category": "CONDA_CACHE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Conda 包缓存"
     },
     {
@@ -266,7 +266,7 @@
         "%USERPROFILE%\\.cache\\huggingface"
       ],
       "category": "HUGGINGFACE_CACHE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Hugging Face 缓存"
     },
     {
@@ -279,7 +279,7 @@
         "%USERPROFILE%\\.gradle\\wrapper\\dists"
       ],
       "category": "GRADLE_CACHE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Gradle 缓存和下载"
     },
     {
@@ -291,7 +291,7 @@
         "%LOCALAPPDATA%\\Yarn\\Cache"
       ],
       "category": "YARN_CACHE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Yarn 包缓存"
     },
     {
@@ -303,7 +303,7 @@
         "%USERPROFILE%\\.bun\\install\\cache"
       ],
       "category": "BUN_CACHE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Bun 安装缓存"
     },
     {
@@ -316,7 +316,7 @@
         "%USERPROFILE%\\.m2\\wrapper\\dists"
       ],
       "category": "MAVEN_REPOSITORY",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Maven 本地仓库和下载"
     },
     {
@@ -328,7 +328,7 @@
         "%USERPROFILE%\\.nuget\\packages"
       ],
       "category": "NUGET_CACHE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "NuGet 包缓存"
     },
     {
@@ -342,7 +342,7 @@
         "%USERPROFILE%\\go\\pkg\\mod"
       ],
       "category": "GO_MODULE_CACHE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Go 模块缓存"
     },
     {
@@ -354,7 +354,7 @@
         "%USERPROFILE%\\.cargo\\registry"
       ],
       "category": "CARGO_REGISTRY",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Cargo registry 缓存"
     },
     {
@@ -367,7 +367,7 @@
         "%USERPROFILE%\\.cache\\puppeteer"
       ],
       "category": "TEST_BROWSER_BINARIES",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "测试浏览器下载"
     },
     {
@@ -379,7 +379,7 @@
         "%LOCALAPPDATA%\\Android\\Sdk\\system-images"
       ],
       "category": "ANDROID_SDK_PAYLOAD",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Android SDK 系统镜像"
     },
     {
@@ -391,7 +391,7 @@
         "%USERPROFILE%\\.ollama\\models"
       ],
       "category": "OLLAMA_MODELS",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Ollama 模型存储"
     },
     {
@@ -403,7 +403,7 @@
         "%LOCALAPPDATA%\\Ollama\\updates_v2"
       ],
       "category": "INSTALLERS_DOWNLOADS",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Ollama 更新安装包"
     },
     {
@@ -480,7 +480,7 @@
         "%USERPROFILE%\\.claude\\plugins\\cache"
       ],
       "category": "VSCODE_CACHE",
-      "policy": "VENDOR_MANAGED",
+      "policy": "REPORT_ONLY",
       "label": "Claude 插件缓存"
     },
     {

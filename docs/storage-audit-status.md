@@ -190,7 +190,7 @@ A lower-level backend never inherits broader authority than the higher-level gen
 
 ## 2026-08 second-pass rule re-audit
 
-A full rule re-audit is active in `docs/full-rule-reaudit-2026-08.md`. #142 fixed default-backup/migration handling but temporarily neutralized packaged learned rules more aggressively than the product policy requires. Phase 2 restores the intended boundary: confirmed learned/default DELETE/KEEP knowledge is reusable for files, never for directories, while generic name/suffix/category/unknown evidence alone routes to protection instead of asking a non-expert user or automatically spending paid AI calls. Continue with static VENDOR_MANAGED roots, AGE_BASED_REVIEW lifecycle, selective file-default restoration, then application modules one by one.
+A full rule re-audit is active in `docs/full-rule-reaudit-2026-08.md`. #142 fixed default-backup/migration handling but temporarily neutralized packaged learned rules more aggressively than the product policy requires. Phase 2 restores the intended boundary: confirmed learned/default DELETE/KEEP knowledge is reusable for files, never for directories, while generic name/suffix/category/unknown evidence alone routes to protection instead of asking a non-expert user or automatically spending paid AI calls. Static VENDOR_MANAGED fallback is now closed: static scan roots are discovery-only and runtime vendor authority requires an attached audited application TOOL whole-tree rule. Continue with AGE_BASED_REVIEW lifecycle, selective file-default restoration, then application modules one by one.
 
 ## Current high-value queue
 

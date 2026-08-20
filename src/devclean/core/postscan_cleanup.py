@@ -20,9 +20,10 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from devclean.core.application_cleanup import process_guard_allows
+from devclean.core.application_cleanup import DecisionOwner, process_guard_allows
 from devclean.core.cleanup_catalog import (
     CleanupCategory,
+    CleanupPolicy,
     KnownCleanupRoot,
     known_root_for_path,
 )
@@ -77,12 +78,8 @@ _SEAL = object()
 _CAPABILITY_KEY = secrets.token_bytes(32)
 # Machine-wide cleanup exceptions are carried by the discovered scan roots whose
 # JSON entry explicitly sets ``allow_inside_system_anchor``.
-type Recycler = Callable[
-    [Path, ExactFileSnapshot, ExactRootBoundary], ExactMutationResult
-]
-type PermanentPurger = Callable[
-    [Path, ExactFileSnapshot, ExactRootBoundary], ExactMutationResult
-]
+type Recycler = Callable[[Path, ExactFileSnapshot, ExactRootBoundary], ExactMutationResult]
+type PermanentPurger = Callable[[Path, ExactFileSnapshot, ExactRootBoundary], ExactMutationResult]
 type DirectoryTreePurger = Callable[..., DirectoryPurgeResult]
 
 
@@ -218,15 +215,10 @@ def candidate_from_triage_item(
     record = item.record
     if record.kind is not ScanRecordKind.FILE or item.path != record.path:
         raise CleanupRefusal("candidate must be an exact file item from the completed scan")
-    if (
-        item.lane is ReviewLane.REPORT_ONLY
-        or item.actionability is Actionability.REPORT_ONLY
-    ):
+    if item.lane is ReviewLane.REPORT_ONLY or item.actionability is Actionability.REPORT_ONLY:
         raise CleanupRefusal("protected and report-only items cannot become cleanup actions")
     if item.execution_policy is not ExecutionPolicy.USER_CHOICE_DELETE:
-        raise CleanupRefusal(
-            "this item requires an implemented vendor action or is not executable"
-        )
+        raise CleanupRefusal("this item requires an implemented vendor action or is not executable")
     path = _absolute_local_path(Path(record.path), "candidate")
     scan_root = _absolute_local_path(Path(record.root), "scan root")
     _require_strict_descendant(path, scan_root)
@@ -288,9 +280,7 @@ def candidate_from_directory_item(
     _reject_protected_path(path, known_roots, keep_config)
     if not is_local_fixed_path(path) or not is_local_fixed_path(scan_root):
         raise CleanupRefusal("candidate and original scan root must be on a local fixed volume")
-    scope = _require_directory_scope(
-        path, known_roots, delete_config, keep_config
-    )
+    scope = _require_directory_scope(path, known_roots, delete_config, keep_config)
     if totals.files < 0 or totals.logical_bytes < 0:
         raise CleanupRefusal("directory subtree totals must be non-negative")
     policy_evidence = _application_whole_tree_policy(path, known_roots)
@@ -366,14 +356,25 @@ def _require_directory_scope(
     delete_config: DeleteClassification,
     keep_config: KeepClassification,
 ) -> DirectoryScope:
-    scope = directory_cleanup_scope(
-        path, known_roots, delete_config, keep_config
-    )
+    scope = directory_cleanup_scope(path, known_roots, delete_config, keep_config)
     if scope is DirectoryScope.NOT_ELIGIBLE:
         raise CleanupRefusal(
             "whole-directory cleanup is limited to recognised cache roots and "
             "deterministically regenerable tool directories"
         )
+    if scope is DirectoryScope.KNOWN_CACHE_ROOT:
+        known = known_root_for_path(path, known_roots)
+        rule = known.application_rule if known is not None else None
+        if not (
+            known is not None
+            and known.policy is CleanupPolicy.VENDOR_MANAGED
+            and rule is not None
+            and rule.owner is DecisionOwner.TOOL
+            and rule.allow_whole_tree
+        ):
+            raise CleanupRefusal(
+                "whole-directory vendor cleanup requires an attached audited application TOOL rule"
+            )
     return scope
 
 
@@ -491,9 +492,7 @@ def execute_cleanup_batch(
                     action.action_id,
                     expected=(ActionState.EXECUTING,),
                     new_state=(
-                        ActionState.RECYCLED
-                        if mode is CleanupMode.RECYCLE
-                        else ActionState.PURGED
+                        ActionState.RECYCLED if mode is CleanupMode.RECYCLE else ActionState.PURGED
                     ),
                     detail="object was already absent; nothing to remove",
                 )
@@ -547,9 +546,7 @@ def execute_cleanup_batch(
                             action_index=current_index,
                             action_count=len(batch.actions),
                             candidate=current_candidate,
-                            files_processed=(
-                                progress.files_removed + progress.links_removed
-                            ),
+                            files_processed=(progress.files_removed + progress.links_removed),
                             completed=False,
                         )
 
@@ -737,10 +734,7 @@ def _snapshot_from_live_read(item: TriageItem) -> ExactFileSnapshot:
         and metadata.last_write_time_ns != record.last_write_time_ns
     ):
         raise CleanupRefusal("selected file was modified since the completed scan")
-    if (
-        record.creation_time_ns is not None
-        and metadata.creation_time_ns != record.creation_time_ns
-    ):
+    if record.creation_time_ns is not None and metadata.creation_time_ns != record.creation_time_ns:
         raise CleanupRefusal("selected file was replaced since the completed scan")
     return ExactFileSnapshot(
         logical_size=metadata.logical_size,
@@ -763,9 +757,7 @@ def _preflight_candidate(
     known_roots: tuple[KnownCleanupRoot, ...] = (),
 ) -> None:
     if not process_guard_allows(candidate.path):
-        raise CleanupRefusal(
-            "owning application is running; close it before cleaning this target"
-        )
+        raise CleanupRefusal("owning application is running; close it before cleaning this target")
     _reject_protected_path(candidate.path, known_roots, keep_config)
     _require_strict_descendant(candidate.path, candidate.scan_root)
     if not is_local_fixed_path(candidate.path) or not is_local_fixed_path(candidate.scan_root):
@@ -784,9 +776,7 @@ def _preflight_candidate(
         raise CleanupRefusal("original approved scan root identity changed")
     metadata = read_file_metadata(candidate.path)
     if candidate.target_kind is CleanupTargetKind.DIRECTORY:
-        _require_directory_scope(
-            candidate.path, known_roots, delete_config, keep_config
-        )
+        _require_directory_scope(candidate.path, known_roots, delete_config, keep_config)
         if not directory_metadata_matches_snapshot(
             metadata, _directory_identity(candidate.snapshot)
         ):
@@ -1030,13 +1020,10 @@ def _reject_system_anchor(
 ) -> None:
     anchor = Path(path.anchor)
     if any(
-        root.allow_inside_system_anchor and _is_descendant(path, root.path)
-        for root in known_roots
+        root.allow_inside_system_anchor and _is_descendant(path, root.path) for root in known_roots
     ):
         return
-    protected_roots = tuple(
-        anchor / name for name in keep_config.protected_system_root_names
-    )
+    protected_roots = tuple(anchor / name for name in keep_config.protected_system_root_names)
     normalized = _normalized(path)
     for protected in protected_roots:
         protected_normalized = _normalized(protected)
@@ -1046,10 +1033,7 @@ def _reject_system_anchor(
             continue
         if common == protected_normalized:
             raise CleanupRefusal("anchored Windows system-root deny-list blocked the path")
-    if (
-        path.parent == anchor
-        and path.name.casefold() in keep_config.protected_system_file_names
-    ):
+    if path.parent == anchor and path.name.casefold() in keep_config.protected_system_file_names:
         raise CleanupRefusal("anchored Windows system-file deny-list blocked the path")
 
 
