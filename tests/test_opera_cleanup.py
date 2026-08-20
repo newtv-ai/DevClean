@@ -39,18 +39,22 @@ def _env() -> dict[str, str]:
 
 def test_opera_stable_developer_and_gx_roots_are_split_roaming_local() -> None:
     roots = opera_roots(_env())
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Roaming\Opera Software\Opera Stable"
-    ) in roots.roaming_roots
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Roaming\Opera Software\Opera Developer"
-    ) in roots.roaming_roots
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Roaming\Opera Software\Opera GX Stable"
-    ) in roots.roaming_roots
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Local\Opera Software\Opera Stable"
-    ) in roots.local_roots
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Opera Software\Opera Stable")
+        in roots.roaming_roots
+    )
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Opera Software\Opera Developer")
+        in roots.roaming_roots
+    )
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Opera Software\Opera GX Stable")
+        in roots.roaming_roots
+    )
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Opera Software\Opera Stable")
+        in roots.local_roots
+    )
 
 
 def test_opera_roaming_profile_is_authoritative_but_generated_code_cache_is_tool() -> None:
@@ -96,9 +100,7 @@ def test_opera_local_cache_supports_legacy_and_default_layouts() -> None:
     root = r"C:\Users\alice\AppData\Local\Opera Software\Opera Stable"
     paths = {
         root + r"\Cache\Cache_Data\f_001": "opera-http-cache",
-        root + r"\System Cache\Cache_Data\data_0": "opera-system-cache",
         root + r"\Default\Cache\Cache_Data\f_002": "opera-http-cache",
-        root + r"\Default\System Cache\Cache_Data\data_1": "opera-system-cache",
         root + r"\Default\GPUCache\data_0": "opera-profile-gpu-cache",
     }
     for path, rule_id in paths.items():
@@ -106,6 +108,15 @@ def test_opera_local_cache_supports_legacy_and_default_layouts() -> None:
         assert rule is not None
         assert rule.owner is DecisionOwner.TOOL
         assert rule.rule_id == rule_id
+
+    for path in (
+        root + r"\System Cache\Cache_Data\data_0",
+        root + r"\Default\System Cache\Cache_Data\data_1",
+    ):
+        rule = match_application_rule(path, _env())
+        assert rule is not None
+        assert rule.rule_id == "opera-system-cache"
+        assert rule.owner is DecisionOwner.KEEP
 
     unknown = match_application_rule(root + r"\Default\mystery.db", _env())
     assert unknown is not None
@@ -178,12 +189,14 @@ def test_opera_catalog_grants_only_exact_cache_roots(tmp_path: Path) -> None:
     roots = discover_known_cleanup_roots(default_rules().scan, env)
     by_path = {os.path.normcase(str(root.path)): root for root in roots}
 
-    for cache in (code_cache, http_cache, system_cache):
+    for cache in (code_cache, http_cache):
         item = by_path[os.path.normcase(str(cache))]
         assert item.category is CleanupCategory.BROWSER_CACHE
         assert item.policy is CleanupPolicy.VENDOR_MANAGED
         assert item.delete_root_itself
 
+    assert os.path.normcase(str(system_cache)) not in by_path
+    assert whole_tree_application_rule(system_cache, env) is None
     assert by_path[os.path.normcase(str(roaming_root))].policy is CleanupPolicy.REPORT_ONLY
     assert by_path[os.path.normcase(str(local_root))].policy is CleanupPolicy.REPORT_ONLY
     assert whole_tree_application_rule(roaming_root, env) is None
@@ -207,13 +220,26 @@ def test_opera_process_guard_rechecks_live_browser(
 
 def test_opera_scan_roots_include_roaming_and_local_without_parent_authority() -> None:
     scan = set(application_scan_roots(_env()))
-    roaming = PureWindowsPath(
-        r"C:\Users\alice\AppData\Roaming\Opera Software\Opera GX Stable"
-    )
-    local = PureWindowsPath(
-        r"C:\Users\alice\AppData\Local\Opera Software\Opera GX Stable"
-    )
+    roaming = PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Opera Software\Opera GX Stable")
+    local = PureWindowsPath(r"C:\Users\alice\AppData\Local\Opera Software\Opera GX Stable")
     assert roaming in scan
     assert local in scan
     assert whole_tree_application_rule(roaming, _env()) is None
     assert whole_tree_application_rule(local, _env()) is None
+
+
+def test_opera_system_cache_age_size_and_idle_process_do_not_create_delete_authority() -> None:
+    root = r"C:\Users\alice\AppData\Local\Opera Software\Opera Stable"
+    path = root + r"\Default\System Cache\Cache_Data\data_0"
+    decision = evaluate_application_path(
+        path,
+        logical_size=32 * 1024**3,
+        last_used=_NOW - timedelta(days=3650),
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+    assert decision is not None
+    assert decision.rule.rule_id == "opera-system-cache"
+    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert whole_tree_application_rule(root + r"\Default\System Cache", _env()) is None
