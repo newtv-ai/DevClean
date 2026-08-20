@@ -198,11 +198,15 @@ class _TorchHubInventoryDialog:
 
         if not inventory.exists:
             self._status.set(
-                "默认/选择的 Hub 根目录不存在。运行中的 Python 可能使用 torch.hub.set_dir() 指向其他目录。"
+                "默认/选择的 Hub 根目录不存在。运行中的 Python 可能使用 "
+                "torch.hub.set_dir() 指向其他目录。"
             )
             return
         if not inventory.scannable:
-            self._status.set("根目录是重解析/云边界，DevClean 拒绝穿越。" + _warnings_text(inventory))
+            self._status.set(
+                "根目录是重解析/云边界，DevClean 拒绝穿越。"
+                + _warnings_text(inventory)
+            )
             return
         self._status.set(
             f"只读统计 {len(inventory.entries)} 个顶层对象、"
@@ -222,9 +226,7 @@ class _TorchHubInventoryDialog:
         except (ValueError, IndexError):
             return
         boundary = "；该对象边界被跳过" if entry.boundary_skipped else ""
-        self._details.configure(
-            text=f"{entry.path}\n{entry.reason}{boundary}"
-        )
+        self._details.configure(text=f"{entry.path}\n{entry.reason}{boundary}")
 
 
 def _kind_text(kind: TorchHubEntryKind) -> str:
