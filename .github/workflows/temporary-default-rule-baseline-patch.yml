@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - agent/default-rule-baseline-reaudit-2026-08
+  pull_request:
+    branches:
+      - main
+    types: [opened, reopened, synchronize]
 
 permissions:
   contents: write
@@ -45,6 +49,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/temporary-default-rule-baseline-patch.yml scripts/temporary_default_rule_baseline_patch.py
+          if (Test-Path docs/default-rule-baseline-trigger.tmp) {
+            git rm docs/default-rule-baseline-trigger.tmp
+          }
           git add src/devclean/config/delete-rules.json src/devclean/config/keep-rules.json src/devclean/core/_user_rules_impl.py tests/_test_rules_impl.py docs/default-rule-baseline-reaudit.md
           git commit -m "Remove learned decisions from packaged defaults"
           git push origin HEAD:agent/default-rule-baseline-reaudit-2026-08
