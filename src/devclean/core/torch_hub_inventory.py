@@ -1,5 +1,7 @@
 """Read-only PyTorch Hub storage inventory with no deletion authority."""
 
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import os
@@ -104,7 +106,10 @@ def default_torch_hub_root(
         return TorchHubRootCandidate(
             _expand_user_path(torch_home, env) / "hub",
             "TORCH_HOME",
-            "PyTorch 默认使用 TORCH_HOME/hub；运行中的 Python 仍可能通过 torch.hub.set_dir() 改写。",
+            (
+                "PyTorch 默认使用 TORCH_HOME/hub；运行中的 Python 仍可能通过 "
+                "torch.hub.set_dir() 改写。"
+            ),
         )
 
     xdg_cache_home = env.get("xdg_cache_home")
@@ -118,7 +123,10 @@ def default_torch_hub_root(
     return TorchHubRootCandidate(
         _expand_user_path("~/.cache", env) / "torch" / "hub",
         "default",
-        "PyTorch 源码默认 ~/.cache/torch/hub；运行时 torch.hub.set_dir() 无法由 DevClean 外部推断。",
+        (
+            "PyTorch 源码默认 ~/.cache/torch/hub；运行时 torch.hub.set_dir() "
+            "无法由 DevClean 外部推断。"
+        ),
     )
 
 
@@ -216,7 +224,10 @@ def _inspect_top_level(
             logical_bytes,
             file_count,
             boundary,
-            "load_state_dict_from_url 把权重放在 checkpoints，但没有 URL/来源清单且允许自定义 file_name；无法证明任一文件可安全重建。",
+            (
+                "load_state_dict_from_url 把权重放在 checkpoints，但没有 URL/来源清单且"
+                "允许自定义 file_name；无法证明任一文件可安全重建。"
+            ),
         )
     if is_directory:
         return TorchHubEntry(
@@ -227,7 +238,10 @@ def _inspect_top_level(
             logical_bytes,
             file_count,
             boundary,
-            "Torch Hub 的 repo 目录名由 owner/repo/ref 下划线拼接且 ref 的斜杠也改成下划线；名称不可可靠反解，目录也可能是用户自建内容。",
+            (
+                "Torch Hub 的 repo 目录名由 owner/repo/ref 下划线拼接且 ref 的斜杠也改成"
+                "下划线；名称不可可靠反解，目录也可能是用户自建内容。"
+            ),
         )
     if lowered.endswith(".zip"):
         return TorchHubEntry(
@@ -238,7 +252,10 @@ def _inspect_top_level(
             logical_bytes,
             file_count,
             boundary,
-            "Torch Hub 下载 repo 时会短暂使用顶层 <normalized-ref>.zip，但没有持久 provenance；遗留 zip 不能仅凭后缀自动删除。",
+            (
+                "Torch Hub 下载 repo 时会短暂使用顶层 <normalized-ref>.zip，但没有持久 "
+                "provenance；遗留 zip 不能仅凭后缀自动删除。"
+            ),
         )
     return TorchHubEntry(
         path,
