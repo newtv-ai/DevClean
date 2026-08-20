@@ -27,27 +27,35 @@ jobs:
           python-version: "3.13"
       - name: Sync locked environment
         run: uv sync --frozen
-      - name: Repair temporary patch syntax
+      - name: Repair old temporary patch syntax
         run: uv run --frozen python scripts/temporary_repair_generic_patch.py
-      - name: Apply routing correction
+      - name: Apply generic routing correction
         run: uv run --frozen python scripts/temporary_generic_review_routing_patch.py
-      - name: Format and validate
+      - name: Apply file versus directory boundary
+        run: uv run --frozen python .github/temporary-file-boundary-patch.py
+      - name: Remove temporary patch machinery
+        shell: pwsh
+        run: |
+          git rm .github/workflows/temporary-generic-review-routing-patch.yml
+          git rm .github/temporary-file-boundary-patch.py
+          git rm scripts/temporary_generic_review_routing_patch.py
+          git rm scripts/temporary_repair_generic_patch.py
+      - name: Format and validate final tree
         shell: pwsh
         run: |
           uv lock --check
           uv sync --frozen
           uv pip check
-          uv run --frozen ruff check --fix src/devclean/core/triage.py src/devclean/ui/app.py tests/test_builtin_root_authority.py tests/test_generic_review_routing.py scripts/temporary_generic_review_routing_patch.py scripts/temporary_repair_generic_patch.py
-          uv run --frozen ruff format src/devclean/core/triage.py src/devclean/ui/app.py tests/test_builtin_root_authority.py tests/test_generic_review_routing.py scripts/temporary_generic_review_routing_patch.py scripts/temporary_repair_generic_patch.py
+          uv run --frozen ruff check --fix src/devclean/core/_user_rules_impl.py src/devclean/core/user_rules.py src/devclean/core/triage.py src/devclean/ui/app.py tests/test_builtin_root_authority.py tests/test_generic_review_routing.py tests/test_learned_rule_target_boundary.py
+          uv run --frozen ruff format src/devclean/core/_user_rules_impl.py src/devclean/core/user_rules.py src/devclean/core/triage.py src/devclean/ui/app.py tests/test_builtin_root_authority.py tests/test_generic_review_routing.py tests/test_learned_rule_target_boundary.py
           uv run --frozen ruff check src scripts tests
           uv run --frozen python -m mypy
           uv run --frozen pytest
-      - name: Commit correction and remove temporary files
+      - name: Commit final correction
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/temporary-generic-review-routing-patch.yml scripts/temporary_generic_review_routing_patch.py scripts/temporary_repair_generic_patch.py
-          git add README.md docs/generic-review-routing-reaudit.md docs/full-rule-reaudit-2026-08.md docs/storage-audit-status.md src/devclean/config/scan-rules.json src/devclean/config/delete-rules.json src/devclean/core/triage.py src/devclean/ui/app.py tests/test_builtin_root_authority.py tests/test_generic_review_routing.py
-          git commit -m "Protect generic ambiguity from user and AI deletion"
+          git add -A
+          git commit -m "Protect generic ambiguity and separate directory decisions"
           git push origin HEAD:agent/generic-review-routing-reaudit-2026-08
