@@ -5,8 +5,6 @@ build logic, so static text can provide positive evidence for a few literal SDK
 version declarations but absence of a match can never mean "unused".
 """
 
-# ruff: noqa: RUF001
-
 from __future__ import annotations
 
 import os
