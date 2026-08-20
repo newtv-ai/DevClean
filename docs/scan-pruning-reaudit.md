@@ -18,3 +18,7 @@ The previous outermost-root deduplication could silently erase an explicit neste
 - static/report-only catalog roots do not receive this special reachability treatment merely because their names are familiar.
 
 This preserves scan performance and user-content protection while making explicit/source-audited reachability truthful.
+
+## Validation invariant
+
+Regression tests cover explicit roots below a pruned profile ancestor, audited application roots below a pruned ancestor, exact user exclusions, and the rule that a root override never disables descendant skipped-name pruning. The final merge gate must run on the exact head after all temporary patch machinery has been removed.
