@@ -71,11 +71,11 @@ Re-verify on current primary vendor docs/source in small PRs. Recent audits are 
 | JVM: Gradle / Maven | ✅ re-verified (Gradle User Home and Maven local repository stay protected/report-only; project clean execution remains bounded by complete vendor scope proof) |
 | .NET / NuGet | ⏳ queued |
 | Go / Cargo / Conan / vcpkg | ⏳ queued |
-| Docker / Podman / WSL | ⏳ queued |
-| Android SDK / AVD | ⏳ queued |
-| Unity / Unreal | ⏳ queued |
+| Docker / Podman / WSL | ✅ re-verified (local-daemon/machine/distro boundaries retained; exact vendor operations only; volumes/VHD/shared or broad prune state remains protected/report-only) |
+| Android SDK / AVD | ✅ re-verified (exact sdkmanager package identity plus strict AVD/system-image correlation retained; incomplete reference proof fails closed) |
+| Unity / Unreal | ✅ re-verified (Unity storage stays split by project/package/vendor-managed semantics; Unreal DDC uses engine-owned maintenance; no raw Zen/DDC widening) |
 | Ollama / LM Studio and other local-model products | ⏳ queued |
-| Windows diagnostics / servicing / Recycle Bin / previous install | ⏳ queued |
+| Windows diagnostics / servicing / Recycle Bin / previous install | ✅ re-verified (servicing/rollback/recoverable/diagnostic semantics remain separate; exact vendor APIs/commands or exact-file USER_REVIEW only; broad raw cleanup stays protected) |
 | Project build systems: Bazel / Cargo / Meson / CMake / MSBuild / Ninja / Make / SCons | ⏳ queued |
 
 ## Release packaging
