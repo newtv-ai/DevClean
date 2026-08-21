@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/release-license-clean-reaudit-2026-08
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -47,20 +50,12 @@ jobs:
 
           ci = Path(".github/workflows/ci.yml")
           ci_text = ci.read_text(encoding="utf-8")
-          ci_text = ci_text.replace(
-              "            artifacts/windows-exe/dist/licenses/*.txt\n",
-              "            artifacts/windows-exe/dist/licenses/*\n",
-              1,
-          )
+          ci_text = ci_text.replace("            artifacts/windows-exe/dist/licenses/*.txt\n", "            artifacts/windows-exe/dist/licenses/*\n", 1)
           ci.write_text(ci_text, encoding="utf-8")
 
           readme = Path("README.md")
           readme_text = readme.read_text(encoding="utf-8")
-          readme_text = readme_text.replace(
-              "`DevClean.exe` 和 `licenses\\` 下四份\n许可证文本。",
-              "`DevClean.exe` 和 `licenses\\` 下五份\n许可证文本（DevClean GPL、CPython、PyInstaller、Tcl、Tk）。",
-              1,
-          )
+          readme_text = readme_text.replace("`DevClean.exe` 和 `licenses\\` 下四份\n许可证文本。", "`DevClean.exe` 和 `licenses\\` 下五份\n许可证文本（DevClean GPL、CPython、PyInstaller、Tcl、Tk）。", 1)
           readme.write_text(readme_text, encoding="utf-8")
 
           deploy = Path("docs/架构与部署.md")
@@ -71,24 +66,15 @@ jobs:
           deploy_text = deploy_text.replace("另带四份许可证文本", "另带五份许可证文本", 1)
           deploy.write_text(deploy_text, encoding="utf-8")
 
-          audit = Path("docs/release-license-reaudit.md")
-          audit.write_text(
-              "# Windows EXE bundled-runtime license re-audit — 2026-08\n\n"
-              "The one-file Tkinter build ships both Tcl and Tk runtime material. The old payload copied only the Tk notice under a combined Tcl/Tk filename, so Tcl's separately bundled runtime notice was not preserved independently.\n\n"
-              "The locked build now requires and copies both `tcl\\tcl8.6\\license.terms` and `tcl\\tk8.6\\license.terms` as separate `Tcl-license.terms` and `Tk-license.terms` files. CI uploads the entire strict `licenses/` allowlist, and release/deployment documentation matches the five-notice payload. The checked-in release directory is regenerated from this corrected locked build, not hand-edited.\n",
+          Path("docs/release-license-reaudit.md").write_text(
+              "# Windows EXE bundled-runtime license re-audit — 2026-08\n\nThe one-file Tkinter build ships both Tcl and Tk runtime material. The old payload copied only the Tk notice under a combined Tcl/Tk filename, so Tcl's separately bundled runtime notice was not preserved independently.\n\nThe locked build now requires and copies both `tcl\\tcl8.6\\license.terms` and `tcl\\tk8.6\\license.terms` as separate `Tcl-license.terms` and `Tk-license.terms` files. CI uploads the entire strict `licenses/` allowlist, and release/deployment documentation matches the five-notice payload. The checked-in release directory is regenerated from this corrected locked build, not hand-edited.\n",
               encoding="utf-8",
           )
 
           tracker = Path("docs/full-rule-reaudit-2026-08.md")
           tracker_text = tracker.read_text(encoding="utf-8")
           marker = "## Acceptance rule for reducing user/AI burden\n"
-          section = (
-              "## Release packaging\n\n"
-              "| Surface | Status | Result |\n"
-              "| --- | --- | --- |\n"
-              "| Windows EXE bundled-runtime notices | ✅ re-audited | DevClean GPL, CPython, PyInstaller, Tcl and Tk notices are independently preserved by the locked build |\n"
-              "| Checked-in `release/DevClean.exe` | ✅ regenerated | rebuilt from the corrected locked branch; final PR CI independently rebuilds the Windows artifact |\n\n"
-          )
+          section = "## Release packaging\n\n| Surface | Status | Result |\n| --- | --- | --- |\n| Windows EXE bundled-runtime notices | ✅ re-audited | DevClean GPL, CPython, PyInstaller, Tcl and Tk notices are independently preserved by the locked build |\n| Checked-in `release/DevClean.exe` | ✅ regenerated | rebuilt from the corrected locked branch; final PR CI independently rebuilds the Windows artifact |\n\n"
           if "## Release packaging\n" not in tracker_text:
               if marker not in tracker_text:
                   raise SystemExit("tracker insertion point not found")
