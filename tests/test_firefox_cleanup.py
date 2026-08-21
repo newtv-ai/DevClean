@@ -161,23 +161,23 @@ def test_firefox_profile_switch_parser_supports_single_and_double_dash() -> None
         r'"C:\Program Files\Mozilla Firefox\firefox.exe" --profile "D:\Firefox Profiles\One"': (
             r"D:\Firefox Profiles\One"
         ),
-        r'firefox.exe -profile D:\PortableFirefox\Profile': r"D:\PortableFirefox\Profile",
-        r'firefox.exe --profile=D:\Profiles\Test': r"D:\Profiles\Test",
+        r"firefox.exe -profile D:\PortableFirefox\Profile": r"D:\PortableFirefox\Profile",
+        r"firefox.exe --profile=D:\Profiles\Test": r"D:\Profiles\Test",
     }
     for command_line, expected in cases.items():
         assert _profile_switch_path(command_line) == expected
     assert _profile_switch_path(r"firefox.exe -P work") is None
 
 
-def test_firefox_update_logs_are_exactly_scoped_under_updates_directory() -> None:
+def test_firefox_update_logs_are_protected_diagnostic_evidence() -> None:
     update = r"C:\ProgramData\Mozilla\updates\install-hash"
     current_log = match_application_rule(update + r"\updates\0\update.log", _env())
     last_log = match_application_rule(update + r"\updates\last-update.log", _env())
     misplaced_log = match_application_rule(update + r"\last-update.log", _env())
     payload = match_application_rule(update + r"\updates\0\update.mar", _env())
 
-    assert current_log is not None and current_log.owner is DecisionOwner.TOOL
-    assert last_log is not None and last_log.owner is DecisionOwner.TOOL
+    assert current_log is not None and current_log.owner is DecisionOwner.KEEP
+    assert last_log is not None and last_log.owner is DecisionOwner.KEEP
     assert misplaced_log is not None
     assert misplaced_log.rule_id == "firefox-update-state"
     assert misplaced_log.owner is DecisionOwner.KEEP
@@ -185,18 +185,54 @@ def test_firefox_update_logs_are_exactly_scoped_under_updates_directory() -> Non
     assert payload.rule_id == "firefox-update-state"
     assert payload.owner is DecisionOwner.KEEP
 
+    decision = evaluate_application_path(
+        update + r"\updates\last-update.log",
+        logical_size=64 * _MIB,
+        last_used=_NOW - timedelta(days=365),
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+    assert decision is not None
+    assert decision.action is PolicyAction.KEEP_PROTECTED
+
+
+def test_firefox_pending_crash_reports_remain_protected_even_when_old() -> None:
+    pending = (
+        r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\Crash Reports"
+        r"\pending\unsubmitted.dmp"
+    )
+    rule = match_application_rule(pending, _env())
+    assert rule is not None
+    assert rule.rule_id == "firefox-pending-crash-reports"
+    assert rule.owner is DecisionOwner.KEEP
+
+    decision = evaluate_application_path(
+        pending,
+        logical_size=128 * _MIB,
+        last_used=_NOW - timedelta(days=365),
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+    assert decision is not None
+    assert decision.action is PolicyAction.KEEP_PROTECTED
+
+    crash_root = r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\Crash Reports"
+    assert whole_tree_application_rule(crash_root, _env()) is None
+
 
 def test_default_firefox_roots_include_roaming_state_and_local_profiles() -> None:
     roots = firefox_roots(_env())
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox"
-    ) in roots.state_roots
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\Profiles"
-    ) in roots.persistent_parents
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Local\Mozilla\Firefox\Profiles"
-    ) in roots.local_parents
+    assert PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox") in roots.state_roots
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\Profiles")
+        in roots.persistent_parents
+    )
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Mozilla\Firefox\Profiles")
+        in roots.local_parents
+    )
 
 
 def test_firefox_facade_catalogues_only_audited_tool_roots_for_whole_tree(
@@ -204,9 +240,7 @@ def test_firefox_facade_catalogues_only_audited_tool_roots_for_whole_tree(
 ) -> None:
     roaming = tmp_path / "Roaming" / "Mozilla" / "Firefox"
     persistent = roaming / "Profiles" / "abc.default-release"
-    local_profile = (
-        tmp_path / "Local" / "Mozilla" / "Firefox" / "Profiles" / "abc.default-release"
-    )
+    local_profile = tmp_path / "Local" / "Mozilla" / "Firefox" / "Profiles" / "abc.default-release"
     persistent.mkdir(parents=True)
     local_profile.mkdir(parents=True)
     (persistent / "places.sqlite").write_text("history", encoding="utf-8")
