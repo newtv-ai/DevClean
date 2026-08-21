@@ -234,8 +234,7 @@ def recycle_exact_object(
 
     source_path = _ordinary_absolute_path(source, "source")
     is_directory = bool(
-        expected.attributes is not None
-        and expected.attributes & _FILE_ATTRIBUTE_DIRECTORY
+        expected.attributes is not None and expected.attributes & _FILE_ATTRIBUTE_DIRECTORY
     )
     root_handle, root_final = _open_boundary(boundary)
     try:
@@ -301,9 +300,7 @@ def _shell_delete_to_recycle_bin(path: str) -> None:
     # The Shell expects a double-null-terminated list even for one entry.
     operation.pFrom = ctypes.c_wchar_p(path + "\0\0")
     operation.pTo = None
-    operation.fFlags = (
-        _FOF_ALLOWUNDO | _FOF_NOCONFIRMATION | _FOF_SILENT | _FOF_NOERRORUI
-    )
+    operation.fFlags = _FOF_ALLOWUNDO | _FOF_NOCONFIRMATION | _FOF_SILENT | _FOF_NOERRORUI
     operation.fAnyOperationsAborted = 0
     operation.hNameMappings = None
     operation.lpszProgressTitle = None
@@ -372,7 +369,7 @@ def purge_exact_directory_tree(
             _require_final_path(handle, root_path)
             state = _TreePurgeState()
             completed = _purge_tree_contents(
-                root_path, state, on_progress, is_cancelled
+                root_path, root_final, state, on_progress, is_cancelled
             )
             if completed:
                 _set_delete_disposition(handle, root_path)
@@ -478,9 +475,7 @@ def _open_exact_directory(
         share_mode,
         None,
         _OPEN_EXISTING,
-        _FILE_FLAG_BACKUP_SEMANTICS
-        | _FILE_FLAG_OPEN_REPARSE_POINT
-        | _FILE_FLAG_OPEN_NO_RECALL,
+        _FILE_FLAG_BACKUP_SEMANTICS | _FILE_FLAG_OPEN_REPARSE_POINT | _FILE_FLAG_OPEN_NO_RECALL,
         None,
     )
     if handle == _INVALID_HANDLE_VALUE:
@@ -513,9 +508,7 @@ def _open_exact_directory_for_mutation(path: str) -> wintypes.HANDLE:
         _MUTATION_SHARE_MODE,
         None,
         _OPEN_EXISTING,
-        _FILE_FLAG_BACKUP_SEMANTICS
-        | _FILE_FLAG_OPEN_REPARSE_POINT
-        | _FILE_FLAG_OPEN_NO_RECALL,
+        _FILE_FLAG_BACKUP_SEMANTICS | _FILE_FLAG_OPEN_REPARSE_POINT | _FILE_FLAG_OPEN_NO_RECALL,
         None,
     )
     if handle == _INVALID_HANDLE_VALUE:
@@ -558,6 +551,7 @@ class _TreePurgeState:
 
 def _purge_tree_contents(
     root_path: str,
+    boundary_final: str,
     state: _TreePurgeState,
     on_progress: Callable[[DirectoryPurgeProgress], None] | None,
     is_cancelled: Callable[[], bool] | None,
@@ -576,12 +570,12 @@ def _purge_tree_contents(
         current, children_done = pending.pop()
         if children_done:
             if current != root_path:
-                _delete_empty_directory(current)
+                _delete_empty_directory(current, boundary_final)
                 state.directories_removed += 1
                 if on_progress is not None:
                     on_progress(state.snapshot())
             continue
-        children = _list_purge_entries(current)
+        children = _list_purge_entries(current, boundary_final, already_pinned=current == root_path)
         pending.append((current, True))
         for child_path, kind, size in children:
             if kind is _EntryKind.DIRECTORY:
@@ -590,7 +584,7 @@ def _purge_tree_contents(
             # A reparse point is removed as a link.  Descending into one is the
             # single way a tree walk could escape its selected root, so the walk
             # never does it -- not even for a link that appears to stay inside.
-            _delete_leaf(child_path)
+            _delete_leaf(child_path, boundary_final)
             if kind is _EntryKind.REPARSE_POINT:
                 state.links_removed += 1
             else:
@@ -607,29 +601,48 @@ class _EntryKind(Enum):
     REPARSE_POINT = "REPARSE_POINT"
 
 
-def _list_purge_entries(directory: str) -> tuple[tuple[str, _EntryKind, int], ...]:
-    entries: list[tuple[str, _EntryKind, int]] = []
-    with os.scandir(_extended_path(directory)) as scan:
-        for entry in scan:
-            try:
-                status = entry.stat(follow_symlinks=False)
-            except OSError:
-                # The entry vanished between enumeration and stat.  Nothing is
-                # left to remove, so treat it as already gone rather than
-                # failing the whole tree.
-                continue
-            child = os.path.join(directory, entry.name)
-            attributes = getattr(status, "st_file_attributes", 0)
-            if attributes & _FILE_ATTRIBUTE_REPARSE_POINT:
-                entries.append((child, _EntryKind.REPARSE_POINT, 0))
-            elif attributes & _FILE_ATTRIBUTE_DIRECTORY:
-                entries.append((child, _EntryKind.DIRECTORY, 0))
-            else:
-                entries.append((child, _EntryKind.FILE, status.st_size))
-    return tuple(entries)
+def _list_purge_entries(
+    directory: str, boundary_final: str, *, already_pinned: bool = False
+) -> tuple[tuple[str, _EntryKind, int], ...]:
+    # The selected tree root is already pinned by purge_exact_directory_tree.
+    # Every nested directory is separately pinned immediately before traversal
+    # so a pathname replacement cannot redirect scandir through a junction.
+    handle: wintypes.HANDLE | None = None
+    if not already_pinned:
+        handle = _open_exact_directory(directory)
+        metadata = read_file_metadata_handle(handle)
+        if not metadata.is_directory or metadata.is_reparse_point or metadata.is_cloud_placeholder:
+            _close_handle(handle)
+            raise ExactCleanupError("selected tree directory became a reparse/cloud boundary")
+        try:
+            _require_handle_in_boundary(handle, boundary_final, allow_equal=False)
+            _require_final_path(handle, directory)
+        except Exception:
+            _close_handle(handle)
+            raise
+    try:
+        entries: list[tuple[str, _EntryKind, int]] = []
+        with os.scandir(_extended_path(directory)) as scan:
+            for entry in scan:
+                try:
+                    status = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+                child = os.path.join(directory, entry.name)
+                attributes = getattr(status, "st_file_attributes", 0)
+                if attributes & _FILE_ATTRIBUTE_REPARSE_POINT:
+                    entries.append((child, _EntryKind.REPARSE_POINT, 0))
+                elif attributes & _FILE_ATTRIBUTE_DIRECTORY:
+                    entries.append((child, _EntryKind.DIRECTORY, 0))
+                else:
+                    entries.append((child, _EntryKind.FILE, status.st_size))
+        return tuple(entries)
+    finally:
+        if handle is not None:
+            _close_handle(handle)
 
 
-def _delete_leaf(path: str) -> None:
+def _delete_leaf(path: str, boundary_final: str) -> None:
     """Delete one file, or one link, by handle without ever resolving it.
 
     A reparse point may itself be directory-shaped -- a junction or a directory
@@ -640,6 +653,7 @@ def _delete_leaf(path: str) -> None:
 
     handle = _open_leaf_for_delete(path)
     try:
+        _require_handle_in_boundary(handle, boundary_final, allow_equal=False)
         _set_delete_disposition(handle, path)
     finally:
         _close_handle(handle)
@@ -666,9 +680,7 @@ def _open_leaf_for_delete(path: str) -> wintypes.HANDLE:
         _MUTATION_SHARE_MODE,
         None,
         _OPEN_EXISTING,
-        _FILE_FLAG_BACKUP_SEMANTICS
-        | _FILE_FLAG_OPEN_REPARSE_POINT
-        | _FILE_FLAG_OPEN_NO_RECALL,
+        _FILE_FLAG_BACKUP_SEMANTICS | _FILE_FLAG_OPEN_REPARSE_POINT | _FILE_FLAG_OPEN_NO_RECALL,
         None,
     )
     if handle == _INVALID_HANDLE_VALUE:
@@ -676,9 +688,14 @@ def _open_leaf_for_delete(path: str) -> wintypes.HANDLE:
     return cast(wintypes.HANDLE, handle)
 
 
-def _delete_empty_directory(path: str) -> None:
+def _delete_empty_directory(path: str, boundary_final: str) -> None:
     handle = _open_exact_directory_for_mutation(path)
     try:
+        metadata = read_file_metadata_handle(handle)
+        if not metadata.is_directory or metadata.is_reparse_point or metadata.is_cloud_placeholder:
+            raise ExactCleanupError("selected tree directory changed before deletion")
+        _require_handle_in_boundary(handle, boundary_final, allow_equal=False)
+        _require_final_path(handle, path)
         _set_delete_disposition(handle, path)
     finally:
         _close_handle(handle)
@@ -832,9 +849,7 @@ def _directory_snapshot_from_file_snapshot(
     )
 
 
-def _directory_source_name_state(
-    path: str, expected: ExactDirectorySnapshot
-) -> tuple[bool, bool]:
+def _directory_source_name_state(path: str, expected: ExactDirectorySnapshot) -> tuple[bool, bool]:
     metadata = _read_optional_metadata(path)
     if metadata is None:
         return (True, False)
@@ -854,9 +869,7 @@ def _require_final_path(handle: wintypes.HANDLE, expected_path: str) -> None:
         raise ExactCleanupError("opened object's final path no longer matches the plan")
 
 
-def _metadata_matches(
-    metadata: FileSystemMetadata | None, expected: ExactFileSnapshot
-) -> bool:
+def _metadata_matches(metadata: FileSystemMetadata | None, expected: ExactFileSnapshot) -> bool:
     if metadata is None:
         return False
     return (
