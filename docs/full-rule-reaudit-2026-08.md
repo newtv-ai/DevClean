@@ -78,6 +78,13 @@ Re-verify on current primary vendor docs/source in small PRs. Recent audits are 
 | Windows diagnostics / servicing / Recycle Bin / previous install | ⏳ queued |
 | Project build systems: Bazel / Cargo / Meson / CMake / MSBuild / Ninja / Make / SCons | ⏳ queued |
 
+## Release packaging
+
+| Surface | Status | Result |
+| --- | --- | --- |
+| Windows EXE bundled-runtime notices | ✅ re-audited | CPython aggregate notice already contains both Tcl and Tk terms; the redundant Tk-only sidecar is now accurately named |
+| Checked-in `release/DevClean.exe` | ✅ retained | sidecar-only license-label correction leaves the accepted executable unchanged; exact-head CI must independently rebuild the Windows artifact |
+
 ## Acceptance rule for reducing user/AI burden
 
 A reduction in USER_REVIEW or AI_REVIEW counts is accepted by moving an item to a source-proven exact deterministic lane, to protected/report-only, or by applying a separately confirmed reusable **file-level** DELETE/KEEP rule. Cache-like names, age, size, redownloadability, or a one-off AI guess are not authority by themselves; learned file authority never extends to directories or hard semantic protections.
