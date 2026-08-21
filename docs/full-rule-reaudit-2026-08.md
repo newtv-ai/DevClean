@@ -69,14 +69,14 @@ Re-verify on current primary vendor docs/source in small PRs. Recent audits are 
 | Python: pip / uv / Conda / PyTorch Hub / Hugging Face Hub | ✅ re-verified (vendor-owned prune/clean/remove operations used only with exact identity/scope proof; environments, credentials, models and ambiguous cache provenance remain protected/report-only) |
 | JS: npm / pnpm / Yarn / Bun / Cypress / Playwright / Puppeteer | ✅ re-verified (vendor-maintenance lanes retained only where exact scope is provable; configuration-sensitive/shared caches remain protected/report-only) |
 | JVM: Gradle / Maven | ✅ re-verified (Gradle User Home and Maven local repository stay protected/report-only; project clean execution remains bounded by complete vendor scope proof) |
-| .NET / NuGet | ⏳ queued |
-| Go / Cargo / Conan / vcpkg | ⏳ queued |
+| .NET / NuGet | ✅ re-verified (NuGet mutation stays behind exact vendor local-resource commands; global packages/tools/workloads retain user/vendor semantics; generic MSBuild project clean remains report-only) |
+| Go / Cargo / Conan / vcpkg | ✅ re-verified (tool-owned exact maintenance retained; shared dependency stores, editable/project state and ambiguous/configured storage remain protected or USER_REVIEW) |
 | Docker / Podman / WSL | ✅ re-verified (local-daemon/machine/distro boundaries retained; exact vendor operations only; volumes/VHD/shared or broad prune state remains protected/report-only) |
 | Android SDK / AVD | ✅ re-verified (exact sdkmanager package identity plus strict AVD/system-image correlation retained; incomplete reference proof fails closed) |
 | Unity / Unreal | ✅ re-verified (Unity storage stays split by project/package/vendor-managed semantics; Unreal DDC uses engine-owned maintenance; no raw Zen/DDC widening) |
-| Ollama / LM Studio and other local-model products | ⏳ queued |
+| Ollama / LM Studio and other local-model products | ✅ re-verified (models remain user-selected content; raw model-store deletion is forbidden; only exact vendor model identity/API operations can create a positive lane) |
 | Windows diagnostics / servicing / Recycle Bin / previous install | ✅ re-verified (servicing/rollback/recoverable/diagnostic semantics remain separate; exact vendor APIs/commands or exact-file USER_REVIEW only; broad raw cleanup stays protected) |
-| Project build systems: Bazel / Cargo / Meson / CMake / MSBuild / Ninja / Make / SCons | ⏳ queued |
+| Project build systems: Bazel / Cargo / Meson / CMake / MSBuild / Ninja / Make / SCons | ✅ re-verified (generic output names never grant authority; positive lanes require complete vendor-bounded scope; project-defined/extensible clean graphs remain protected/report-only) |
 
 ## Release packaging
 
