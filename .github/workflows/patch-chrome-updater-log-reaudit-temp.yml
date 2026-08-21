@@ -82,3 +82,5 @@ jobs:
           git add src/devclean/core/chrome_cleanup.py tests/test_chrome_cleanup.py tests/test_chrome_rule_authority.py docs/chrome-updater-storage-authority-reaudit.md docs/full-rule-reaudit-2026-08.md
           git commit -m "Protect Chromium Updater diagnostic logs"
           git push origin HEAD:agent/chrome-updater-log-reaudit-2026-08
+
+# trigger: second push after workflow creation
