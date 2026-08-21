@@ -1,0 +1,84 @@
+name: Temporary Chrome updater log authority re-audit
+
+on:
+  push:
+    branches:
+      - agent/chrome-updater-log-reaudit-2026-08
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-2025
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: agent/chrome-updater-log-reaudit-2026-08
+          persist-credentials: true
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.6"
+          python-version: "3.13"
+      - name: Sync environment
+        run: uv sync --frozen
+      - name: Apply source-backed correction
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          chrome = Path("src/devclean/core/chrome_cleanup.py")
+          text = chrome.read_text(encoding="utf-8")
+          old = '''    _rule(\n        "chrome-updater-log",\n        "updater.log",\n        MatchKind.EXACT,\n        DecisionOwner.TOOL,\n        RebuildCost.NONE,\n        "Chromium Updater diagnostic log",\n        root_kind="updater",\n        idle_days=7,\n        min_reclaim_bytes=_MIB,\n        requires_process_closed=True,\n        size_sensitive_idle=False,\n    ),\n    _rule(\n        "chrome-updater-old-log",\n        "updater.log.old",\n        MatchKind.EXACT,\n        DecisionOwner.TOOL,\n        RebuildCost.NONE,\n        "Rotated Chromium Updater diagnostic log",\n        root_kind="updater",\n        idle_days=7,\n        min_reclaim_bytes=_MIB,\n        requires_process_closed=True,\n        size_sensitive_idle=False,\n    ),'''
+          new = '''    _rule(\n        "chrome-updater-log",\n        "updater.log",\n        MatchKind.EXACT,\n        DecisionOwner.KEEP,\n        RebuildCost.HIGH,\n        "Chromium Updater current diagnostic log (vendor-rotated)",\n        root_kind="updater",\n    ),\n    _rule(\n        "chrome-updater-old-log",\n        "updater.log.old",\n        MatchKind.EXACT,\n        DecisionOwner.KEEP,\n        RebuildCost.HIGH,\n        "Chromium Updater rotated diagnostic log (vendor-managed)",\n        root_kind="updater",\n    ),'''
+          if old not in text:
+              raise SystemExit("Chrome updater log rule block changed; refusing stale patch")
+          chrome.write_text(text.replace(old, new), encoding="utf-8")
+
+          test = Path("tests/test_chrome_cleanup.py")
+          t = test.read_text(encoding="utf-8")
+          old_test = '''    prefs = match_application_rule(base + r"\\prefs.json", _env())\n    binary = match_application_rule(base + r"\\140.0.0.0\\updater.exe", _env())\n    assert cache is not None\n    assert cache.rule_id == "chrome-updater-crx-cache"\n    assert cache.owner is DecisionOwner.TOOL\n    assert prefs is not None and prefs.rule_id == "chrome-updater-state"\n    assert prefs.owner is DecisionOwner.KEEP\n    assert binary is not None and binary.rule_id == "chrome-updater-state"\n    assert binary.owner is DecisionOwner.KEEP\n'''
+          new_test = '''    current_log = match_application_rule(base + r"\\updater.log", _env())\n    old_log = match_application_rule(base + r"\\updater.log.old", _env())\n    prefs = match_application_rule(base + r"\\prefs.json", _env())\n    binary = match_application_rule(base + r"\\140.0.0.0\\updater.exe", _env())\n    assert cache is not None\n    assert cache.rule_id == "chrome-updater-crx-cache"\n    assert cache.owner is DecisionOwner.TOOL\n    assert current_log is not None and current_log.rule_id == "chrome-updater-log"\n    assert current_log.owner is DecisionOwner.KEEP\n    assert old_log is not None and old_log.rule_id == "chrome-updater-old-log"\n    assert old_log.owner is DecisionOwner.KEEP\n    assert prefs is not None and prefs.rule_id == "chrome-updater-state"\n    assert prefs.owner is DecisionOwner.KEEP\n    assert binary is not None and binary.rule_id == "chrome-updater-state"\n    assert binary.owner is DecisionOwner.KEEP\n'''
+          if old_test not in t:
+              raise SystemExit("Chrome updater test block changed; refusing stale patch")
+          test.write_text(t.replace(old_test, new_test), encoding="utf-8")
+
+          authority = Path("tests/test_chrome_rule_authority.py")
+          a = authority.read_text(encoding="utf-8")
+          needle = '''        r"C:\\Users\\person\\AppData\\Local\\Google\\GoogleUpdater\\prefs.json",\n'''
+          replacement = '''        r"C:\\Users\\person\\AppData\\Local\\Google\\GoogleUpdater\\updater.log",\n        r"C:\\Users\\person\\AppData\\Local\\Google\\GoogleUpdater\\updater.log.old",\n        r"C:\\Users\\person\\AppData\\Local\\Google\\GoogleUpdater\\prefs.json",\n'''
+          if needle not in a:
+              raise SystemExit("Chrome authority test anchor changed; refusing stale patch")
+          authority.write_text(a.replace(needle, replacement, 1), encoding="utf-8")
+
+          doc = Path("docs/chrome-updater-storage-authority-reaudit.md")
+          doc.write_text('''# Chrome / Chromium Updater storage authority re-audit — 2026-08\n\n## Scope\n\nThis pass re-checks the Google/Chromium Updater storage rules that can create raw deletion authority. It is intentionally narrow: the broader Chromium-browser family remains in the full second-pass queue until Chrome, Edge, Brave, Vivaldi and Opera are all re-verified on current sources.\n\n## Current primary source\n\nChromium Updater Functional Specification (current `main`):\n\n- https://chromium.googlesource.com/chromium/src/+/main/docs/updater/functional_spec.md\n\nThe current specification says downloads are cached in the updater install root's `crx_cache`, with at most one cached item per app ID. That remains a narrow updater-owned regenerable cache lane.\n\nThe same specification gives the updater logs their own lifecycle: all logs go to `updater.log`; once the log reaches 5 MiB the updater attempts on startup to rotate it to `updater.log.old`, replacing an existing old log. Rotation can be delayed while another updater is running. The updater also preserves a final log on uninstall, and `prefs.json` is persistent updater state.\n\n## Finding\n\nDevClean previously treated `updater.log` and `updater.log.old` as raw TOOL-delete files after a locally invented 7-day / 1 MiB threshold. The source does not define that retention rule. Instead it defines a vendor-owned size/rotation lifecycle and uses the logs as diagnostic state. Age and size therefore describe possible benefit, not deletion authority.\n\n## Correction\n\n- `crx_cache`: remains the existing source-identified updater cache lane; no widening.\n- `updater.log`: KEEP / protected vendor-rotated diagnostic state.\n- `updater.log.old`: KEEP / protected vendor-managed rotated diagnostic state.\n- `prefs.json`, updater binaries/version state and legacy Google Update state: remain protected.\n- AI/user learned rules cannot reintroduce deletion authority for the protected updater logs because application KEEP semantics remain a hard boundary.\n\n## Revisit trigger\n\nOnly add a positive log-cleanup lane if Chromium/Google documents a bounded cleanup API/command or an explicit supported deletion lifecycle for these exact diagnostics. Do not infer one from age, size, process-idle state or the fact that rotation exists.\n''', encoding="utf-8")
+
+          tracker = Path("docs/full-rule-reaudit-2026-08.md")
+          tr = tracker.read_text(encoding="utf-8")
+          old_row = '| Chromium browsers: Chrome / Edge / Brave / Vivaldi / Opera | ⏳ queued (Brave/Vivaldi/Opera recent authority corrections already landed) |'
+          new_row = '| Chromium browsers: Chrome / Edge / Brave / Vivaldi / Opera | ⏳ queued (Chrome updater-log correction plus Brave/Vivaldi/Opera authority corrections landed; full family re-verification still pending) |'
+          if old_row not in tr:
+              raise SystemExit("Chromium tracker row changed; refusing stale patch")
+          tracker.write_text(tr.replace(old_row, new_row), encoding="utf-8")
+          '@ | uv run --frozen python -
+      - name: Format and verify
+        shell: pwsh
+        run: |
+          uv run --frozen ruff format src/devclean/core/chrome_cleanup.py tests/test_chrome_cleanup.py tests/test_chrome_rule_authority.py
+          uv run --frozen ruff check src scripts tests
+          uv run --frozen mypy src scripts tests
+          uv run --frozen pytest -q
+      - name: Commit correction and remove temporary workflow
+        shell: pwsh
+        run: |
+          git config user.name "devclean-audit-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/patch-chrome-updater-log-reaudit-temp.yml
+          git add src/devclean/core/chrome_cleanup.py tests/test_chrome_cleanup.py tests/test_chrome_rule_authority.py docs/chrome-updater-storage-authority-reaudit.md docs/full-rule-reaudit-2026-08.md
+          git commit -m "Protect Chromium Updater diagnostic logs"
+          git push origin HEAD:agent/chrome-updater-log-reaudit-2026-08
