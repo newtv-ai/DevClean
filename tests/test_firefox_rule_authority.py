@@ -40,6 +40,11 @@ def test_ai_cannot_delete_firefox_profile_roaming_or_update_state(
         r"D:\PortableFirefox\Profile\logins.json",
         r"C:\ProgramData\Mozilla\updates\install-hash\updates\0\update.mar",
         r"C:\ProgramData\Mozilla\updates\install-hash\updates\0\update.status",
+        r"C:\ProgramData\Mozilla\updates\install-hash\updates\last-update.log",
+        (
+            r"C:\Users\person\AppData\Roaming\Mozilla\Firefox\Crash Reports"
+            r"\pending\01234567-89ab-cdef-0123-456789abcdef.dmp"
+        ),
     )
     baseline = load_rules()
     before = baseline.ai_rule_count

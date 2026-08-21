@@ -63,7 +63,7 @@ Re-verify on current primary vendor docs/source in small PRs. Recent audits are 
 | Family | Status |
 | --- | --- |
 | Chromium browsers: Chrome / Edge / Brave / Vivaldi / Opera | ⏳ queued (Chrome + Edge updater diagnostics corrected; Brave/Vivaldi/Opera authority corrections landed; full family re-verification still pending) |
-| Firefox | ⏳ queued |
+| Firefox | ✅ re-verified (profile/local-cache boundary retained; pending crash reports and updater logs protected) |
 | Electron/editors: VS Code / Cursor / Windsurf / Trae / Claude / Codex | ⏳ queued |
 | JetBrains / Toolbox / Android Studio | ⏳ queued |
 | Python: pip / uv / Conda / PyTorch Hub / Hugging Face Hub | ⏳ queued |

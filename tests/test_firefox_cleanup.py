@@ -161,8 +161,8 @@ def test_firefox_profile_switch_parser_supports_single_and_double_dash() -> None
         r'"C:\Program Files\Mozilla Firefox\firefox.exe" --profile "D:\Firefox Profiles\One"': (
             r"D:\Firefox Profiles\One"
         ),
-        r'firefox.exe -profile D:\PortableFirefox\Profile': r"D:\PortableFirefox\Profile",
-        r'firefox.exe --profile=D:\Profiles\Test': r"D:\Profiles\Test",
+        r"firefox.exe -profile D:\PortableFirefox\Profile": r"D:\PortableFirefox\Profile",
+        r"firefox.exe --profile=D:\Profiles\Test": r"D:\Profiles\Test",
     }
     for command_line, expected in cases.items():
         assert _profile_switch_path(command_line) == expected
@@ -176,8 +176,8 @@ def test_firefox_update_logs_are_exactly_scoped_under_updates_directory() -> Non
     misplaced_log = match_application_rule(update + r"\last-update.log", _env())
     payload = match_application_rule(update + r"\updates\0\update.mar", _env())
 
-    assert current_log is not None and current_log.owner is DecisionOwner.TOOL
-    assert last_log is not None and last_log.owner is DecisionOwner.TOOL
+    assert current_log is not None and current_log.owner is DecisionOwner.KEEP
+    assert last_log is not None and last_log.owner is DecisionOwner.KEEP
     assert misplaced_log is not None
     assert misplaced_log.rule_id == "firefox-update-state"
     assert misplaced_log.owner is DecisionOwner.KEEP
@@ -188,15 +188,15 @@ def test_firefox_update_logs_are_exactly_scoped_under_updates_directory() -> Non
 
 def test_default_firefox_roots_include_roaming_state_and_local_profiles() -> None:
     roots = firefox_roots(_env())
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox"
-    ) in roots.state_roots
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\Profiles"
-    ) in roots.persistent_parents
-    assert PureWindowsPath(
-        r"C:\Users\alice\AppData\Local\Mozilla\Firefox\Profiles"
-    ) in roots.local_parents
+    assert PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox") in roots.state_roots
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\Profiles")
+        in roots.persistent_parents
+    )
+    assert (
+        PureWindowsPath(r"C:\Users\alice\AppData\Local\Mozilla\Firefox\Profiles")
+        in roots.local_parents
+    )
 
 
 def test_firefox_facade_catalogues_only_audited_tool_roots_for_whole_tree(
@@ -204,9 +204,7 @@ def test_firefox_facade_catalogues_only_audited_tool_roots_for_whole_tree(
 ) -> None:
     roaming = tmp_path / "Roaming" / "Mozilla" / "Firefox"
     persistent = roaming / "Profiles" / "abc.default-release"
-    local_profile = (
-        tmp_path / "Local" / "Mozilla" / "Firefox" / "Profiles" / "abc.default-release"
-    )
+    local_profile = tmp_path / "Local" / "Mozilla" / "Firefox" / "Profiles" / "abc.default-release"
     persistent.mkdir(parents=True)
     local_profile.mkdir(parents=True)
     (persistent / "places.sqlite").write_text("history", encoding="utf-8")
@@ -236,3 +234,24 @@ def test_firefox_facade_catalogues_only_audited_tool_roots_for_whole_tree(
     assert local_root.category is CleanupCategory.BROWSER_CACHE
     assert local_root.policy is CleanupPolicy.VENDOR_MANAGED
     assert local_root.delete_root_itself
+
+
+def test_firefox_pending_crash_reports_are_protected_diagnostic_evidence() -> None:
+    pending = (
+        r"C:\Users\alice\AppData\Roaming\Mozilla\Firefox\Crash Reports"
+        r"\pending\01234567-89ab-cdef-0123-456789abcdef.dmp"
+    )
+    rule = match_application_rule(pending, _env())
+    assert rule is not None
+    assert rule.rule_id == "firefox-pending-crash-reports"
+    assert rule.owner is DecisionOwner.KEEP
+    decision = evaluate_application_path(
+        pending,
+        logical_size=64 * _MIB,
+        last_used=_NOW - timedelta(days=365),
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+    assert decision is not None
+    assert decision.action is PolicyAction.KEEP_PROTECTED
