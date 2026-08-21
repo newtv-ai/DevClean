@@ -43,6 +43,8 @@ def test_ai_cannot_delete_chrome_profile_site_data_or_updater_state(
             r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default"
             r"\Service Worker\CacheStorage\origin\entry"
         ),
+        r"C:\Users\person\AppData\Local\Google\GoogleUpdater\updater.log",
+        r"C:\Users\person\AppData\Local\Google\GoogleUpdater\updater.log.old",
         r"C:\Users\person\AppData\Local\Google\GoogleUpdater\prefs.json",
         (
             r"C:\Users\person\AppData\Local\Google\GoogleUpdater"
@@ -65,9 +67,7 @@ def test_user_delete_of_chrome_history_or_site_data_is_not_generic_rule(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _environment(tmp_path, monkeypatch)
-    history = (
-        r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default\History"
-    )
+    history = r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default\History"
     cache_storage = (
         r"C:\Users\person\AppData\Local\Google\Chrome\User Data\Default"
         r"\Service Worker\CacheStorage\origin\entry"
