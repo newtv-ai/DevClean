@@ -1,0 +1,104 @@
+name: Temporary Firefox diagnostic authority re-audit
+
+on:
+  push:
+    branches:
+      - agent/firefox-diagnostic-authority-reaudit-2026-08
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-2025
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: agent/firefox-diagnostic-authority-reaudit-2026-08
+          persist-credentials: true
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.6"
+          python-version: "3.13"
+      - name: Sync environment
+        run: uv sync --frozen
+      - name: Apply Firefox diagnostic safety correction
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import re
+
+          path = Path("src/devclean/core/firefox_cleanup.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              "stateful and therefore remain protected; only diagnostic logs are generic TOOL\n"
+              "data until update.mar state is handled by a dedicated maintenance action.\n",
+              "stateful and therefore remain protected; crash reports and updater logs are also\n"
+              "diagnostic evidence and do not gain raw deletion authority from age alone.\n",
+          )
+
+          old_pending = '''_FIREFOX_CRASH_PENDING_RULE = _rule(\n    "firefox-pending-crash-reports",\n    "pending",\n    MatchKind.PREFIX,\n    DecisionOwner.TOOL,\n    RebuildCost.NONE,\n    "Firefox unsubmitted crash dumps and diagnostic metadata",\n    root_key="FIREFOX_CRASH",\n    idle_days=7,\n    min_reclaim_bytes=_MIB,\n    requires_process_closed=True,\n    size_sensitive_idle=False,\n    allow_whole_tree=True,\n)'''
+          new_pending = '''_FIREFOX_CRASH_PENDING_RULE = _rule(\n    "firefox-pending-crash-reports",\n    "pending",\n    MatchKind.PREFIX,\n    DecisionOwner.KEEP,\n    RebuildCost.HIGH,\n    "Firefox unsubmitted crash reports (diagnostic evidence)",\n    root_key="FIREFOX_CRASH",\n)'''
+          if old_pending not in text:
+              raise SystemExit("pending crash rule shape changed; aborting")
+          text = text.replace(old_pending, new_pending)
+
+          old_update = '''_FIREFOX_UPDATE_LOG_RULES: tuple[ApplicationCleanupRule, ...] = tuple(\n    _rule(\n        f"firefox-update-log-{index}",\n        pattern,\n        MatchKind.GLOB,\n        DecisionOwner.TOOL,\n        RebuildCost.NONE,\n        "Firefox updater diagnostic log",\n        root_key="FIREFOX_UPDATE_PARENT",\n        idle_days=14,\n        min_reclaim_bytes=256 * 1024,\n        requires_process_closed=True,\n        size_sensitive_idle=False,\n    )'''
+          new_update = '''_FIREFOX_UPDATE_LOG_RULES: tuple[ApplicationCleanupRule, ...] = tuple(\n    _rule(\n        f"firefox-update-log-{index}",\n        pattern,\n        MatchKind.GLOB,\n        DecisionOwner.KEEP,\n        RebuildCost.HIGH,\n        "Firefox updater diagnostic log (troubleshooting evidence)",\n        root_key="FIREFOX_UPDATE_PARENT",\n    )'''
+          if old_update not in text:
+              raise SystemExit("updater log rule shape changed; aborting")
+          text = text.replace(old_update, new_update)
+
+          old_tool_root = '''    for crash_root in roots.crash_roots:\n        _append_tool_root(found, seen, crash_root, _FIREFOX_CRASH_PENDING_RULE)\n    return tuple(found)'''
+          new_tool_root = '''    return tuple(found)'''
+          if old_tool_root not in text:
+              raise SystemExit("Firefox tool-root crash block changed; aborting")
+          text = text.replace(old_tool_root, new_tool_root)
+          path.write_text(text, encoding="utf-8")
+
+          test_path = Path("tests/test_firefox_cleanup.py")
+          test = test_path.read_text(encoding="utf-8")
+          old_test = '''def test_firefox_update_logs_are_exactly_scoped_under_updates_directory() -> None:\n    update = r"C:\\ProgramData\\Mozilla\\updates\\install-hash"\n    current_log = match_application_rule(update + r"\\updates\\0\\update.log", _env())\n    last_log = match_application_rule(update + r"\\updates\\last-update.log", _env())\n    misplaced_log = match_application_rule(update + r"\\last-update.log", _env())\n    payload = match_application_rule(update + r"\\updates\\0\\update.mar", _env())\n\n    assert current_log is not None and current_log.owner is DecisionOwner.TOOL\n    assert last_log is not None and last_log.owner is DecisionOwner.TOOL\n    assert misplaced_log is not None\n    assert misplaced_log.rule_id == "firefox-update-state"\n    assert misplaced_log.owner is DecisionOwner.KEEP\n    assert payload is not None\n    assert payload.rule_id == "firefox-update-state"\n    assert payload.owner is DecisionOwner.KEEP\n'''
+          new_test = '''def test_firefox_update_logs_are_protected_diagnostic_evidence() -> None:\n    update = r"C:\\ProgramData\\Mozilla\\updates\\install-hash"\n    current_log = match_application_rule(update + r"\\updates\\0\\update.log", _env())\n    last_log = match_application_rule(update + r"\\updates\\last-update.log", _env())\n    misplaced_log = match_application_rule(update + r"\\last-update.log", _env())\n    payload = match_application_rule(update + r"\\updates\\0\\update.mar", _env())\n\n    assert current_log is not None and current_log.owner is DecisionOwner.KEEP\n    assert last_log is not None and last_log.owner is DecisionOwner.KEEP\n    assert misplaced_log is not None\n    assert misplaced_log.rule_id == "firefox-update-state"\n    assert misplaced_log.owner is DecisionOwner.KEEP\n    assert payload is not None\n    assert payload.rule_id == "firefox-update-state"\n    assert payload.owner is DecisionOwner.KEEP\n\n    decision = evaluate_application_path(\n        update + r"\\updates\\last-update.log",\n        logical_size=64 * _MIB,\n        last_used=_NOW - timedelta(days=365),\n        now=_NOW,\n        process_running=False,\n        environment=_env(),\n    )\n    assert decision is not None\n    assert decision.action is PolicyAction.KEEP_PROTECTED\n'''
+          if old_test not in test:
+              raise SystemExit("Firefox updater test shape changed; aborting")
+          test = test.replace(old_test, new_test)
+          marker = '''def test_default_firefox_roots_include_roaming_state_and_local_profiles() -> None:\n'''
+          crash_test = '''def test_firefox_pending_crash_reports_remain_protected_even_when_old() -> None:\n    pending = (\n        r"C:\\Users\\alice\\AppData\\Roaming\\Mozilla\\Firefox\\Crash Reports"\n        r"\\pending\\unsubmitted.dmp"\n    )\n    rule = match_application_rule(pending, _env())\n    assert rule is not None\n    assert rule.rule_id == "firefox-pending-crash-reports"\n    assert rule.owner is DecisionOwner.KEEP\n\n    decision = evaluate_application_path(\n        pending,\n        logical_size=128 * _MIB,\n        last_used=_NOW - timedelta(days=365),\n        now=_NOW,\n        process_running=False,\n        environment=_env(),\n    )\n    assert decision is not None\n    assert decision.action is PolicyAction.KEEP_PROTECTED\n\n    crash_root = r"C:\\Users\\alice\\AppData\\Roaming\\Mozilla\\Firefox\\Crash Reports"\n    assert whole_tree_application_rule(crash_root, _env()) is None\n\n\n'''
+          if marker not in test:
+              raise SystemExit("Firefox test insertion marker missing")
+          test = test.replace(marker, crash_test + marker)
+          test_path.write_text(test, encoding="utf-8")
+
+          doc = Path("docs/firefox-diagnostic-authority-reaudit.md")
+          doc.write_text('''# Firefox diagnostic authority re-audit — 2026-08\n\n## Current Mozilla evidence\n\nMozilla Support documents `Crash Reports/pending` as reports that have not been submitted and exposes them through `about:crashes`; current Firefox source documentation likewise describes the pending data directory as holding pending crash reports. These objects are diagnostic evidence, not disposable cache.\n\nMozilla's current updater troubleshooting documentation explicitly tells administrators to inspect the update binary log, including `%ProgramData%\\Mozilla...\\updates\\*\\updates\\0\\update.log`, when diagnosing update and Maintenance Service failures. No current Mozilla lifecycle establishes DevClean's former 7-day crash-report or 14-day updater-log expiration thresholds.\n\nPrimary references:\n\n- https://support.mozilla.org/en-US/kb/mozillacrashreporter\n- https://firefox-source-docs.mozilla.org/toolkit/crashreporter/crashreporter/\n- https://firefox-source-docs.mozilla.org/toolkit/mozapps/update/docs/Troubleshooting.html\n- https://support.mozilla.org/en-US/kb/managing-firefox-updates\n\n## Correction\n\n- `Crash Reports/pending`: KEEP / protected unsubmitted diagnostic evidence.\n- Firefox updater `update.log`, elevated/backup/last-update variants: KEEP / protected troubleshooting evidence.\n- age, size, process-idle state, learned AI decisions and user decisions cannot restore raw deletion authority.\n- crash root no longer contributes an audited whole-tree TOOL root.\n- persistent profile state and update payload/state remain protected as before.\n- the separately identified Firefox local-profile/cache lanes are unchanged in this PR and remain queued for the rest of the family re-verification.\n\n## Revisit\n\nOnly add deletion for these diagnostics if Mozilla publishes an explicit bounded cleanup API/lifecycle or an exact user-requested maintenance operation whose destructive scope can be freshly revalidated.\n''', encoding="utf-8")
+
+          tracker = Path("docs/full-rule-reaudit-2026-08.md")
+          tracker_text = tracker.read_text(encoding="utf-8")
+          tracker_text = tracker_text.replace(
+              "| Firefox | ⏳ queued |",
+              "| Firefox | ⏳ queued (pending crash reports + updater diagnostic logs corrected; remaining cache/profile semantics still under family re-verification) |",
+          )
+          tracker.write_text(tracker_text, encoding="utf-8")
+          '@ | uv run --frozen python -
+      - name: Format and verify exact patch
+        shell: pwsh
+        run: |
+          uv run --frozen ruff check --fix src/devclean/core/firefox_cleanup.py tests/test_firefox_cleanup.py
+          uv run --frozen ruff format src/devclean/core/firefox_cleanup.py tests/test_firefox_cleanup.py
+          uv run --frozen ruff check src scripts tests
+          uv run --frozen mypy src scripts tests
+          uv run --frozen pytest -q
+      - name: Commit correction and remove temporary workflow
+        shell: pwsh
+        run: |
+          git config user.name "devclean-audit-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/patch-firefox-diagnostic-reaudit-temp.yml
+          git add src/devclean/core/firefox_cleanup.py tests/test_firefox_cleanup.py docs/firefox-diagnostic-authority-reaudit.md docs/full-rule-reaudit-2026-08.md
+          git commit -m "Protect Firefox diagnostic evidence"
+          git push origin HEAD:agent/firefox-diagnostic-authority-reaudit-2026-08
