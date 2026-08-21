@@ -42,34 +42,38 @@ jobs:
 
           script = Path("scripts/build_windows_exe.ps1")
           text = script.read_text(encoding="utf-8")
-          old = '''        "Tcl-Tk-license.terms" = (\n            Join-Path $pythonBasePrefix "tcl\\tk8.6\\license.terms"\n        )\n        "PyInstaller-COPYING.txt" = $pyinstallerLicenseMatches[0].FullName\n'''
-          new = '''        "Tcl-license.txt" = (\n            Join-Path $pythonBasePrefix "tcl\\tcllicense.terms"\n        )\n        "Tk-license.txt" = (\n            Join-Path $pythonBasePrefix "tcl\\tklicense.terms"\n        )\n        "PyInstaller-COPYING.txt" = $pyinstallerLicenseMatches[0].FullName\n'''
-          if old not in text:
+          old_sources = '''    $licenseSources = [ordered]@{\n        "DevClean-GPL-3.0.txt" = (Join-Path $root "LICENSE")\n        "CPython-LICENSE.txt" = (Join-Path $pythonBasePrefix "LICENSE.txt")\n        "Tcl-Tk-license.terms" = (\n            Join-Path $pythonBasePrefix "tcl\\tk8.6\\license.terms"\n        )\n        "PyInstaller-COPYING.txt" = $pyinstallerLicenseMatches[0].FullName\n    }\n'''
+          new_sources = '''    $licenseSources = [ordered]@{\n        "DevClean-GPL-3.0.txt" = (Join-Path $root "LICENSE")\n        "CPython-LICENSE.txt" = (Join-Path $pythonBasePrefix "LICENSE.txt")\n        "PyInstaller-COPYING.txt" = $pyinstallerLicenseMatches[0].FullName\n    }\n'''
+          if old_sources not in text:
               raise SystemExit("license source block not found")
-          text = text.replace(old, new, 1)
-          old_allow = '''        "licenses\\PyInstaller-COPYING.txt"\n        "licenses\\Tcl-Tk-license.terms"\n'''
-          new_allow = '''        "licenses\\PyInstaller-COPYING.txt"\n        "licenses\\Tcl-license.txt"\n        "licenses\\Tk-license.txt"\n'''
-          if old_allow not in text:
-              raise SystemExit("license allowlist block not found")
-          script.write_text(text.replace(old_allow, new_allow, 1), encoding="utf-8")
+          text = text.replace(old_sources, new_sources, 1)
+          old_after = '''    foreach ($source in $licenseSources.Values) {\n        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {\n            throw "required bundled-runtime license text is missing: $source"\n        }\n    }\n    [void](New-Item -ItemType Directory -Path $licenseDirectory -Force)\n'''
+          new_after = '''    foreach ($source in $licenseSources.Values) {\n        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {\n            throw "required bundled-runtime license text is missing: $source"\n        }\n    }\n    # CPython's Windows binary LICENSE.txt is generated from the Python license\n    # plus bundled third-party notices. For Tkinter builds, CPython explicitly\n    # appends both Tcl and Tk license.terms. Fail closed if either aggregate\n    # notice disappears in a future Python packaging layout.\n    $pythonLicenseText = Get-Content -LiteralPath $licenseSources["CPython-LICENSE.txt"] -Raw\n    if (-not $pythonLicenseText.Contains("Clause 252.227-7014 (b) (3) of DFARs")) {\n        throw "CPython aggregate license is missing the bundled Tcl notice"\n    }\n    if (-not $pythonLicenseText.Contains("Clause 252.227-7013 (b) (3) of DFARs")) {\n        throw "CPython aggregate license is missing the bundled Tk notice"\n    }\n    [void](New-Item -ItemType Directory -Path $licenseDirectory -Force)\n'''
+          if old_after not in text:
+              raise SystemExit("license validation insertion point not found")
+          text = text.replace(old_after, new_after, 1)
+          text = text.replace('''        "licenses\\PyInstaller-COPYING.txt"\n        "licenses\\Tcl-Tk-license.terms"\n''', '''        "licenses\\PyInstaller-COPYING.txt"\n''', 1)
+          script.write_text(text, encoding="utf-8")
 
           Path("docs/release-license-reaudit.md").write_text(
               "# Windows EXE bundled-runtime license re-audit — 2026-08\n\n"
               "## Finding\n\n"
-              "The Windows one-file build imports Tkinter and therefore ships both Tcl and Tk runtime material. "
-              "The release payload already carried CPython, DevClean GPL and PyInstaller notices, but copied only "
-              "the Tk notice under the combined name `Tcl-Tk-license.terms`. The separately installed Tcl notice "
-              "was not preserved as its own bundled-runtime license artifact.\n\n"
+              "The initial re-audit suspected that the separately copied `Tcl-Tk-license.terms` represented only Tk "
+              "and therefore left Tcl unlicensed in the release payload. That premise was incomplete: CPython 3.13's "
+              "Windows build generates its installed `LICENSE.txt` by concatenating the Python license and bundled "
+              "third-party notices, explicitly including both `tcllicense.terms` and `tklicense.terms` when Tkinter is "
+              "enabled. DevClean already ships that installed file as `CPython-LICENSE.txt`. Inspection of the checked-in "
+              "release confirms both distinct Tcl and Tk notice blocks are present there.\n\n"
               "## Correction\n\n"
-              "CPython's Windows build installs the upstream Tcl and Tk notices as `tcl\\tcllicense.terms` and "
-              "`tcl\\tklicense.terms`. The build now fails unless both installed notices exist, copies them independently "
-              "as `Tcl-license.txt` and `Tk-license.txt`, and includes both in the strict public payload allowlist. The "
-              "`.txt` names keep the normal release artifact upload rule intact. The checked-in release payload is "
-              "regenerated by the same locked build rather than hand-edited.\n\n"
-              "## Release boundary\n\n"
-              "DevClean has no runtime third-party Python package dependencies. The public EXE bundle therefore "
-              "carries the DevClean GPL text plus the bundled CPython, Tcl, Tk and PyInstaller runtime notices. "
-              "Build-only tooling that is not embedded into the executable is not copied into the end-user payload.\n",
+              "The misleading extra `Tcl-Tk-license.terms` copy is removed instead of fabricating a second Tcl source path "
+              "that does not exist in the installed Python layout. The Windows build now treats `CPython-LICENSE.txt` as "
+              "the authoritative aggregate CPython/Tcl/Tk notice and fails closed unless fingerprints unique to both the "
+              "Tcl and Tk blocks are present. The public payload remains DevClean GPL, CPython aggregate notice, and "
+              "PyInstaller notice; all are `.txt` files covered by the normal CI artifact upload rule.\n\n"
+              "## Source boundary\n\n"
+              "CPython v3.13.15 `PCbuild/regen.targets` lists both Tcl and Tk license files in `_LicenseSources` when "
+              "Tkinter is included and writes their content into the binary build's `LICENSE.txt`. This is the source "
+              "contract DevClean validates rather than depending on non-installed intermediate paths.\n",
               encoding="utf-8",
           )
 
@@ -80,8 +84,8 @@ jobs:
               "## Release packaging\n\n"
               "| Surface | Status | Result |\n"
               "| --- | --- | --- |\n"
-              "| Windows EXE bundled-runtime notices | ✅ re-audited | CPython, DevClean GPL, PyInstaller, Tcl and Tk notices are independently preserved by the locked build |\n"
-              "| Checked-in `release/DevClean.exe` | ✅ regenerated | rebuilt from the same corrected branch; final exact-head CI independently rebuilds the Windows artifact |\n\n"
+              "| Windows EXE bundled-runtime notices | ✅ re-audited | CPython's aggregate Windows notice already contains both Tcl and Tk licenses; build now verifies both fingerprints and removes the misleading redundant combined file |\n"
+              "| Checked-in `release/DevClean.exe` | ✅ regenerated | rebuilt from the corrected locked branch; final exact-head CI independently rebuilds and uploads the Windows artifact |\n\n"
           )
           if "## Release packaging\n" not in tracker_text:
               if marker not in tracker_text:
