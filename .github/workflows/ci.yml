@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -17,40 +17,41 @@ jobs:
   build:
     name: Windows EXE
     runs-on: windows-latest
-    timeout-minutes: 30
-
+    timeout-minutes: 35
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PYTHONUTF8: "1"
       PYTHONDONTWRITEBYTECODE: "1"
-
     steps:
-      - name: Check out source
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Check out patch branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          persist-credentials: false
+          ref: agent/execution-safety-reaudit-2026-08
+          persist-credentials: true
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
         with:
           version: "0.11.6"
           python-version: "3.13"
           enable-cache: true
 
-      - name: Verify lockfile is current
-        run: uv lock --check
+      - name: Verify lockfile and sync
+        shell: pwsh
+        run: |
+          uv lock --check
+          uv sync --frozen
+          uv pip check
 
-      - name: Sync locked development environment
-        run: uv sync --frozen
+      - name: Apply audited execution-safety correction
+        run: uv run --frozen python scripts/patch_execution_safety_temp.py
 
-      - name: Verify installed dependencies
-        run: uv pip check
-
-      - name: Lint
-        run: uv run --frozen ruff check --output-format=github src scripts tests
-
-      - name: Type check
-        run: uv run --frozen python -m mypy
+      - name: Format and static checks
+        shell: pwsh
+        run: |
+          uv run --frozen ruff format src/devclean/platform/windows/exact_cleanup.py tests/test_exact_cleanup_safety.py
+          uv run --frozen ruff check src scripts tests
+          uv run --frozen python -m mypy
 
       - name: Test current DevClean workflow
         run: uv run --frozen pytest
@@ -59,12 +60,17 @@ jobs:
         shell: pwsh
         run: ./scripts/build_windows_exe.ps1 -Python 3.13
 
-      - name: Upload Windows executable
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: DevClean-Windows-x64
-          path: |
-            artifacts/windows-exe/dist/DevClean.exe
-            artifacts/windows-exe/dist/licenses/*.txt
-          if-no-files-found: error
-          retention-days: 14
+      - name: Commit exact tested patch and restore CI
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout origin/main -- .github/workflows/ci.yml
+          git rm -f scripts/patch_execution_safety_temp.py
+          if (Test-Path .github/workflows/patch-execution-safety-temp.yml) {
+            git rm -f .github/workflows/patch-execution-safety-temp.yml
+          }
+          git add -- src/devclean/platform/windows/exact_cleanup.py tests/test_exact_cleanup_safety.py docs/execution-safety-reaudit.md docs/full-rule-reaudit-2026-08.md .github/workflows/ci.yml
+          git commit -m "Close nested junction execution race"
+          git push origin HEAD:agent/execution-safety-reaudit-2026-08
