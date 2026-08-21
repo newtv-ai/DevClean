@@ -47,6 +47,87 @@ jobs:
         shell: pwsh
         run: |
           uv run --frozen python scripts/patch_execution_safety_temp.py
+          @'
+          from pathlib import Path
+
+          path = Path("src/devclean/platform/windows/exact_cleanup.py")
+          text = path.read_text(encoding="utf-8")
+          old_call = "        children = _list_purge_entries(current, boundary_final)\n"
+          new_call = (
+              "        children = _list_purge_entries(\n"
+              "            current, boundary_final, already_pinned=current == root_path\n"
+              "        )\n"
+          )
+          if old_call not in text:
+              raise SystemExit("purge root traversal call anchor missing")
+          text = text.replace(old_call, new_call, 1)
+
+          old_signature = (
+              "def _list_purge_entries(\n"
+              "    directory: str, boundary_final: str\n"
+              ") -> tuple[tuple[str, _EntryKind, int], ...]:\n"
+          )
+          new_signature = (
+              "def _list_purge_entries(\n"
+              "    directory: str, boundary_final: str, *, already_pinned: bool = False\n"
+              ") -> tuple[tuple[str, _EntryKind, int], ...]:\n"
+          )
+          if old_signature not in text:
+              raise SystemExit("purge entry signature anchor missing")
+          text = text.replace(old_signature, new_signature, 1)
+
+          old_open = '''    handle = _open_exact_directory(directory)
+    try:
+        metadata = read_file_metadata_handle(handle)
+        if (
+            not metadata.is_directory
+            or metadata.is_reparse_point
+            or metadata.is_cloud_placeholder
+        ):
+            raise ExactCleanupError("selected tree directory became a reparse/cloud boundary")
+        _require_handle_in_boundary(handle, boundary_final, allow_equal=False)
+        _require_final_path(handle, directory)
+        entries: list[tuple[str, _EntryKind, int]] = []
+'''
+          new_open = '''    handle: wintypes.HANDLE | None = None
+    if not already_pinned:
+        handle = _open_exact_directory(directory)
+        metadata = read_file_metadata_handle(handle)
+        if (
+            not metadata.is_directory
+            or metadata.is_reparse_point
+            or metadata.is_cloud_placeholder
+        ):
+            _close_handle(handle)
+            raise ExactCleanupError("selected tree directory became a reparse/cloud boundary")
+        try:
+            _require_handle_in_boundary(handle, boundary_final, allow_equal=False)
+            _require_final_path(handle, directory)
+        except Exception:
+            _close_handle(handle)
+            raise
+    try:
+        entries: list[tuple[str, _EntryKind, int]] = []
+'''
+          if old_open not in text:
+              raise SystemExit("purge directory open anchor missing")
+          text = text.replace(old_open, new_open, 1)
+
+          old_finally = '''        return tuple(entries)
+    finally:
+        _close_handle(handle)
+'''
+          new_finally = '''        return tuple(entries)
+    finally:
+        if handle is not None:
+            _close_handle(handle)
+'''
+          if old_finally not in text:
+              raise SystemExit("purge directory close anchor missing")
+          text = text.replace(old_finally, new_finally, 1)
+          path.write_text(text, encoding="utf-8")
+          '@ | uv run --frozen python -
+
           $test = 'tests/test_exact_cleanup_safety.py'
           $text = Get-Content -LiteralPath $test -Raw
           $text = $text -replace 'import pytest', "import os`r`n`r`nimport pytest"
