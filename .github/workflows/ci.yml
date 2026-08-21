@@ -49,8 +49,8 @@ jobs:
           uv run --frozen python scripts/patch_execution_safety_temp.py
           $test = 'tests/test_exact_cleanup_safety.py'
           $text = Get-Content -LiteralPath $test -Raw
-          $text = $text.Replace("import pytest`n", "import os`n`nimport pytest`n")
-          $text = $text.Replace("        cleanup.os,`n", "        os,`n")
+          $text = $text -replace 'import pytest', "import os`r`n`r`nimport pytest"
+          $text = $text -replace 'cleanup\.os,', 'os,'
           Set-Content -LiteralPath $test -Value $text -Encoding utf8NoBOM
           Remove-Item -LiteralPath scripts/patch_execution_safety_temp.py -Force
 
