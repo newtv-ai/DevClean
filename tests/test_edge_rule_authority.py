@@ -43,6 +43,9 @@ def test_ai_cannot_delete_edge_profile_site_or_updater_state(
             r"C:\Users\person\AppData\Local\Microsoft\Edge\Update"
             r"\payload.bin"
         ),
+        r"C:\ProgramData\Microsoft\EdgeUpdate\Log\MicrosoftEdgeUpdate.log",
+        r"C:\ProgramData\Microsoft\EdgeUpdate\Log\MicrosoftEdgeUpdate.log.bak",
+        r"C:\Users\person\AppData\Local\Temp\msedge_installer.log",
     )
     baseline = load_rules()
     before = baseline.ai_rule_count

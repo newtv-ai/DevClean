@@ -165,7 +165,7 @@ def test_edge_explicit_disk_cache_is_tool_but_user_data_root_is_not() -> None:
     assert whole_tree_application_rule(r"D:\ManagedEdgeState", env) is None
 
 
-def test_edge_updater_state_is_protected_but_official_logs_are_tool() -> None:
+def test_edge_updater_state_and_official_diagnostic_logs_are_protected() -> None:
     updater_state = (
         r"C:\Program Files (x86)\Microsoft\EdgeUpdate"
         r"\1.3.195.43\MicrosoftEdgeUpdate.exe"
@@ -194,7 +194,17 @@ def test_edge_updater_state_is_protected_but_official_logs_are_tool() -> None:
         rule = match_application_rule(path, _env())
         assert rule is not None
         assert rule.rule_id == rule_id
-        assert rule.owner is DecisionOwner.TOOL
+        assert rule.owner is DecisionOwner.KEEP
+        decision = evaluate_application_path(
+            path,
+            logical_size=64 * _MIB,
+            last_used=_NOW - timedelta(days=365),
+            now=_NOW,
+            process_running=False,
+            environment=_env(),
+        )
+        assert decision is not None
+        assert decision.action is PolicyAction.KEEP_PROTECTED
 
     unrelated = match_application_rule(
         r"C:\Users\alice\AppData\Local\Temp\another-program.tmp",
