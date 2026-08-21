@@ -64,9 +64,9 @@ Re-verify on current primary vendor docs/source in small PRs. Recent audits are 
 | --- | --- |
 | Chromium browsers: Chrome / Edge / Brave / Vivaldi / Opera | ✅ re-verified (Chrome/Edge updater diagnostics protected; Brave/Vivaldi/Opera source-first authority corrections reconciled; narrow Chromium-derived cache lanes retained without widening) |
 | Firefox | ✅ re-verified (profile/local-cache boundary retained; pending crash reports and updater logs protected) |
-| Electron/editors: VS Code / Cursor / Windsurf / Trae / Claude / Codex | ⏳ queued |
-| JetBrains / Toolbox / Android Studio | ⏳ queued |
-| Python: pip / uv / Conda / PyTorch Hub / Hugging Face Hub | ⏳ queued |
+| Electron/editors: VS Code / Cursor / Windsurf / Trae / Claude / Codex | ✅ re-verified (product-specific USER/KEEP state retained; only exact source-identified Electron/runtime/vendor-maintenance lanes keep positive authority) |
+| JetBrains / Toolbox / Android Studio | ✅ re-verified (mixed config/system/Local History/tool state remains protected; exact cache and vendor-expired old-version lanes stay narrowly source-bounded) |
+| Python: pip / uv / Conda / PyTorch Hub / Hugging Face Hub | ✅ re-verified (vendor-owned prune/clean/remove operations used only with exact identity/scope proof; environments, credentials, models and ambiguous cache provenance remain protected/report-only) |
 | JS: npm / pnpm / Yarn / Bun / Cypress / Playwright / Puppeteer | ✅ re-verified (vendor-maintenance lanes retained only where exact scope is provable; configuration-sensitive/shared caches remain protected/report-only) |
 | JVM: Gradle / Maven | ✅ re-verified (Gradle User Home and Maven local repository stay protected/report-only; project clean execution remains bounded by complete vendor scope proof) |
 | .NET / NuGet | ⏳ queued |
