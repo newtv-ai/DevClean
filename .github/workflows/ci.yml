@@ -7,123 +7,13 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  prepare-release-license-reaudit:
-    if: github.event_name == 'pull_request' && github.head_ref == 'agent/release-license-reaudit-2026-08'
-    name: Prepare release license correction
-    runs-on: windows-2025
-    timeout-minutes: 30
-    steps:
-      - name: Check out PR head
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          ref: agent/release-license-reaudit-2026-08
-          persist-credentials: true
-          fetch-depth: 0
-      - name: Set up uv and Python
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
-        with:
-          version: "0.11.6"
-          python-version: "3.13"
-      - name: Sync environment
-        run: uv sync --frozen
-      - name: Apply correction
-        shell: pwsh
-        run: |
-          @'
-          from pathlib import Path
-
-          script = Path("scripts/build_windows_exe.ps1")
-          text = script.read_text(encoding="utf-8")
-          old_sources = '''    $licenseSources = [ordered]@{\n        "DevClean-GPL-3.0.txt" = (Join-Path $root "LICENSE")\n        "CPython-LICENSE.txt" = (Join-Path $pythonBasePrefix "LICENSE.txt")\n        "Tcl-Tk-license.terms" = (\n            Join-Path $pythonBasePrefix "tcl\\tk8.6\\license.terms"\n        )\n        "PyInstaller-COPYING.txt" = $pyinstallerLicenseMatches[0].FullName\n    }\n'''
-          new_sources = '''    $licenseSources = [ordered]@{\n        "DevClean-GPL-3.0.txt" = (Join-Path $root "LICENSE")\n        "CPython-LICENSE.txt" = (Join-Path $pythonBasePrefix "LICENSE.txt")\n        "PyInstaller-COPYING.txt" = $pyinstallerLicenseMatches[0].FullName\n    }\n'''
-          if old_sources not in text:
-              raise SystemExit("license source block not found")
-          text = text.replace(old_sources, new_sources, 1)
-          old_after = '''    foreach ($source in $licenseSources.Values) {\n        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {\n            throw "required bundled-runtime license text is missing: $source"\n        }\n    }\n    [void](New-Item -ItemType Directory -Path $licenseDirectory -Force)\n'''
-          new_after = '''    foreach ($source in $licenseSources.Values) {\n        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {\n            throw "required bundled-runtime license text is missing: $source"\n        }\n    }\n    # CPython's Windows binary LICENSE.txt is generated from the Python license\n    # plus bundled third-party notices. For Tkinter builds, CPython explicitly\n    # appends both Tcl and Tk license.terms. Fail closed if either aggregate\n    # notice disappears in a future Python packaging layout.\n    $pythonLicenseText = Get-Content -LiteralPath $licenseSources["CPython-LICENSE.txt"] -Raw\n    if (-not $pythonLicenseText.Contains("Clause 252.227-7014 (b) (3) of DFARs")) {\n        throw "CPython aggregate license is missing the bundled Tcl notice"\n    }\n    if (-not $pythonLicenseText.Contains("Clause 252.227-7013 (b) (3) of DFARs")) {\n        throw "CPython aggregate license is missing the bundled Tk notice"\n    }\n    [void](New-Item -ItemType Directory -Path $licenseDirectory -Force)\n'''
-          if old_after not in text:
-              raise SystemExit("license validation insertion point not found")
-          text = text.replace(old_after, new_after, 1)
-          text = text.replace('''        "licenses\\PyInstaller-COPYING.txt"\n        "licenses\\Tcl-Tk-license.terms"\n''', '''        "licenses\\PyInstaller-COPYING.txt"\n''', 1)
-          script.write_text(text, encoding="utf-8")
-
-          Path("docs/release-license-reaudit.md").write_text(
-              "# Windows EXE bundled-runtime license re-audit — 2026-08\n\n"
-              "## Finding\n\n"
-              "The initial re-audit suspected that the separately copied `Tcl-Tk-license.terms` represented only Tk "
-              "and therefore left Tcl unlicensed in the release payload. That premise was incomplete: CPython 3.13's "
-              "Windows build generates its installed `LICENSE.txt` by concatenating the Python license and bundled "
-              "third-party notices, explicitly including both `tcllicense.terms` and `tklicense.terms` when Tkinter is "
-              "enabled. DevClean already ships that installed file as `CPython-LICENSE.txt`. Inspection of the checked-in "
-              "release confirms both distinct Tcl and Tk notice blocks are present there.\n\n"
-              "## Correction\n\n"
-              "The misleading extra `Tcl-Tk-license.terms` copy is removed instead of fabricating a second Tcl source path "
-              "that does not exist in the installed Python layout. The Windows build now treats `CPython-LICENSE.txt` as "
-              "the authoritative aggregate CPython/Tcl/Tk notice and fails closed unless fingerprints unique to both the "
-              "Tcl and Tk blocks are present. The public payload remains DevClean GPL, CPython aggregate notice, and "
-              "PyInstaller notice; all are `.txt` files covered by the normal CI artifact upload rule.\n\n"
-              "## Source boundary\n\n"
-              "CPython v3.13.15 `PCbuild/regen.targets` lists both Tcl and Tk license files in `_LicenseSources` when "
-              "Tkinter is included and writes their content into the binary build's `LICENSE.txt`. This is the source "
-              "contract DevClean validates rather than depending on non-installed intermediate paths.\n",
-              encoding="utf-8",
-          )
-
-          tracker = Path("docs/full-rule-reaudit-2026-08.md")
-          tracker_text = tracker.read_text(encoding="utf-8")
-          marker = "## Acceptance rule for reducing user/AI burden\n"
-          release_section = (
-              "## Release packaging\n\n"
-              "| Surface | Status | Result |\n"
-              "| --- | --- | --- |\n"
-              "| Windows EXE bundled-runtime notices | ✅ re-audited | CPython's aggregate Windows notice already contains both Tcl and Tk licenses; build now verifies both fingerprints and removes the misleading redundant combined file |\n"
-              "| Checked-in `release/DevClean.exe` | ✅ regenerated | rebuilt from the corrected locked branch; final exact-head CI independently rebuilds and uploads the Windows artifact |\n\n"
-          )
-          if "## Release packaging\n" not in tracker_text:
-              if marker not in tracker_text:
-                  raise SystemExit("tracker insertion point not found")
-              tracker.write_text(tracker_text.replace(marker, release_section + marker, 1), encoding="utf-8")
-          '@ | uv run --frozen python -
-      - name: Verify source gates
-        shell: pwsh
-        run: |
-          uv lock --check
-          uv pip check
-          uv run --frozen ruff check src scripts tests
-          uv run --frozen python -m mypy
-          uv run --frozen pytest -q
-      - name: Build and refresh checked-in release
-        shell: pwsh
-        run: |
-          ./scripts/build_windows_exe.ps1 -Python 3.13
-          if (Test-Path release) { Remove-Item release -Recurse -Force }
-          Copy-Item artifacts/windows-exe/dist release -Recurse
-      - name: Restore normal CI and commit exact correction
-        shell: pwsh
-        run: |
-          git fetch origin main
-          git checkout origin/main -- .github/workflows/ci.yml
-          git config user.name "devclean-audit-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add -- scripts/build_windows_exe.ps1 docs/release-license-reaudit.md docs/full-rule-reaudit-2026-08.md release/DevClean.exe release/licenses .github/workflows/ci.yml
-          git commit -m "Re-audit bundled runtime licenses and refresh EXE"
-          git push origin HEAD:agent/release-license-reaudit-2026-08
-      - name: Dispatch exact-head validation
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh workflow run ci.yml --ref agent/release-license-reaudit-2026-08
-          gh workflow run codeql.yml --ref agent/release-license-reaudit-2026-08
-
   build:
     name: Windows EXE
     runs-on: windows-latest
