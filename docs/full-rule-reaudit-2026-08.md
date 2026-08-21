@@ -67,8 +67,8 @@ Re-verify on current primary vendor docs/source in small PRs. Recent audits are 
 | Electron/editors: VS Code / Cursor / Windsurf / Trae / Claude / Codex | ⏳ queued |
 | JetBrains / Toolbox / Android Studio | ⏳ queued |
 | Python: pip / uv / Conda / PyTorch Hub / Hugging Face Hub | ⏳ queued |
-| JS: npm / pnpm / Yarn / Bun / Cypress / Playwright / Puppeteer | ⏳ queued |
-| JVM: Gradle / Maven | ⏳ queued |
+| JS: npm / pnpm / Yarn / Bun / Cypress / Playwright / Puppeteer | ✅ re-verified (vendor-maintenance lanes retained only where exact scope is provable; configuration-sensitive/shared caches remain protected/report-only) |
+| JVM: Gradle / Maven | ✅ re-verified (Gradle User Home and Maven local repository stay protected/report-only; project clean execution remains bounded by complete vendor scope proof) |
 | .NET / NuGet | ⏳ queued |
 | Go / Cargo / Conan / vcpkg | ⏳ queued |
 | Docker / Podman / WSL | ⏳ queued |
