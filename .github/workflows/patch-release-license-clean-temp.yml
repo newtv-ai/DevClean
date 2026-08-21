@@ -1,0 +1,119 @@
+name: Temporary release license correction
+
+on:
+  push:
+    branches:
+      - agent/release-license-clean-reaudit-2026-08
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: agent/release-license-clean-reaudit-2026-08
+          persist-credentials: true
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.6"
+          python-version: "3.13"
+      - name: Sync environment
+        run: uv sync --frozen
+      - name: Apply release correction
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          script = Path("scripts/build_windows_exe.ps1")
+          text = script.read_text(encoding="utf-8")
+          old = '''        "Tcl-Tk-license.terms" = (\n            Join-Path $pythonBasePrefix "tcl\\tk8.6\\license.terms"\n        )\n'''
+          new = '''        "Tcl-license.terms" = (\n            Join-Path $pythonBasePrefix "tcl\\tcl8.6\\license.terms"\n        )\n        "Tk-license.terms" = (\n            Join-Path $pythonBasePrefix "tcl\\tk8.6\\license.terms"\n        )\n'''
+          if old not in text:
+              raise SystemExit("Tcl/Tk license source block not found")
+          text = text.replace(old, new, 1)
+          old = '''        "licenses\\PyInstaller-COPYING.txt"\n        "licenses\\Tcl-Tk-license.terms"\n'''
+          new = '''        "licenses\\PyInstaller-COPYING.txt"\n        "licenses\\Tcl-license.terms"\n        "licenses\\Tk-license.terms"\n'''
+          if old not in text:
+              raise SystemExit("payload allowlist block not found")
+          script.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          ci = Path(".github/workflows/ci.yml")
+          ci_text = ci.read_text(encoding="utf-8")
+          ci_text = ci_text.replace(
+              "            artifacts/windows-exe/dist/licenses/*.txt\n",
+              "            artifacts/windows-exe/dist/licenses/*\n",
+              1,
+          )
+          ci.write_text(ci_text, encoding="utf-8")
+
+          readme = Path("README.md")
+          readme_text = readme.read_text(encoding="utf-8")
+          readme_text = readme_text.replace(
+              "`DevClean.exe` 和 `licenses\\` 下四份\n许可证文本。",
+              "`DevClean.exe` 和 `licenses\\` 下五份\n许可证文本（DevClean GPL、CPython、PyInstaller、Tcl、Tk）。",
+              1,
+          )
+          readme.write_text(readme_text, encoding="utf-8")
+
+          deploy = Path("docs/架构与部署.md")
+          deploy_text = deploy.read_text(encoding="utf-8")
+          deploy_text = deploy_text.replace("`DevClean.exe` 加四份运行时许可证", "`DevClean.exe` 加五份运行时许可证", 1)
+          deploy_text = deploy_text.replace("artifacts\\windows-exe\\dist\\licenses\\*.txt", "artifacts\\windows-exe\\dist\\licenses\\*", 1)
+          deploy_text = deploy_text.replace("下四份文本。", "下五份文本。", 1)
+          deploy_text = deploy_text.replace("另带四份许可证文本", "另带五份许可证文本", 1)
+          deploy.write_text(deploy_text, encoding="utf-8")
+
+          audit = Path("docs/release-license-reaudit.md")
+          audit.write_text(
+              "# Windows EXE bundled-runtime license re-audit — 2026-08\n\n"
+              "The one-file Tkinter build ships both Tcl and Tk runtime material. The old payload copied only the Tk notice under a combined Tcl/Tk filename, so Tcl's separately bundled runtime notice was not preserved independently.\n\n"
+              "The locked build now requires and copies both `tcl\\tcl8.6\\license.terms` and `tcl\\tk8.6\\license.terms` as separate `Tcl-license.terms` and `Tk-license.terms` files. CI uploads the entire strict `licenses/` allowlist, and release/deployment documentation matches the five-notice payload. The checked-in release directory is regenerated from this corrected locked build, not hand-edited.\n",
+              encoding="utf-8",
+          )
+
+          tracker = Path("docs/full-rule-reaudit-2026-08.md")
+          tracker_text = tracker.read_text(encoding="utf-8")
+          marker = "## Acceptance rule for reducing user/AI burden\n"
+          section = (
+              "## Release packaging\n\n"
+              "| Surface | Status | Result |\n"
+              "| --- | --- | --- |\n"
+              "| Windows EXE bundled-runtime notices | ✅ re-audited | DevClean GPL, CPython, PyInstaller, Tcl and Tk notices are independently preserved by the locked build |\n"
+              "| Checked-in `release/DevClean.exe` | ✅ regenerated | rebuilt from the corrected locked branch; final PR CI independently rebuilds the Windows artifact |\n\n"
+          )
+          if "## Release packaging\n" not in tracker_text:
+              if marker not in tracker_text:
+                  raise SystemExit("tracker insertion point not found")
+              tracker.write_text(tracker_text.replace(marker, section + marker, 1), encoding="utf-8")
+          '@ | uv run --frozen python -
+      - name: Verify source gates
+        shell: pwsh
+        run: |
+          uv lock --check
+          uv pip check
+          uv run --frozen ruff check src scripts tests
+          uv run --frozen python -m mypy
+          uv run --frozen pytest -q
+      - name: Build and refresh checked-in release
+        shell: pwsh
+        run: |
+          ./scripts/build_windows_exe.ps1 -Python 3.13
+          if (Test-Path release) { Remove-Item release -Recurse -Force }
+          Copy-Item artifacts/windows-exe/dist release -Recurse
+      - name: Commit correction and remove temporary workflow
+        shell: pwsh
+        run: |
+          git config user.name "devclean-audit-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/patch-release-license-clean-temp.yml
+          git add -- scripts/build_windows_exe.ps1 .github/workflows/ci.yml README.md docs/架构与部署.md docs/release-license-reaudit.md docs/full-rule-reaudit-2026-08.md release/DevClean.exe release/licenses
+          git commit -m "Re-audit bundled runtime licenses and refresh EXE"
+          git push origin HEAD:agent/release-license-clean-reaudit-2026-08
