@@ -47,7 +47,7 @@ jobs:
 
           doc = Path("docs/release-license-reaudit.md")
           doc.write_text(
-              """# Windows EXE bundled-runtime license re-audit — 2026-08\n\n"
+              "# Windows EXE bundled-runtime license re-audit — 2026-08\n\n"
               "## Finding\n\n"
               "The Windows one-file build imports Tkinter and therefore ships both Tcl and Tk runtime material. "
               "The release payload already carried CPython, DevClean GPL and PyInstaller notices, but copied only "
@@ -61,8 +61,7 @@ jobs:
               "## Release boundary\n\n"
               "DevClean has no runtime third-party Python package dependencies. The public EXE bundle therefore "
               "carries the DevClean GPL text plus the bundled CPython, Tcl, Tk and PyInstaller runtime notices. "
-              "Build-only tooling that is not embedded into the executable is not copied into the end-user payload.\n"
-              """,
+              "Build-only tooling that is not embedded into the executable is not copied into the end-user payload.\n",
               encoding="utf-8",
           )
 
