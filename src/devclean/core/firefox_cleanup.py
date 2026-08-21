@@ -162,15 +162,10 @@ _FIREFOX_CRASH_PENDING_RULE = _rule(
     "firefox-pending-crash-reports",
     "pending",
     MatchKind.PREFIX,
-    DecisionOwner.TOOL,
-    RebuildCost.NONE,
-    "Firefox unsubmitted crash dumps and diagnostic metadata",
+    DecisionOwner.KEEP,
+    RebuildCost.HIGH,
+    "Firefox unsubmitted crash reports retained for submission and diagnosis",
     root_key="FIREFOX_CRASH",
-    idle_days=7,
-    min_reclaim_bytes=_MIB,
-    requires_process_closed=True,
-    size_sensitive_idle=False,
-    allow_whole_tree=True,
 )
 
 _FIREFOX_CRASH_STATE_RULE = _rule(
@@ -188,14 +183,10 @@ _FIREFOX_UPDATE_LOG_RULES: tuple[ApplicationCleanupRule, ...] = tuple(
         f"firefox-update-log-{index}",
         pattern,
         MatchKind.GLOB,
-        DecisionOwner.TOOL,
-        RebuildCost.NONE,
-        "Firefox updater diagnostic log",
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Firefox updater diagnostic log retained for update troubleshooting",
         root_key="FIREFOX_UPDATE_PARENT",
-        idle_days=14,
-        min_reclaim_bytes=256 * 1024,
-        requires_process_closed=True,
-        size_sensitive_idle=False,
     )
     for index, pattern in enumerate(
         (
@@ -404,8 +395,6 @@ def firefox_audited_tool_roots(
     for profile in roots.custom_profiles:
         for rule in _FIREFOX_CACHE_RULES:
             _append_tool_root(found, seen, profile, rule)
-    for crash_root in roots.crash_roots:
-        _append_tool_root(found, seen, crash_root, _FIREFOX_CRASH_PENDING_RULE)
     return tuple(found)
 
 
@@ -436,15 +425,9 @@ def evaluate_firefox_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
     if rule.owner is DecisionOwner.KEEP:
-        return ApplicationPolicyDecision(
-            rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0
-        )
+        return ApplicationPolicyDecision(rule, PolicyAction.KEEP_PROTECTED, observed, idle, None, 0)
     if rule.owner is DecisionOwner.USER:
         return ApplicationPolicyDecision(
             rule,
@@ -538,7 +521,7 @@ def clear_firefox_process_cache() -> None:
 
 def _profile_switch_path(command_line: str) -> str | None:
     pattern = re.compile(
-        r'''(?:^|\s)--?profile(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))''',
+        r"""(?:^|\s)--?profile(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))""",
         re.IGNORECASE,
     )
     match = pattern.search(command_line)
@@ -600,9 +583,7 @@ def _append_msix_roots(
         crash_roots.append(roaming / "Crash Reports")
 
 
-def _child_root_for_path(
-    path: PureWindowsPath, parent: PureWindowsPath
-) -> PureWindowsPath | None:
+def _child_root_for_path(path: PureWindowsPath, parent: PureWindowsPath) -> PureWindowsPath | None:
     try:
         relative = path.relative_to(parent)
     except ValueError:
