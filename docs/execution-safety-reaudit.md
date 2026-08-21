@@ -10,7 +10,7 @@ The selected root was pinned and observed reparse entries were deleted as links,
 
 ## Correction
 
-The already-pinned selected root is reused. Every nested directory is opened with `OPEN_REPARSE_POINT` immediately before traversal, must remain ordinary/non-Cloud/in-boundary at its expected final path, every leaf handle is checked against the approved root before delete disposition, and nested directories are revalidated again before their own deletion. Existing exact-file snapshot, link-count, share-mode, root pinning, and postcondition guards are retained.
+The already-pinned selected root is reused. Every nested directory is opened with `OPEN_REPARSE_POINT` immediately before traversal, must remain ordinary/non-Cloud/in-boundary at its expected final path, every leaf handle is checked against the approved root before delete disposition, and nested directories are revalidated again before their own deletion. The traversal handle intentionally omits delete sharing, so once a nested directory has passed handle/final-path validation it cannot be renamed or replaced while pathname enumeration is using it. Existing exact-file snapshot, link-count, share-mode, root pinning, and postcondition guards are retained.
 
 ## Acceptance gate
 
