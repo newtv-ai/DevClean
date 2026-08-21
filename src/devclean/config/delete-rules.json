@@ -247,5 +247,36 @@
     "path_regex": "正则搜索完整路径，路径分隔符统一写成 /",
     "filename_regex": "正则搜索文件名"
   },
-  "rules": []
+  "rules": [
+    {
+      "id": "product_nvidia_dxcache_nvph",
+      "group": "product_audited",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\NVIDIA\\DXCache\\*.nvph",
+      "source": "PRODUCT_AUDITED",
+      "reason": "NVIDIA 驱动着色器磁盘缓存；删除只会丢失编译加速，驱动会重新生成。",
+      "updated_at": "2026-08-21T00:00:00+00:00"
+    },
+    {
+      "id": "product_nvidia_dxcache_bin",
+      "group": "product_audited",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\NVIDIA\\DXCache\\*.bin",
+      "source": "PRODUCT_AUDITED",
+      "reason": "NVIDIA 驱动着色器磁盘缓存；删除后可能短暂重新编译，但不会删除应用数据。",
+      "updated_at": "2026-08-21T00:00:00+00:00"
+    },
+    {
+      "id": "product_nvidia_glcache_bin",
+      "group": "product_audited",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%LOCALAPPDATA%\\NVIDIA\\GLCache\\*\\*\\*.bin",
+      "source": "PRODUCT_AUDITED",
+      "reason": "NVIDIA OpenGL 着色器缓存文件；驱动版本变化时本就会重新编译/重建。",
+      "updated_at": "2026-08-21T00:00:00+00:00"
+    }
+  ]
 }

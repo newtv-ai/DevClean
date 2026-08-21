@@ -131,5 +131,16 @@
     "path_regex": "正则搜索完整路径，路径分隔符统一写成 /",
     "filename_regex": "正则搜索文件名"
   },
-  "rules": []
+  "rules": [
+    {
+      "id": "product_user_jdk_runtime_modules",
+      "group": "product_audited",
+      "enabled": true,
+      "match": "path_glob",
+      "value": "%USERPROFILE%\\.jdks\\*\\lib\\modules",
+      "source": "PRODUCT_AUDITED",
+      "reason": "JDK lib 是运行时内部实现；Oracle 明确要求不要修改，不能把 lib/modules 当缓存清理。",
+      "updated_at": "2026-08-21T00:00:00+00:00"
+    }
+  ]
 }
