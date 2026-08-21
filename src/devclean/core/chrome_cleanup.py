@@ -281,27 +281,19 @@ _CHROME_UPDATER_RULES: tuple[ApplicationCleanupRule, ...] = (
         "chrome-updater-log",
         "updater.log",
         MatchKind.EXACT,
-        DecisionOwner.TOOL,
-        RebuildCost.NONE,
-        "Chromium Updater diagnostic log",
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Chromium Updater current diagnostic log (vendor-rotated)",
         root_kind="updater",
-        idle_days=7,
-        min_reclaim_bytes=_MIB,
-        requires_process_closed=True,
-        size_sensitive_idle=False,
     ),
     _rule(
         "chrome-updater-old-log",
         "updater.log.old",
         MatchKind.EXACT,
-        DecisionOwner.TOOL,
-        RebuildCost.NONE,
-        "Rotated Chromium Updater diagnostic log",
+        DecisionOwner.KEEP,
+        RebuildCost.HIGH,
+        "Chromium Updater rotated diagnostic log (vendor-managed)",
         root_kind="updater",
-        idle_days=7,
-        min_reclaim_bytes=_MIB,
-        requires_process_closed=True,
-        size_sensitive_idle=False,
     ),
     _rule(
         "chrome-updater-state",
@@ -484,11 +476,7 @@ def evaluate_chrome_path(
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
-    idle = (
-        None
-        if observed is None
-        else max(0.0, (current - observed).total_seconds() / 86_400)
-    )
+    idle = None if observed is None else max(0.0, (current - observed).total_seconds() / 86_400)
 
     if rule.owner is DecisionOwner.KEEP:
         return ApplicationPolicyDecision(
@@ -556,9 +544,7 @@ def chrome_process_running() -> bool:
 
 
 @lru_cache(maxsize=1)
-def _running_override_roots() -> tuple[
-    tuple[PureWindowsPath, ...], tuple[PureWindowsPath, ...]
-]:
+def _running_override_roots() -> tuple[tuple[PureWindowsPath, ...], tuple[PureWindowsPath, ...]]:
     if os.name != "nt":
         return (), ()
     script = (
@@ -638,9 +624,8 @@ def _existing_profile_roots(data_root: PureWindowsPath) -> tuple[PureWindowsPath
 
 def _is_profile_dir_name(name: str) -> bool:
     lowered = name.casefold()
-    return (
-        lowered in {"default", "guest profile", "system profile"}
-        or lowered.startswith("profile ")
+    return lowered in {"default", "guest profile", "system profile"} or lowered.startswith(
+        "profile "
     )
 
 
