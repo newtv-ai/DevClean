@@ -1,0 +1,89 @@
+name: Temporary Edge update log authority re-audit
+
+on:
+  push:
+    branches:
+      - agent/edge-update-log-reaudit-2026-08
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: agent/edge-update-log-reaudit-2026-08
+          persist-credentials: true
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: "0.11.6"
+          python-version: "3.13"
+      - run: uv sync --frozen
+      - name: Apply source-backed correction
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          edge = Path("src/devclean/core/edge_cleanup.py")
+          text = edge.read_text(encoding="utf-8")
+          for rule_id, pattern, label, new_label in (
+              ("edge-update-log", "MicrosoftEdgeUpdate.log", "Microsoft Edge Update diagnostic log", "Microsoft Edge Update diagnostic log (support evidence)"),
+              ("edge-update-log-backup", "MicrosoftEdgeUpdate.log.bak", "Rotated Microsoft Edge Update diagnostic log", "Rotated Microsoft Edge Update diagnostic log (support evidence)"),
+              ("edge-installer-log", "msedge_installer.log", "Microsoft Edge installer diagnostic log", "Microsoft Edge installer diagnostic log (support evidence)"),
+          ):
+              old = f'''    ApplicationCleanupRule(\n        rule_id="{rule_id}",\n        app_id="edge",\n        root_key="EDGE_UPDATE_LOG",\n        relative_pattern="{pattern}",\n        match_kind=MatchKind.EXACT,\n        owner=DecisionOwner.TOOL,\n        last_use=LastUseStrategy.FILE_MTIME,\n        rebuild_cost=RebuildCost.NONE,\n        idle_days=7,\n        min_reclaim_bytes=256 * 1024,\n        requires_process_closed=True,\n        size_sensitive_idle=False,\n        label="{label}",\n    ),'''
+              new = f'''    ApplicationCleanupRule(\n        rule_id="{rule_id}",\n        app_id="edge",\n        root_key="EDGE_UPDATE_LOG",\n        relative_pattern="{pattern}",\n        match_kind=MatchKind.EXACT,\n        owner=DecisionOwner.KEEP,\n        last_use=LastUseStrategy.FILE_MTIME,\n        rebuild_cost=RebuildCost.HIGH,\n        label="{new_label}",\n    ),'''
+              if old not in text:
+                  raise SystemExit(f"stale Edge rule block: {rule_id}")
+              text = text.replace(old, new)
+          edge.write_text(text, encoding="utf-8")
+
+          test = Path("tests/test_edge_cleanup.py")
+          t = test.read_text(encoding="utf-8")
+          t = t.replace(
+              "def test_edge_updater_state_is_protected_but_official_logs_are_tool() -> None:",
+              "def test_edge_updater_state_and_official_diagnostic_logs_are_protected() -> None:",
+          )
+          old_assert = '''        assert rule.rule_id == rule_id\n        assert rule.owner is DecisionOwner.TOOL\n'''
+          new_assert = '''        assert rule.rule_id == rule_id\n        assert rule.owner is DecisionOwner.KEEP\n        decision = evaluate_application_path(\n            path,\n            logical_size=64 * _MIB,\n            last_used=_NOW - timedelta(days=365),\n            now=_NOW,\n            process_running=False,\n            environment=_env(),\n        )\n        assert decision is not None\n        assert decision.action is PolicyAction.KEEP_PROTECTED\n'''
+          if old_assert not in t:
+              raise SystemExit("stale Edge log test block")
+          test.write_text(t.replace(old_assert, new_assert, 1), encoding="utf-8")
+
+          auth = Path("tests/test_edge_rule_authority.py")
+          a = auth.read_text(encoding="utf-8")
+          anchor = '''        (\n            r"C:\\Users\\person\\AppData\\Local\\Microsoft\\Edge\\Update"\n            r"\\payload.bin"\n        ),\n'''
+          extra = anchor + '''        r"C:\\ProgramData\\Microsoft\\EdgeUpdate\\Log\\MicrosoftEdgeUpdate.log",\n        r"C:\\ProgramData\\Microsoft\\EdgeUpdate\\Log\\MicrosoftEdgeUpdate.log.bak",\n        r"C:\\Users\\person\\AppData\\Local\\Temp\\msedge_installer.log",\n'''
+          if anchor not in a:
+              raise SystemExit("stale Edge authority anchor")
+          auth.write_text(a.replace(anchor, extra, 1), encoding="utf-8")
+
+          Path("docs/edge-update-diagnostic-authority-reaudit.md").write_text('''# Microsoft Edge Update diagnostic authority re-audit — 2026-08\n\n## Primary source\n\nMicrosoft Learn, **Troubleshoot Edge Update, Installation, and Rollback Failures** (current 2026 guidance):\n\n- https://learn.microsoft.com/en-us/troubleshoot/microsoft-edge/manageability/update-install-rollback-failures\n- https://learn.microsoft.com/en-us/troubleshoot/microsoft-edge/development/webview2-unexpected-install-windows-server\n\nMicrosoft explicitly instructs customers to collect `MicrosoftEdgeUpdate.log`, its rotated `.bak` when present, and `msedge_installer.log` as diagnostic evidence for update/install/support failures. Current guidance does not establish a seven-day or 256 KiB deletion contract for those files.\n\n## Finding\n\nDevClean previously granted raw TOOL deletion to these exact diagnostic files after a locally invented 7-day threshold. Exact identification proves that the files are Edge diagnostics; it does not prove that old diagnostics are disposable. Recent Microsoft support guidance actively asks users to retain and submit them when troubleshooting.\n\n## Correction\n\n- `MicrosoftEdgeUpdate.log`: KEEP / protected diagnostic evidence.\n- `MicrosoftEdgeUpdate.log.bak`: KEEP / protected rotated diagnostic evidence.\n- `msedge_installer.log`: KEEP / protected installation diagnostic evidence.\n- Edge updater binaries/state remain protected.\n- Chromium-derived browser cache semantics remain unchanged.\n- Age, size, process-idle state, AI verdicts and user verdicts cannot restore raw deletion authority.\n\n## Revisit\n\nOnly expose deletion if Microsoft documents a bounded cleanup operation or explicit expiration/removal lifecycle for one of these exact diagnostics.\n''', encoding="utf-8")
+
+          tracker = Path("docs/full-rule-reaudit-2026-08.md")
+          tr = tracker.read_text(encoding="utf-8")
+          old = "| Chromium browsers: Chrome / Edge / Brave / Vivaldi / Opera | ⏳ queued (Chrome updater-log correction plus Brave/Vivaldi/Opera authority corrections landed; full family re-verification still pending) |"
+          new = "| Chromium browsers: Chrome / Edge / Brave / Vivaldi / Opera | ⏳ queued (Chrome + Edge updater diagnostics corrected; Brave/Vivaldi/Opera authority corrections landed; full family re-verification still pending) |"
+          if old not in tr:
+              raise SystemExit("Chromium tracker row changed")
+          tracker.write_text(tr.replace(old, new), encoding="utf-8")
+          '@ | uv run --frozen python -
+      - name: Validate exact patch
+        shell: pwsh
+        run: |
+          uv run --frozen ruff check src scripts tests
+          uv run --frozen mypy src scripts tests
+          uv run --frozen pytest -q
+      - name: Commit and remove temporary workflow
+        shell: pwsh
+        run: |
+          git config user.name "devclean-audit-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git rm .github/workflows/patch-edge-update-log-reaudit-temp.yml
+          git add src/devclean/core/edge_cleanup.py tests/test_edge_cleanup.py tests/test_edge_rule_authority.py docs/edge-update-diagnostic-authority-reaudit.md docs/full-rule-reaudit-2026-08.md
+          git commit -m "Protect Edge Update diagnostic logs"
+          git push origin HEAD:agent/edge-update-log-reaudit-2026-08
