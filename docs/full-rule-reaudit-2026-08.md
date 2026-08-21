@@ -16,7 +16,7 @@ This tracker exists so the requested second-pass audit is genuinely one-by-one r
 | Scan exclusions/pruning | ✅ phase 5 | explicit/audited nested roots survive skipped-name ancestors; exclusions and descendant pruning still win |
 | Learned-rule target boundary | ✅ phase 2 | learned/default rules apply to files only; directory choices are exact-path-only and subtree KEEP wins |
 | Learned-rule portability/default restoration | ✅ phase 6 | restored only source-supported common FILE knowledge; rejected personal/history/install-state and already-covered app-cache guesses |
-| Execution identity/reparse/hardlink/concurrency gates | ⏳ queued | second-pass regression audit; no weakening planned |
+| Execution identity/reparse/hardlink/concurrency gates | ✅ phase 7 | nested junction replacement TOCTOU closed with per-directory/per-leaf handle confinement; existing snapshot/link/share guards retained |
 
 ## Packaged known cleanup roots
 
