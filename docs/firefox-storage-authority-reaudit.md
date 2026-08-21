@@ -23,10 +23,11 @@ Mozilla's current updater troubleshooting documentation explicitly asks users to
 
 ## Primary references
 
-- Mozilla Support, “Unsent crash reports in Firefox” (updated 2026-01-15).
-- Mozilla Support, “Troubleshoot Firefox crashes (closing or quitting unexpectedly)”.
-- Firefox Source Docs, “Update Troubleshooting”, Update Binary Logs.
-- Mozilla Support profile guidance distinguishing the Roaming user-data profile from the Local disk-cache/temporary profile.
+- Mozilla Support, “Unsent crash reports in Firefox” (updated 2026-01-15): https://support.mozilla.org/en-US/kb/unsent-crash-reports
+- Mozilla Support, “Mozilla Crash Reporter”: https://support.mozilla.org/en-US/kb/mozillacrashreporter
+- Firefox Source Docs, “Crash Reporter”: https://firefox-source-docs.mozilla.org/toolkit/crashreporter/crashreporter/
+- Firefox Source Docs, “Update Troubleshooting”: https://firefox-source-docs.mozilla.org/toolkit/mozapps/update/docs/Troubleshooting.html
+- Mozilla Support profile guidance distinguishing the Roaming user-data profile from the Local disk-cache/temporary profile: https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data
 
 ## Revisit trigger
 
