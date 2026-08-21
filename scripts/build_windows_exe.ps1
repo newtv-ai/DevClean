@@ -161,7 +161,7 @@ try {
     $licenseSources = [ordered]@{
         "DevClean-GPL-3.0.txt" = (Join-Path $root "LICENSE")
         "CPython-LICENSE.txt" = (Join-Path $pythonBasePrefix "LICENSE.txt")
-        "Tcl-Tk-license.terms" = (
+        "Tk-license.terms" = (
             Join-Path $pythonBasePrefix "tcl\tk8.6\license.terms"
         )
         "PyInstaller-COPYING.txt" = $pyinstallerLicenseMatches[0].FullName
@@ -183,7 +183,7 @@ try {
         "licenses\CPython-LICENSE.txt"
         "licenses\DevClean-GPL-3.0.txt"
         "licenses\PyInstaller-COPYING.txt"
-        "licenses\Tcl-Tk-license.terms"
+        "licenses\Tk-license.terms"
     ) | Sort-Object
     $actualPayloadFiles = @(
         Get-ChildItem -LiteralPath $distFull -File -Recurse |
