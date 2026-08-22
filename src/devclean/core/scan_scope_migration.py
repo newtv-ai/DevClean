@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import replace
+from pathlib import Path
 
 from devclean.core import _user_rules_impl as _impl
 from devclean.core._user_rules_impl import UserRules
@@ -21,11 +22,11 @@ _MARKER_NAME = ".targeted-scan-default-v1"
 _ORIGINAL_LOAD_RULES = _impl.load_rules
 
 
-def _marker_path():
+def _marker_path() -> Path:
     return _impl.rules_dir() / _MARKER_NAME
 
 
-def _atomic_write(path, text: str) -> None:
+def _atomic_write(path: Path, text: str) -> None:
     scratch = path.with_suffix(path.suffix + ".writing")
     scratch.write_text(text, encoding="utf-8", newline="\n")
     os.replace(scratch, path)
