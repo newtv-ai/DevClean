@@ -178,7 +178,10 @@ def inventory_vendor_cleanup_candidates(
                     entry.path,
                     entry.logical_bytes,
                     "pnpm store 垃圾回收",
-                    "由 pnpm store prune 只删除所有已注册项目都不再引用的包；显示大小仅是 store 当前占用",
+                    (
+                        "由 pnpm store prune 只删除所有已注册项目都不再引用的包；"
+                        "显示大小仅是 store 当前占用"
+                    ),
                 )
             )
 
@@ -211,9 +214,13 @@ def inventory_vendor_cleanup_candidates(
         warnings.append(f"NuGet inventory: {error}")
     else:
         nuget_kinds = {
-            nuget_maintenance.NuGetLocalKind.HTTP_CACHE: VendorCleanupKind.NUGET_HTTP_CACHE_CLEAR,
+            nuget_maintenance.NuGetLocalKind.HTTP_CACHE: (
+                VendorCleanupKind.NUGET_HTTP_CACHE_CLEAR
+            ),
             nuget_maintenance.NuGetLocalKind.TEMP: VendorCleanupKind.NUGET_TEMP_CLEAR,
-            nuget_maintenance.NuGetLocalKind.PLUGINS_CACHE: VendorCleanupKind.NUGET_PLUGINS_CACHE_CLEAR,
+            nuget_maintenance.NuGetLocalKind.PLUGINS_CACHE: (
+                VendorCleanupKind.NUGET_PLUGINS_CACHE_CLEAR
+            ),
         }
         for entry in nuget_inventory.locals:
             kind = nuget_kinds.get(entry.kind)
