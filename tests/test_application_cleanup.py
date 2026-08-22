@@ -118,7 +118,7 @@ def test_process_guard_overrides_age_and_reclaim_value() -> None:
     assert decision.requires_process_closed
 
 
-def test_codex_session_history_is_user_owned_but_generic_pipeline_protects_it() -> None:
+def test_codex_session_history_is_user_owned_and_reviewable() -> None:
     path = (
         r"C:\Users\alice\.codex\sessions\2026\01\01"
         r"\rollout-2026-01-01T10-00-00.jsonl"
@@ -135,9 +135,9 @@ def test_codex_session_history_is_user_owned_but_generic_pipeline_protects_it() 
     assert decision is not None
     assert decision.rule.owner is DecisionOwner.USER
     assert decision.rule.last_use is LastUseStrategy.SESSION_LAST_EVENT
-    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert decision.action is PolicyAction.USER_DECISION
     assert decision.age_bucket == "90-180d"
-    assert not process_guard_allows(path, _ENV)
+    assert process_guard_allows(path, _ENV)
 
 
 def test_recent_session_is_still_user_owned_not_tool_deleted() -> None:
@@ -156,7 +156,7 @@ def test_recent_session_is_still_user_owned_not_tool_deleted() -> None:
 
     assert decision is not None
     assert decision.rule.owner is DecisionOwner.USER
-    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert decision.action is PolicyAction.USER_DECISION
     assert decision.age_bucket == "0-30d"
 
 
@@ -173,9 +173,9 @@ def test_codex_input_history_is_user_owned() -> None:
     assert decision is not None
     assert decision.rule.owner is DecisionOwner.USER
     assert decision.rule.last_use is LastUseStrategy.JSONL_RECORD_TS
-    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert decision.action is PolicyAction.USER_DECISION
     assert decision.age_bucket == ">=180d"
-    assert not process_guard_allows(path, _ENV)
+    assert process_guard_allows(path, _ENV)
 
 
 def test_codex_input_history_prefers_embedded_record_timestamp(tmp_path: Path) -> None:
@@ -205,7 +205,7 @@ def test_codex_input_history_prefers_embedded_record_timestamp(tmp_path: Path) -
 
     assert decision is not None
     assert decision.rule.owner is DecisionOwner.USER
-    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert decision.action is PolicyAction.USER_DECISION
     assert decision.last_used == latest
     assert decision.age_bucket == "30-90d"
 
@@ -278,4 +278,4 @@ def test_codex_home_override_is_honoured() -> None:
 
     assert decision is not None
     assert decision.rule.owner is DecisionOwner.USER
-    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert decision.action is PolicyAction.USER_DECISION
