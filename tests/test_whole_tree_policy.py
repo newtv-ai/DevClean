@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -86,7 +87,7 @@ def _fake_scan(records: tuple[ScanRecord, ...]) -> object:
     return lambda *_args, **_kwargs: iter(records)
 
 
-def test_recent_child_blocks_whole_tree_even_when_root_directory_is_old(
+def test_recent_child_does_not_revoke_audited_whole_tree_safety(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -105,8 +106,11 @@ def test_recent_child_blocks_whole_tree_even_when_root_directory_is_old(
         lambda *_args, **_kwargs: None,
     )
 
-    with pytest.raises(WholeTreePolicyRefusal, match="too recently"):
-        require_application_whole_tree_policy(root, (_known(root, rule),))
+    evidence = require_application_whole_tree_policy(root, (_known(root, rule),))
+
+    assert evidence is not None
+    assert evidence.files == 1
+    assert evidence.logical_bytes == 64 * _MIB
 
 
 def test_stale_large_application_tree_passes_and_returns_fresh_evidence(
@@ -135,7 +139,7 @@ def test_stale_large_application_tree_passes_and_returns_fresh_evidence(
     assert evidence.logical_bytes == 64 * _MIB
 
 
-def test_application_tree_below_reclaim_threshold_is_refused(
+def test_small_application_tree_does_not_lose_audited_safety(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -154,8 +158,10 @@ def test_application_tree_below_reclaim_threshold_is_refused(
         lambda *_args, **_kwargs: None,
     )
 
-    with pytest.raises(WholeTreePolicyRefusal, match="minimum reclaim"):
-        require_application_whole_tree_policy(root, (_known(root, rule),))
+    evidence = require_application_whole_tree_policy(root, (_known(root, rule),))
+
+    assert evidence is not None
+    assert evidence.logical_bytes == 2 * _MIB
 
 
 def test_incomplete_fresh_scan_fails_closed(
@@ -196,6 +202,44 @@ def test_configured_vendor_root_without_application_rule_fails_closed(
 
     with pytest.raises(WholeTreePolicyRefusal, match="static vendor-managed"):
         require_application_whole_tree_policy(root, (_known(root, None),))
+
+
+def test_evaluator_rule_mismatch_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import devclean.core.whole_tree_policy as policy
+
+    root = tmp_path / "Cache"
+    rule = _rule()
+    different = ApplicationCleanupRule(
+        rule_id="different-rule",
+        app_id=rule.app_id,
+        root_key=rule.root_key,
+        relative_pattern=rule.relative_pattern,
+        match_kind=rule.match_kind,
+        owner=rule.owner,
+        last_use=rule.last_use,
+        rebuild_cost=rule.rebuild_cost,
+        idle_days=rule.idle_days,
+        min_reclaim_bytes=rule.min_reclaim_bytes,
+        requires_process_closed=rule.requires_process_closed,
+        allow_whole_tree=rule.allow_whole_tree,
+        label=rule.label,
+    )
+    monkeypatch.setattr(
+        policy,
+        "scan_roots",
+        _fake_scan(_records(root, size=64 * _MIB, age_days=90)),
+    )
+    monkeypatch.setattr(
+        policy,
+        "evaluate_application_path",
+        lambda *_args, **_kwargs: SimpleNamespace(rule=different),
+    )
+
+    with pytest.raises(WholeTreePolicyRefusal, match="different rule"):
+        require_application_whole_tree_policy(root, (_known(root, rule),))
 
 
 def test_non_mtime_rule_without_native_evaluator_fails_closed(

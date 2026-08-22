@@ -1,9 +1,14 @@
 """Fresh semantic gate for application-owned whole-directory cleanup.
 
 Catalog discovery grants *where* a whole tree may be considered. This module
-re-checks *whether it is worth removing now*. The same policy evaluator is used
-by both the fast scan summary and the final execution-time revalidation so the
-UI does not invent a second decision rule.
+re-checks that the exact audited TOOL rule still owns that boundary and that a
+fresh, complete aggregate can still be collected before mutation.
+
+Age, size and rebuild-cost heuristics are deliberately not safety gates here.
+They may affect ranking or recommendation text, but once a vendor/source-backed
+rule proves a tree is regenerable, a small or recently-used cache does not become
+persistent user data. Runtime process guards are enforced separately by the
+post-scan executor immediately before mutation.
 """
 
 from __future__ import annotations
@@ -17,8 +22,6 @@ from devclean.core.application_cleanup import (
     ApplicationCleanupRule,
     DecisionOwner,
     LastUseStrategy,
-    PolicyAction,
-    effective_idle_days,
     evaluate_application_path,
 )
 from devclean.core.cleanup_catalog import CleanupPolicy, KnownCleanupRoot, known_root_for_path
@@ -26,7 +29,7 @@ from devclean.scanner.filesystem import ScanOptions, ScanRecordKind, scan_roots
 
 
 class WholeTreePolicyRefusal(ValueError):
-    """An audited application root is not semantically eligible right now."""
+    """An audited application root is not semantically eligible for mutation."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,12 +67,18 @@ def assess_application_whole_tree_policy(
     known_roots: tuple[KnownCleanupRoot, ...],
     evidence: WholeTreePolicyEvidence,
 ) -> WholeTreePolicyEvidence | None:
-    """Apply the audited whole-tree rule to already-collected metadata evidence.
+    """Validate semantic authority against already-collected tree evidence.
 
     Scan-time code may collect only aggregate metadata for a known whole-tree
     cache instead of classifying every child file. Execution-time code collects
     a fresh aggregate again. Both paths call this function, so performance work
-    cannot silently change the product rule.
+    cannot silently widen the mutation boundary.
+
+    The application evaluator is still consulted when it can reproduce its own
+    last-use semantics, but its age/benefit recommendation is not allowed to
+    revoke an otherwise source-audited TOOL ownership decision. Process state is
+    intentionally supplied as ``False`` here; the executor performs the live
+    process check immediately before deletion.
     """
 
     rule = _require_application_whole_tree_rule(path, known_roots)
@@ -80,18 +89,20 @@ def assess_application_whole_tree_policy(
         evidence.latest_activity_time_ns / 1_000_000_000,
         tz=UTC,
     )
-    _require_fresh_tree_floor(rule, evidence, observed)
-
     decision = evaluate_application_path(
         path,
         logical_size=evidence.logical_bytes,
         last_used=observed,
         process_running=False,
     )
-    if decision is not None and decision.rule.rule_id == rule.rule_id:
-        if decision.action is not PolicyAction.TOOL_DELETE:
+    if decision is not None:
+        if decision.rule.rule_id != rule.rule_id:
             raise WholeTreePolicyRefusal(
-                f"{rule.label} is not currently eligible: {decision.action.value}"
+                "application evaluator resolved the exact root to a different rule"
+            )
+        if decision.rule.owner is not DecisionOwner.TOOL:
+            raise WholeTreePolicyRefusal(
+                "application evaluator no longer classifies the exact root as TOOL-owned"
             )
         return evidence
 
@@ -116,24 +127,6 @@ def require_application_whole_tree_policy(
         return None
     evidence = _fresh_tree_evidence(path)
     return assess_application_whole_tree_policy(path, known_roots, evidence)
-
-
-def _require_fresh_tree_floor(
-    rule: ApplicationCleanupRule,
-    evidence: WholeTreePolicyEvidence,
-    observed: datetime,
-) -> None:
-    if evidence.logical_bytes < rule.min_reclaim_bytes:
-        raise WholeTreePolicyRefusal(f"{rule.label} is below its minimum reclaim threshold")
-    threshold = effective_idle_days(rule, evidence.logical_bytes)
-    if threshold is None:
-        raise WholeTreePolicyRefusal("application whole-tree idle threshold is unavailable")
-    idle_days = max(
-        0.0,
-        (datetime.now(UTC) - observed).total_seconds() / 86_400,
-    )
-    if idle_days < threshold:
-        raise WholeTreePolicyRefusal(f"{rule.label} was used too recently for whole-tree cleanup")
 
 
 def _fresh_tree_evidence(path: Path) -> WholeTreePolicyEvidence:
