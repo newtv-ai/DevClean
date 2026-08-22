@@ -1,9 +1,9 @@
 """Warm, task-oriented desktop shell for DevClean.
 
-The safety and mutation workflow stays in :mod:`devclean.ui.app`.  This module
-only changes presentation and the default scan plan: the home screen starts in
-an actionable "smart scan" that visits source-audited whole-tree cleanup roots
-instead of walking the entire user profile.  A deep scan remains one click away.
+The safety and mutation workflow stays in :mod:`devclean.ui.app`. This module
+changes presentation and the default scan plan: the home screen starts in an
+actionable smart scan that visits source-audited whole-tree cleanup roots
+instead of walking the entire user profile. A deep scan remains one click away.
 """
 
 # Chinese UI prose uses fullwidth punctuation.
@@ -11,7 +11,6 @@ instead of walking the entire user profile.  A deep scan remains one click away.
 
 from __future__ import annotations
 
-import os
 import threading
 import tkinter as tk
 from collections.abc import Sequence
@@ -22,14 +21,18 @@ from typing import Any
 from uuid import uuid4
 
 from devclean.core.application_cleanup import DecisionOwner
-from devclean.core.cleanup_catalog import CleanupPolicy, KnownCleanupRoot, discover_known_cleanup_roots
+from devclean.core.cleanup_catalog import (
+    CleanupPolicy,
+    KnownCleanupRoot,
+    discover_known_cleanup_roots,
+)
 from devclean.core.user_rules import RuleConfigError, UserRules, load_rules
 from devclean.scanner import CancellationToken
 from devclean.ui import app
 
 _BG = "#F6F1EA"
 _SURFACE = "#FFFDFC"
-_SURFACE_ALT = "#F1E9DE"
+_SOFT = "#F1E9DE"
 _BORDER = "#E4D9CC"
 _TEXT = "#26342F"
 _MUTED = "#6F756F"
@@ -60,14 +63,16 @@ def smart_scan_targets(
     drives: Sequence[Path],
     rules: UserRules,
 ) -> tuple[Path, ...]:
-    """Plan the fast home-screen scan without widening cleanup authority.
+    """Plan the fast home scan without widening cleanup authority.
 
     Smart mode deliberately excludes the broad USERPROFILE traversal and
-    report-only inventory roots. Explicit user ``additional_paths`` still flow
-    through ``app.scan_targets``. Deep mode uses the original plan unchanged.
+    report-only inventory roots. Explicit user additional paths still flow
+    through the original target planner. Deep mode remains unchanged.
     """
 
-    actionable = tuple(root for root in known_roots if _is_actionable_whole_tree_root(root))
+    actionable = tuple(
+        root for root in known_roots if _is_actionable_whole_tree_root(root)
+    )
     smart_rules = UserRules(
         scan=replace(rules.scan, include_user_profile=False),
         delete=rules.delete,
@@ -87,8 +92,6 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         root.minsize(1040, 660)
         self._sync_mode_hint()
 
-    # ---- modern layout -----------------------------------------------------
-
     def _configure_style(self) -> None:
         style = ttk.Style(self._root)
         if "clam" in style.theme_names():
@@ -97,7 +100,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
 
         style.configure("Modern.TFrame", background=_BG)
         style.configure("Surface.TFrame", background=_SURFACE)
-        style.configure("Soft.TFrame", background=_SURFACE_ALT)
+        style.configure("Soft.TFrame", background=_SOFT)
         style.configure(
             "Hero.TLabel",
             background=_SURFACE,
@@ -118,13 +121,13 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         )
         style.configure(
             "StatusWarm.TLabel",
-            background=_SURFACE_ALT,
+            background=_SOFT,
             foreground=_TEXT,
             font=("Segoe UI", 10),
         )
         style.configure(
             "ModeHint.TLabel",
-            background=_SURFACE_ALT,
+            background=_SOFT,
             foreground=_MUTED,
             font=("Segoe UI", 9),
         )
@@ -159,20 +162,20 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         )
         style.configure(
             "Mode.TRadiobutton",
-            background=_SURFACE_ALT,
+            background=_SOFT,
             foreground=_TEXT,
             font=("Segoe UI Semibold", 9),
             padding=(8, 5),
         )
         style.map(
             "Mode.TRadiobutton",
-            background=[("active", _SURFACE_ALT)],
+            background=[("active", _SOFT)],
             foreground=[("active", _PRIMARY)],
         )
 
         self._button_style(style, "Primary", _PRIMARY, _PRIMARY_ACTIVE)
         self._button_style(style, "Safe", _SAFE, _SAFE_ACTIVE)
-        self._button_style(style, "Quiet", _SURFACE_ALT, "#E8DED1", foreground=_TEXT)
+        self._button_style(style, "Quiet", _SOFT, "#E8DED1", foreground=_TEXT)
         self._button_style(style, "Danger", _DANGER, "#93443C")
 
         style.configure(
@@ -186,7 +189,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         )
         style.configure(
             "Warm.Treeview.Heading",
-            background=_SURFACE_ALT,
+            background=_SOFT,
             foreground=_MUTED,
             relief=tk.FLAT,
             borderwidth=0,
@@ -198,7 +201,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         style.configure(
             "Warm.Horizontal.TProgressbar",
             background=_PRIMARY,
-            troughcolor=_SURFACE_ALT,
+            troughcolor=_SOFT,
             borderwidth=0,
             thickness=4,
         )
@@ -229,7 +232,11 @@ class ModernDevCleanWindow(app.DevCleanWindow):
     def _build(self) -> None:
         self._configure_style()
 
-        page = ttk.Frame(self._root, style="Modern.TFrame", padding=(22, 18, 22, 20))
+        page = ttk.Frame(
+            self._root,
+            style="Modern.TFrame",
+            padding=(22, 18, 22, 20),
+        )
         page.pack(fill=tk.BOTH, expand=True)
 
         hero = tk.Frame(
@@ -245,11 +252,21 @@ class ModernDevCleanWindow(app.DevCleanWindow):
 
         title_box = ttk.Frame(hero, style="Surface.TFrame")
         title_box.grid(row=0, column=0, rowspan=2, sticky="w")
-        ttk.Label(title_box, text="DEV STORAGE CARE", style="Eyebrow.TLabel").pack(anchor=tk.W)
-        ttk.Label(title_box, text="DevClean", style="Hero.TLabel").pack(anchor=tk.W, pady=(1, 2))
         ttk.Label(
             title_box,
-            text="把真正有依据的缓存清理出来，把需要厂商工具或你本人决定的内容留在正确的位置。",
+            text="DEV STORAGE CARE",
+            style="Eyebrow.TLabel",
+        ).pack(anchor=tk.W)
+        ttk.Label(title_box, text="DevClean", style="Hero.TLabel").pack(
+            anchor=tk.W,
+            pady=(1, 2),
+        )
+        ttk.Label(
+            title_box,
+            text=(
+                "把真正有依据的缓存清理出来，把需要厂商工具或你本人决定的内容"
+                "留在正确的位置。"
+            ),
             style="HeroSub.TLabel",
         ).pack(anchor=tk.W)
 
@@ -259,7 +276,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
             actions,
             text="工具中心",
             style="Quiet.TButton",
-            command=lambda: self._root.event_generate("<<DevCleanOpenTools>>", when="tail"),
+            command=self._open_tools,
         ).pack(side=tk.LEFT, padx=(0, 8))
         self._rule_button = ttk.Button(
             actions,
@@ -278,7 +295,11 @@ class ModernDevCleanWindow(app.DevCleanWindow):
 
         drives = ttk.Frame(hero, style="Surface.TFrame")
         drives.grid(row=1, column=1, sticky="e", pady=(10, 0))
-        ttk.Label(drives, text="扫描盘符", style="HeroSub.TLabel").pack(side=tk.LEFT, padx=(0, 7))
+        ttk.Label(
+            drives,
+            text="扫描盘符",
+            style="HeroSub.TLabel",
+        ).pack(side=tk.LEFT, padx=(0, 7))
         preferred = app._system_drive()
         for drive in reversed(app.fixed_volume_roots()):
             state = tk.BooleanVar(value=drive == preferred)
@@ -292,7 +313,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
 
         scan_bar = tk.Frame(
             page,
-            background=_SURFACE_ALT,
+            background=_SOFT,
             highlightbackground=_BORDER,
             highlightthickness=1,
             padx=16,
@@ -317,9 +338,11 @@ class ModernDevCleanWindow(app.DevCleanWindow):
             style="Mode.TRadiobutton",
             command=self._sync_mode_hint,
         ).pack(side=tk.LEFT, padx=(4, 0))
-        ttk.Label(scan_bar, textvariable=self._mode_hint, style="ModeHint.TLabel").pack(
-            side=tk.LEFT, padx=(12, 0)
-        )
+        ttk.Label(
+            scan_bar,
+            textvariable=self._mode_hint,
+            style="ModeHint.TLabel",
+        ).pack(side=tk.LEFT, padx=(12, 0))
 
         self._progress = ttk.Progressbar(
             page,
@@ -330,7 +353,11 @@ class ModernDevCleanWindow(app.DevCleanWindow):
 
         status_card = ttk.Frame(page, style="Soft.TFrame", padding=(14, 9))
         status_card.pack(fill=tk.X, pady=(6, 12))
-        ttk.Label(status_card, textvariable=self._status, style="StatusWarm.TLabel").pack(anchor=tk.W)
+        ttk.Label(
+            status_card,
+            textvariable=self._status,
+            style="StatusWarm.TLabel",
+        ).pack(anchor=tk.W)
 
         buckets = ttk.Frame(page, style="Modern.TFrame")
         buckets.pack(fill=tk.BOTH, expand=True)
@@ -357,7 +384,12 @@ class ModernDevCleanWindow(app.DevCleanWindow):
                     "Safe",
                     lambda: self._delete(irreversible=False),
                 ),
-                ("purge", "彻底删除", "Danger", lambda: self._delete(irreversible=True)),
+                (
+                    "purge",
+                    "彻底删除",
+                    "Danger",
+                    lambda: self._delete(irreversible=True),
+                ),
             ),
             checkable=True,
         )
@@ -367,8 +399,8 @@ class ModernDevCleanWindow(app.DevCleanWindow):
             accent=_REVIEW,
             title="需要你决定",
             hint=(
-                "这里不是“疑似垃圾箱”。只有技术含义明确、但保留与否取决于你的用途时才会出现；"
-                "拿不准时可以把选中的文件交给 AI 辅助判断。"
+                "这里不是“疑似垃圾箱”。只有技术含义明确、但保留与否取决于你的用途"
+                "时才会出现；拿不准时可以把选中的文件交给 AI 辅助判断。"
             ),
             total=self._unsure_total,
             buttons=(
@@ -378,7 +410,13 @@ class ModernDevCleanWindow(app.DevCleanWindow):
                 ("forget", "清空判决", "Quiet", self._forget_verdicts),
             ),
         )
-        self._unsure_tree.bind("<<TreeviewSelect>>", lambda _event: self._sync_buttons())
+        self._unsure_tree.bind(
+            "<<TreeviewSelect>>",
+            lambda _event: self._sync_buttons(),
+        )
+
+    def _open_tools(self) -> None:
+        self._root.event_generate("<<DevCleanOpenTools>>", when="tail")
 
     def _build_bucket(
         self,
@@ -407,18 +445,43 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         shell.rowconfigure(1, weight=1)
         shell.columnconfigure(0, weight=1)
 
-        head = ttk.Frame(shell, style="Surface.TFrame", padding=(16, 15, 16, 10))
+        head = ttk.Frame(
+            shell,
+            style="Surface.TFrame",
+            padding=(16, 15, 16, 10),
+        )
         head.grid(row=0, column=0, sticky="ew")
         title_row = ttk.Frame(head, style="Surface.TFrame")
         title_row.pack(fill=tk.X)
-        dot = tk.Canvas(title_row, width=10, height=10, background=_SURFACE, highlightthickness=0)
-        dot.create_oval(1, 1, 9, 9, fill=accent, outline=accent)
-        dot.pack(side=tk.LEFT, padx=(0, 8), pady=(3, 0))
-        ttk.Label(title_row, text=title, style="CardTitleWarm.TLabel").pack(side=tk.LEFT)
-        ttk.Label(head, textvariable=total, style="AmountWarm.TLabel").pack(anchor=tk.W, pady=(7, 2))
-        ttk.Label(head, text=hint, style="HintWarm.TLabel", wraplength=520).pack(anchor=tk.W)
+        tk.Label(
+            title_row,
+            text="●",
+            background=_SURFACE,
+            foreground=accent,
+            font=("Segoe UI", 9),
+        ).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Label(
+            title_row,
+            text=title,
+            style="CardTitleWarm.TLabel",
+        ).pack(side=tk.LEFT)
+        ttk.Label(
+            head,
+            textvariable=total,
+            style="AmountWarm.TLabel",
+        ).pack(anchor=tk.W, pady=(7, 2))
+        ttk.Label(
+            head,
+            text=hint,
+            style="HintWarm.TLabel",
+            wraplength=520,
+        ).pack(anchor=tk.W)
 
-        holder = ttk.Frame(shell, style="Surface.TFrame", padding=(16, 2, 16, 0))
+        holder = ttk.Frame(
+            shell,
+            style="Surface.TFrame",
+            padding=(16, 2, 16, 0),
+        )
         holder.grid(row=1, column=0, sticky="nsew")
         holder.rowconfigure(0, weight=1)
         holder.columnconfigure(0, weight=1)
@@ -434,7 +497,13 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         tree.heading("path", text="位置", anchor=tk.W)
         tree.column("check", width=36, anchor=tk.CENTER, stretch=False)
         tree.column("size", width=94, anchor=tk.E, stretch=False)
-        tree.column("path", width=420, minwidth=220, anchor=tk.W, stretch=True)
+        tree.column(
+            "path",
+            width=420,
+            minwidth=220,
+            anchor=tk.W,
+            stretch=True,
+        )
         tree.tag_configure("odd", background="#FBF7F2")
         tree.grid(row=0, column=0, sticky="nsew")
         vertical = ttk.Scrollbar(holder, orient=tk.VERTICAL, command=tree.yview)
@@ -444,21 +513,32 @@ class ModernDevCleanWindow(app.DevCleanWindow):
             tree.bind("<Button-1>", self._on_row_click)
         tree.bind("<Double-1>", self._on_row_double_click)
 
-        actions = ttk.Frame(shell, style="Surface.TFrame", padding=(16, 12, 8, 15))
+        actions = ttk.Frame(
+            shell,
+            style="Surface.TFrame",
+            padding=(16, 12, 8, 15),
+        )
         actions.grid(row=2, column=0, sticky="ew")
         for key, label, kind, command in buttons:
-            button = ttk.Button(actions, text=label, style=f"{kind}.TButton", command=command)
+            button = ttk.Button(
+                actions,
+                text=label,
+                style=f"{kind}.TButton",
+                command=command,
+            )
             button.pack(side=tk.LEFT, padx=(0, 8))
             self._buttons[key] = button
         return tree
 
     def _sync_mode_hint(self) -> None:
         if self._scan_mode.get() == "deep":
-            self._mode_hint.set("遍历用户目录并做完整分类；适合排查，文件很多时会明显更慢。")
+            self._mode_hint.set(
+                "遍历用户目录并做完整分类；适合排查，文件很多时会明显更慢。"
+            )
         else:
-            self._mode_hint.set("推荐：只扫已有明确清理依据的位置；更快，也更符合主页“可清理”结果。")
-
-    # ---- scan plan ---------------------------------------------------------
+            self._mode_hint.set(
+                "推荐：只扫已有明确清理依据的位置；更快，也更符合主页“可清理”结果。"
+            )
 
     def _start_scan(self) -> None:
         try:
@@ -469,12 +549,15 @@ class ModernDevCleanWindow(app.DevCleanWindow):
                 f"{error}\n\n请点击“规则设置”修正后再扫描。",
             )
             return
-        drives = tuple(drive for drive, state in self._drive_vars.items() if state.get())
+        drives = tuple(
+            drive for drive, state in self._drive_vars.items() if state.get()
+        )
         if not drives:
             messagebox.showinfo("DevClean", "请先勾选至少一个盘符。")
             return
         if self._cancel is not None and not self._cancel.is_cancelled():
             self._cancel.cancel()
+
         self._scan_token = uuid4().hex
         self._scan_session_id = uuid4().hex
         self._cancel = CancellationToken()
@@ -491,12 +574,14 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         self._busy = "scanning"
         self._sync_buttons()
         self._progress.start(60)
+
         mode = self._scan_mode.get()
-        self._status.set("正在准备智能扫描…" if mode == "smart" else "正在准备深度扫描…")
+        preparing = "正在准备智能扫描…" if mode == "smart" else "正在准备深度扫描…"
+        self._status.set(preparing)
         self._scan_rules = self._rules
 
-        # Root discovery may consult installed vendor CLIs. The GUI entry point
-        # suppresses console allocation for those child processes.
+        # Root discovery can call installed vendor CLIs. The GUI entry point
+        # suppresses console allocation for those console child processes.
         self._known_roots = discover_known_cleanup_roots(self._scan_rules.scan)
         roots = (
             smart_scan_targets(self._known_roots, drives, self._scan_rules)
@@ -509,8 +594,10 @@ class ModernDevCleanWindow(app.DevCleanWindow):
             self._sync_buttons()
             self._status.set("所选盘符上没有符合当前扫描模式的可清理位置。")
             return
+
+        mode_name = "智能" if mode == "smart" else "深度"
         self._status.set(
-            f"正在{'智能' if mode == 'smart' else '深度'}扫描… 已规划 {len(roots):,} 个扫描根。"
+            f"正在{mode_name}扫描… 已规划 {len(roots):,} 个扫描根。"
         )
         threading.Thread(
             target=self._scan_worker,
