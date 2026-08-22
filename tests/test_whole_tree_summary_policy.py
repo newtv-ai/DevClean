@@ -15,7 +15,6 @@ from devclean.core.application_cleanup import (
 from devclean.core.cleanup_catalog import CleanupCategory, CleanupPolicy, KnownCleanupRoot
 from devclean.core.whole_tree_policy import (
     WholeTreePolicyEvidence,
-    WholeTreePolicyRefusal,
     assess_application_whole_tree_policy,
 )
 
@@ -56,7 +55,7 @@ def _evidence(*, size: int, age_days: int) -> WholeTreePolicyEvidence:
     )
 
 
-def test_precomputed_summary_uses_same_idle_rule(
+def test_precomputed_summary_keeps_audited_tool_safety_independent_of_age(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -66,17 +65,18 @@ def test_precomputed_summary_uses_same_idle_rule(
     known = _known(root)
     monkeypatch.setattr(policy, "evaluate_application_path", lambda *_args, **_kwargs: None)
 
-    with pytest.raises(WholeTreePolicyRefusal, match="too recently"):
-        assess_application_whole_tree_policy(
-            root,
-            (known,),
-            _evidence(size=64 * _MIB, age_days=1),
-        )
-
-    accepted = assess_application_whole_tree_policy(
+    recent = assess_application_whole_tree_policy(
+        root,
+        (known,),
+        _evidence(size=64 * _MIB, age_days=1),
+    )
+    stale = assess_application_whole_tree_policy(
         root,
         (known,),
         _evidence(size=64 * _MIB, age_days=30),
     )
-    assert accepted is not None
-    assert accepted.logical_bytes == 64 * _MIB
+
+    assert recent is not None
+    assert stale is not None
+    assert recent.logical_bytes == 64 * _MIB
+    assert stale.logical_bytes == 64 * _MIB
