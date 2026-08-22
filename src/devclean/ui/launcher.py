@@ -32,4 +32,4 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-__all__ = ["main"]
+__all__ = ["ProductDevCleanWindow", "main"]
