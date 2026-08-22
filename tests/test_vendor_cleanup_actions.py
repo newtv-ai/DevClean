@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-import devclean.core.vendor_cleanup_actions as vendor_actions
+import devclean.core.pip_maintenance as pip_maintenance
+import devclean.core.uv_maintenance as uv_maintenance
 from devclean.core.pip_maintenance import (
     PipCacheEntry,
     PipCachePurgeResult,
@@ -34,7 +35,7 @@ def test_inventory_promotes_only_recommended_existing_provider_entries(
         path.mkdir()
 
     monkeypatch.setattr(
-        vendor_actions.pip_maintenance,
+        pip_maintenance,
         "inventory_pip_storage",
         lambda _environment=None: PipStorageInventory(
             (
@@ -45,7 +46,7 @@ def test_inventory_promotes_only_recommended_existing_provider_entries(
         ),
     )
     monkeypatch.setattr(
-        vendor_actions.uv_maintenance,
+        uv_maintenance,
         "inventory_uv_storage",
         lambda _environment=None: UvStorageInventory(
             (
@@ -75,9 +76,9 @@ def test_inventory_isolates_optional_provider_failure(
     def fail_pip(_environment: object = None) -> PipStorageInventory:
         raise RuntimeError("broken pip discovery")
 
-    monkeypatch.setattr(vendor_actions.pip_maintenance, "inventory_pip_storage", fail_pip)
+    monkeypatch.setattr(pip_maintenance, "inventory_pip_storage", fail_pip)
     monkeypatch.setattr(
-        vendor_actions.uv_maintenance,
+        uv_maintenance,
         "inventory_uv_storage",
         lambda _environment=None: UvStorageInventory(
             (UvCacheEntry(uv_cache, 700 * _MIB, True, True),)
@@ -98,14 +99,14 @@ def test_candidate_cannot_be_forged_or_modified(
     cache = tmp_path / "pip"
     cache.mkdir()
     monkeypatch.setattr(
-        vendor_actions.pip_maintenance,
+        pip_maintenance,
         "inventory_pip_storage",
         lambda _environment=None: PipStorageInventory(
             (PipCacheEntry(cache, 700 * _MIB, True, True, False),)
         ),
     )
     monkeypatch.setattr(
-        vendor_actions.uv_maintenance,
+        uv_maintenance,
         "inventory_uv_storage",
         lambda _environment=None: UvStorageInventory(()),
     )
@@ -132,14 +133,14 @@ def test_execute_dispatches_pip_candidate_back_to_pip_provider(
     cache = tmp_path / "pip"
     cache.mkdir()
     monkeypatch.setattr(
-        vendor_actions.pip_maintenance,
+        pip_maintenance,
         "inventory_pip_storage",
         lambda _environment=None: PipStorageInventory(
             (PipCacheEntry(cache, 700 * _MIB, True, True, False),)
         ),
     )
     monkeypatch.setattr(
-        vendor_actions.uv_maintenance,
+        uv_maintenance,
         "inventory_uv_storage",
         lambda _environment=None: UvStorageInventory(()),
     )
@@ -156,7 +157,7 @@ def test_execute_dispatches_pip_candidate_back_to_pip_provider(
             output="purged",
         )
 
-    monkeypatch.setattr(vendor_actions.pip_maintenance, "purge_pip_cache", purge)
+    monkeypatch.setattr(pip_maintenance, "purge_pip_cache", purge)
 
     environment = {"PIP_CACHE_DIR": str(cache)}
     result = execute_vendor_cleanup(candidate, environment)
@@ -176,12 +177,12 @@ def test_execute_dispatches_uv_candidate_and_never_raw_deletes(
     payload = cache / "keep.bin"
     payload.write_bytes(b"keep")
     monkeypatch.setattr(
-        vendor_actions.pip_maintenance,
+        pip_maintenance,
         "inventory_pip_storage",
         lambda _environment=None: PipStorageInventory(()),
     )
     monkeypatch.setattr(
-        vendor_actions.uv_maintenance,
+        uv_maintenance,
         "inventory_uv_storage",
         lambda _environment=None: UvStorageInventory(
             (UvCacheEntry(cache, 800 * _MIB, True, True),)
@@ -193,7 +194,7 @@ def test_execute_dispatches_uv_candidate_and_never_raw_deletes(
         assert path == cache
         raise RuntimeError("vendor refused")
 
-    monkeypatch.setattr(vendor_actions.uv_maintenance, "prune_uv_cache", fail_vendor)
+    monkeypatch.setattr(uv_maintenance, "prune_uv_cache", fail_vendor)
 
     with pytest.raises(RuntimeError, match="vendor refused"):
         execute_vendor_cleanup(candidate, {})
