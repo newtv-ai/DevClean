@@ -158,18 +158,19 @@ def test_android_studio_tool_policy_keeps_recent_small_and_in_use_indexes(
     assert running is not None and running.action is PolicyAction.TOOL_KEEP_IN_USE
 
 
-def test_android_studio_user_and_keep_state_stays_protected_in_generic_pipeline(
+def test_android_studio_user_state_is_reviewable_while_keep_state_stays_protected(
     tmp_path: Path,
 ) -> None:
     env, config, system = _layout(tmp_path)
-    for path in (
-        system / "LocalHistory" / "storageData",
-        system / "jcef_cache" / "Cookies",
-        system / "caches" / "names.dat",
-        system / "unknown" / "state.db",
-        config / "options" / "other.xml",
-        config / "plugins" / "plugin.jar",
-    ):
+    cases = {
+        system / "LocalHistory" / "storageData": DecisionOwner.USER,
+        system / "jcef_cache" / "Cookies": DecisionOwner.USER,
+        system / "caches" / "names.dat": DecisionOwner.KEEP,
+        system / "unknown" / "state.db": DecisionOwner.KEEP,
+        config / "options" / "other.xml": DecisionOwner.KEEP,
+        config / "plugins" / "plugin.jar": DecisionOwner.KEEP,
+    }
+    for path, owner in cases.items():
         decision = evaluate_application_path(
             path,
             logical_size=2 * 1024**3,
@@ -179,7 +180,13 @@ def test_android_studio_user_and_keep_state_stays_protected_in_generic_pipeline(
             environment=env,
         )
         assert decision is not None
-        assert decision.action is PolicyAction.KEEP_PROTECTED
+        assert decision.rule.owner is owner
+        expected = (
+            PolicyAction.USER_DECISION
+            if owner is DecisionOwner.USER
+            else PolicyAction.KEEP_PROTECTED
+        )
+        assert decision.action is expected
 
 
 def test_android_studio_whole_tree_authority_is_exact_and_catalogued(
