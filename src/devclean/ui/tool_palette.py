@@ -1,8 +1,5 @@
 """Searchable home for DevClean's source-audited maintenance tools."""
 
-# Chinese UI prose uses fullwidth punctuation.
-# ruff: noqa: RUF001
-
 from __future__ import annotations
 
 import tkinter as tk
@@ -69,7 +66,10 @@ def open_tool_palette(root: tk.Tk, menu: tk.Menu) -> None:
     ).pack(anchor=tk.W)
     tk.Label(
         header,
-        text="主页扫描只负责有明确删除依据的文件。厂商维护、包管理器、模型、Windows 与 WSL 清理都在这里。",
+        text=(
+            "主页扫描只负责有明确删除依据的文件。厂商维护、包管理器、模型、"
+            "Windows 与 WSL 清理都在这里。"
+        ),
         background=_SURFACE,
         foreground=_MUTED,
         font=("Segoe UI", 10),
@@ -108,7 +108,12 @@ def open_tool_palette(root: tk.Tk, menu: tk.Menu) -> None:
 
     shell = tk.Frame(window, background=_BG)
     shell.pack(fill=tk.BOTH, expand=True, padx=18, pady=(0, 18))
-    canvas = tk.Canvas(shell, background=_BG, highlightthickness=0, borderwidth=0)
+    canvas = tk.Canvas(
+        shell,
+        background=_BG,
+        highlightthickness=0,
+        borderwidth=0,
+    )
     scrollbar = tk.Scrollbar(shell, orient=tk.VERTICAL, command=canvas.yview)
     canvas.configure(yscrollcommand=scrollbar.set)
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -117,10 +122,10 @@ def open_tool_palette(root: tk.Tk, menu: tk.Menu) -> None:
     body = tk.Frame(canvas, background=_BG)
     body_window = canvas.create_window((0, 0), window=body, anchor="nw")
 
-    def sync_scroll_region(_event: tk.Event[tk.Misc] | None = None) -> None:
+    def sync_scroll_region(_event: tk.Event | None = None) -> None:
         canvas.configure(scrollregion=canvas.bbox("all"))
 
-    def sync_body_width(event: tk.Event[tk.Misc]) -> None:
+    def sync_body_width(event: tk.Event) -> None:
         canvas.itemconfigure(body_window, width=event.width)
 
     body.bind("<Configure>", sync_scroll_region)
@@ -133,7 +138,9 @@ def open_tool_palette(root: tk.Tk, menu: tk.Menu) -> None:
         for child in body.winfo_children():
             child.destroy()
         needle = query.get().strip().casefold()
-        visible = tuple(tool for tool in tools if not needle or needle in tool.label.casefold())
+        visible = tuple(
+            tool for tool in tools if not needle or needle in tool.label.casefold()
+        )
         if not visible:
             tk.Label(
                 body,
