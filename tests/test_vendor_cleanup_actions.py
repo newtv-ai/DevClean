@@ -36,7 +36,7 @@ from devclean.core.pip_maintenance import (
     PipStorageInventory,
 )
 from devclean.core.pnpm_maintenance import PnpmPruneResult, PnpmStorageInventory, PnpmStoreEntry
-from devclean.core.uv_maintenance import UvCacheEntry, UvPruneResult, UvStorageInventory
+from devclean.core.uv_maintenance import UvCacheEntry, UvStorageInventory
 from devclean.core.vendor_cleanup_actions import (
     VendorCleanupCandidate,
     VendorCleanupKind,
