@@ -16,7 +16,6 @@ import subprocess
 from typing import Any
 
 _INSTALLED = False
-_ORIGINAL_POPEN = subprocess.Popen
 _CREATIONFLAGS_POSITION = 13
 
 
@@ -31,17 +30,18 @@ def _hidden_console_creationflags(creationflags: int) -> int:
     return creationflags | create_no_window
 
 
-def _no_console_popen(*args: Any, **kwargs: Any) -> Any:
-    """Call the real Popen after applying the GUI console-allocation policy."""
+class _NoConsolePopen(subprocess.Popen[Any]):
+    """Popen variant that preserves the class API while hiding console windows."""
 
-    positional = list(args)
-    if len(positional) > _CREATIONFLAGS_POSITION:
-        creationflags = int(positional[_CREATIONFLAGS_POSITION])
-        positional[_CREATIONFLAGS_POSITION] = _hidden_console_creationflags(creationflags)
-    else:
-        creationflags = int(kwargs.get("creationflags", 0))
-        kwargs["creationflags"] = _hidden_console_creationflags(creationflags)
-    return _ORIGINAL_POPEN(*positional, **kwargs)
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        positional = list(args)
+        if len(positional) > _CREATIONFLAGS_POSITION:
+            creationflags = int(positional[_CREATIONFLAGS_POSITION])
+            positional[_CREATIONFLAGS_POSITION] = _hidden_console_creationflags(creationflags)
+        else:
+            creationflags = int(kwargs.get("creationflags", 0))
+            kwargs["creationflags"] = _hidden_console_creationflags(creationflags)
+        super().__init__(*positional, **kwargs)
 
 
 def install_no_console_subprocess_policy() -> None:
@@ -49,13 +49,15 @@ def install_no_console_subprocess_policy() -> None:
 
     ``CREATE_NO_WINDOW`` changes only console allocation. GUI applications such
     as Explorer still open normally, and an explicit CREATE_NEW_CONSOLE or
-    DETACHED_PROCESS request is respected.
+    DETACHED_PROCESS request is respected. Replacing ``Popen`` with a subclass,
+    rather than a wrapper function, also preserves runtime uses such as
+    ``subprocess.Popen[str]`` in type aliases imported by the packaged GUI.
     """
 
     global _INSTALLED
     if os.name != "nt" or _INSTALLED:
         return
-    subprocess.__dict__["Popen"] = _no_console_popen
+    subprocess.__dict__["Popen"] = _NoConsolePopen
     _INSTALLED = True
 
 
