@@ -1,11 +1,11 @@
 """Windows GUI child-process policy.
 
-The packaged DevClean executable uses the Windows GUI subsystem.  Console tools
+The packaged DevClean executable uses the Windows GUI subsystem. Console tools
 started from that process would otherwise be allowed to allocate a visible
-console window, which produces the distracting cmd/PowerShell flashes users see
-while application roots are being discovered.
+console window, producing the distracting cmd/PowerShell flashes seen while
+source-audited application roots are discovered.
 
-This module is intentionally opt-in.  The CLI and tests keep normal subprocess
+This module is intentionally opt-in. The CLI and tests keep normal subprocess
 semantics; only the GUI entry point installs the policy.
 """
 
@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import os
 import subprocess
-from typing import Any
+from typing import Any, cast
 
 _INSTALLED = False
 _ORIGINAL_POPEN = subprocess.Popen
+_CREATIONFLAGS_POSITION = 13
 
 
 def _hidden_console_creationflags(creationflags: int) -> int:
@@ -30,83 +31,31 @@ def _hidden_console_creationflags(creationflags: int) -> int:
     return creationflags | create_no_window
 
 
+def _no_console_popen(*args: Any, **kwargs: Any) -> Any:
+    """Call the real Popen after applying the GUI console-allocation policy."""
+
+    positional = list(args)
+    if len(positional) > _CREATIONFLAGS_POSITION:
+        creationflags = int(positional[_CREATIONFLAGS_POSITION])
+        positional[_CREATIONFLAGS_POSITION] = _hidden_console_creationflags(creationflags)
+    else:
+        creationflags = int(kwargs.get("creationflags", 0))
+        kwargs["creationflags"] = _hidden_console_creationflags(creationflags)
+    return _ORIGINAL_POPEN(*positional, **kwargs)
+
+
 def install_no_console_subprocess_policy() -> None:
     """Prevent console child processes from flashing windows in the GUI build.
 
-    ``CREATE_NO_WINDOW`` changes only console allocation.  GUI applications such
+    ``CREATE_NO_WINDOW`` changes only console allocation. GUI applications such
     as Explorer still open normally, and an explicit CREATE_NEW_CONSOLE or
     DETACHED_PROCESS request is respected.
     """
 
-    global _INSTALLED  # noqa: PLW0603 - one process-wide GUI policy is intentional
+    global _INSTALLED
     if os.name != "nt" or _INSTALLED:
         return
-
-    original = _ORIGINAL_POPEN
-
-    class _NoConsolePopen(original):  # type: ignore[misc,valid-type]
-        _devclean_no_console_policy = True
-
-        def __init__(
-            self,
-            args: Any,
-            bufsize: int = -1,
-            executable: str | bytes | os.PathLike[str] | os.PathLike[bytes] | None = None,
-            stdin: Any = None,
-            stdout: Any = None,
-            stderr: Any = None,
-            preexec_fn: Any = None,
-            close_fds: bool = True,
-            shell: bool = False,
-            cwd: str | bytes | os.PathLike[str] | os.PathLike[bytes] | None = None,
-            env: Any = None,
-            universal_newlines: bool | None = None,
-            startupinfo: Any = None,
-            creationflags: int = 0,
-            restore_signals: bool = True,
-            start_new_session: bool = False,
-            pass_fds: tuple[int, ...] = (),
-            *,
-            user: str | int | None = None,
-            group: str | int | None = None,
-            extra_groups: Any = None,
-            encoding: str | None = None,
-            errors: str | None = None,
-            text: bool | None = None,
-            umask: int = -1,
-            pipesize: int = -1,
-            process_group: int | None = None,
-        ) -> None:
-            super().__init__(
-                args,
-                bufsize,
-                executable,
-                stdin,
-                stdout,
-                stderr,
-                preexec_fn,
-                close_fds,
-                shell,
-                cwd,
-                env,
-                universal_newlines,
-                startupinfo,
-                _hidden_console_creationflags(creationflags),
-                restore_signals,
-                start_new_session,
-                pass_fds,
-                user=user,
-                group=group,
-                extra_groups=extra_groups,
-                encoding=encoding,
-                errors=errors,
-                text=text,
-                umask=umask,
-                pipesize=pipesize,
-                process_group=process_group,
-            )
-
-    subprocess.Popen = _NoConsolePopen  # type: ignore[assignment]
+    subprocess.Popen = cast(Any, _no_console_popen)
     _INSTALLED = True
 
 
