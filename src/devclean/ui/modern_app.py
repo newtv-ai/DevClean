@@ -27,6 +27,7 @@ from devclean.core.cleanup_catalog import (
     discover_known_cleanup_roots,
 )
 from devclean.core.user_rules import RuleConfigError, UserRules, load_rules
+from devclean.platform.windows.volumes import fixed_volume_roots
 from devclean.scanner import CancellationToken
 from devclean.ui import app
 
@@ -301,7 +302,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
             style="HeroSub.TLabel",
         ).pack(side=tk.LEFT, padx=(0, 7))
         preferred = app._system_drive()
-        for drive in reversed(app.fixed_volume_roots()):
+        for drive in reversed(fixed_volume_roots()):
             state = tk.BooleanVar(value=drive == preferred)
             self._drive_vars[drive] = state
             ttk.Checkbutton(
