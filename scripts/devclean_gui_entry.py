@@ -6,6 +6,11 @@ from devclean.platform.windows.subprocess_policy import install_no_console_subpr
 # console vendor tools (PowerShell, npm.cmd, etc.) during GUI startup/scan setup.
 install_no_console_subprocess_policy()
 
-from devclean.ui.launcher import main  # noqa: E402
+from devclean.ui import launcher  # noqa: E402
+from devclean.ui.product_app import ProductDevCleanWindow  # noqa: E402
 
-raise SystemExit(main())
+# Keep the launcher's existing advanced menus, but use the product window that
+# adds visible scan timing without changing rule/AI classification semantics.
+vars(launcher)["ModernDevCleanWindow"] = ProductDevCleanWindow
+
+raise SystemExit(launcher.main())

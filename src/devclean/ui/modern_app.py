@@ -1,9 +1,9 @@
-"""One-click desktop shell for DevClean.
+"""Task-oriented desktop shell for DevClean.
 
-The scanner and mutation safety boundary stay in :mod:`devclean.ui.app`. This
-module deliberately keeps the normal workflow small: choose drives, scan, then
-clean the audited regenerable caches. Advanced/user-owned storage remains out
-of the automatic path instead of becoming another list the user must manage.
+The safety and mutation workflow stays in :mod:`devclean.ui.app`. This module
+changes presentation and the default scan plan: the home screen starts in an
+actionable smart scan that visits source-audited whole-tree cleanup roots
+instead of walking the entire user profile. A deep scan remains one click away.
 """
 
 # Chinese UI prose uses fullwidth punctuation.
@@ -17,27 +17,22 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from tkinter import messagebox, ttk
+from typing import Any
 from uuid import uuid4
 
-from devclean.core.application_cleanup import (
-    DecisionOwner,
-    RebuildCost,
-    application_process_running,
-    clear_process_cache,
-)
+from devclean.core.application_cleanup import DecisionOwner
 from devclean.core.cleanup_catalog import (
     CleanupPolicy,
     KnownCleanupRoot,
     discover_known_cleanup_roots,
 )
-from devclean.core.cleanup_journal import ActionState
-from devclean.core.postscan_cleanup import CleanupExecutionResult
-from devclean.core.triage import TriageSession
 from devclean.core.user_rules import RuleConfigError, UserRules, load_rules
 from devclean.platform.windows.volumes import fixed_volume_roots
 from devclean.scanner import CancellationToken
 from devclean.ui import app
 
+# Neutral Windows-style palette. Semantic colors are reserved for meaning:
+# blue = primary action, green = safe cleanup, amber = user review, red = danger.
 _BG = "#F5F7FA"
 _SURFACE = "#FFFFFF"
 _SURFACE_ALT = "#F8FAFC"
@@ -47,17 +42,22 @@ _BORDER = "#E5E7EB"
 _BORDER_STRONG = "#D1D5DB"
 _TEXT = "#1F2937"
 _MUTED = "#6B7280"
+_FAINT = "#9CA3AF"
 _PRIMARY = "#2563EB"
 _PRIMARY_ACTIVE = "#1D4ED8"
 _PRIMARY_SOFT = "#EAF1FF"
 _SAFE = "#16A34A"
 _SAFE_ACTIVE = "#15803D"
+_SAFE_SOFT = "#ECFDF3"
+_REVIEW = "#D97706"
+_REVIEW_SOFT = "#FFF7E8"
 _DANGER = "#DC2626"
+_DANGER_ACTIVE = "#B91C1C"
 _DISABLED = "#C7CDD6"
 
 
 def _is_actionable_whole_tree_root(root: KnownCleanupRoot) -> bool:
-    """Return whether the root has audited whole-tree delete authority."""
+    """Return whether the root already carries exact audited delete authority."""
 
     rule = root.application_rule
     return (
@@ -66,10 +66,6 @@ def _is_actionable_whole_tree_root(root: KnownCleanupRoot) -> bool:
         and rule is not None
         and rule.owner is DecisionOwner.TOOL
         and rule.allow_whole_tree
-        # Expensive indexes/models are not one-click junk. Deep/advanced tools
-        # may still expose them, but the normal cleaner must not create a large
-        # rebuild just to make its reclaimed-space number look bigger.
-        and rule.rebuild_cost is not RebuildCost.HIGH
     )
 
 
@@ -79,59 +75,39 @@ def ordered_drive_roots(roots: Sequence[Path]) -> tuple[Path, ...]:
     return tuple(sorted(roots, key=lambda root: str(root).casefold()))
 
 
-def automatic_cleanup_roots(
-    known_roots: Sequence[KnownCleanupRoot],
-) -> tuple[KnownCleanupRoot, ...]:
-    """Return audited roots that can actually be cleaned in the current session.
-
-    A cache whose owning application must be closed is not advertised as
-    "安全可清理" while that application is running. This prevents the old UX in
-    which dozens of visible rows were guaranteed to fail during cleanup.
-    """
-
-    clear_process_cache()
-    running_by_app: dict[str, bool] = {}
-    ready: list[KnownCleanupRoot] = []
-    for root in known_roots:
-        if not _is_actionable_whole_tree_root(root):
-            continue
-        rule = root.application_rule
-        assert rule is not None
-        if rule.requires_process_closed:
-            running = running_by_app.get(rule.app_id)
-            if running is None:
-                running = application_process_running(rule.app_id)
-                running_by_app[rule.app_id] = running
-            if running:
-                continue
-        ready.append(root)
-    return tuple(ready)
-
-
 def smart_scan_targets(
     known_roots: Sequence[KnownCleanupRoot],
     drives: Sequence[Path],
     rules: UserRules,
 ) -> tuple[Path, ...]:
-    """Plan the normal fast scan without widening cleanup authority."""
+    """Plan the fast home scan without widening cleanup authority.
 
+    Smart mode deliberately excludes the broad USERPROFILE traversal and
+    report-only inventory roots. Explicit user additional paths still flow
+    through the original target planner. Deep mode remains unchanged.
+    """
+
+    actionable = tuple(
+        root for root in known_roots if _is_actionable_whole_tree_root(root)
+    )
     smart_rules = UserRules(
         scan=replace(rules.scan, include_user_profile=False),
         delete=rules.delete,
         keep=rules.keep,
     )
-    return app.scan_targets(automatic_cleanup_roots(known_roots), drives, smart_rules)
+    return app.scan_targets(actionable, drives, smart_rules)
 
 
 class ModernDevCleanWindow(app.DevCleanWindow):
-    """Small one-click shell around the fail-closed cleanup engine."""
+    """Modern shell around the existing fail-closed scan/review/cleanup engine."""
 
     def __init__(self, root: tk.Tk) -> None:
         self._scan_mode = tk.StringVar(master=root, value="smart")
-        self._modern_scan_in_progress = False
+        self._mode_hint = tk.StringVar(master=root)
         super().__init__(root)
-        root.geometry("1180x760")
-        root.minsize(960, 620)
+        root.geometry("1280x800")
+        root.minsize(1060, 680)
+        self._sync_mode_hint()
 
     def _configure_style(self) -> None:
         style = ttk.Style(self._root)
@@ -158,7 +134,25 @@ class ModernDevCleanWindow(app.DevCleanWindow):
             "Section.TLabel",
             background=_SURFACE,
             foreground=_TEXT,
-            font=("Segoe UI Semibold", 10),
+            font=("Segoe UI Semibold", 11),
+        )
+        style.configure(
+            "SectionOnPage.TLabel",
+            background=_BG,
+            foreground=_TEXT,
+            font=("Segoe UI Semibold", 13),
+        )
+        style.configure(
+            "Body.TLabel",
+            background=_SURFACE,
+            foreground=_MUTED,
+            font=("Segoe UI", 9),
+        )
+        style.configure(
+            "BodyOnPage.TLabel",
+            background=_BG,
+            foreground=_MUTED,
+            font=("Segoe UI", 9),
         )
         style.configure(
             "Status.TLabel",
@@ -169,11 +163,23 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         style.configure(
             "Metric.TLabel",
             background=_SURFACE,
-            foreground=_SAFE,
-            font=("Segoe UI Semibold", 26),
+            foreground=_TEXT,
+            font=("Segoe UI Semibold", 24),
         )
         style.configure(
-            "Body.TLabel",
+            "MetricSafe.TLabel",
+            background=_SURFACE,
+            foreground=_SAFE,
+            font=("Segoe UI Semibold", 24),
+        )
+        style.configure(
+            "MetricReview.TLabel",
+            background=_SURFACE,
+            foreground=_REVIEW,
+            font=("Segoe UI Semibold", 24),
+        )
+        style.configure(
+            "ModeHint.TLabel",
             background=_SURFACE,
             foreground=_MUTED,
             font=("Segoe UI", 9),
@@ -188,7 +194,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
             _CONTROL_HOVER,
             foreground=_TEXT,
         )
-        self._button_style(style, "Danger", _DANGER, "#B91C1C")
+        self._button_style(style, "Danger", _DANGER, _DANGER_ACTIVE)
 
         style.configure(
             "Modern.Treeview",
@@ -196,7 +202,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
             fieldbackground=_SURFACE,
             foreground=_TEXT,
             borderwidth=0,
-            rowheight=32,
+            rowheight=31,
             font=("Segoe UI", 9),
         )
         style.configure(
@@ -207,6 +213,10 @@ class ModernDevCleanWindow(app.DevCleanWindow):
             borderwidth=0,
             padding=(10, 8),
             font=("Segoe UI Semibold", 9),
+        )
+        style.map(
+            "Modern.Treeview.Heading",
+            background=[("active", "#EEF2F7")],
         )
         style.layout("Modern.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
         style.configure(
@@ -254,6 +264,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
 
     def _build(self) -> None:
         self._configure_style()
+
         page = ttk.Frame(
             self._root,
             style="App.TFrame",
@@ -276,17 +287,25 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         ttk.Label(brand, text="DevClean", style="Title.TLabel").pack(anchor=tk.W)
         ttk.Label(
             brand,
-            text="扫描可再生成的缓存与开发产物，然后一键释放空间",
+            text="开发环境存储清理 · 只删除有明确依据的项目",
             style="Subtitle.TLabel",
         ).pack(anchor=tk.W, pady=(2, 0))
 
+        header_actions = ttk.Frame(header, style="App.TFrame")
+        header_actions.grid(row=0, column=1, sticky="e")
+        ttk.Button(
+            header_actions,
+            text="工具中心",
+            style="Quiet.TButton",
+            command=self._open_tools,
+        ).pack(side=tk.LEFT, padx=(0, 8))
         self._rule_button = ttk.Button(
-            header,
-            text="设置",
+            header_actions,
+            text="规则设置",
             style="Quiet.TButton",
             command=self._edit_rules,
         )
-        self._rule_button.grid(row=0, column=1, sticky="e")
+        self._rule_button.pack(side=tk.LEFT)
 
     def _build_scan_controls(self, page: ttk.Frame) -> None:
         panel = self._card(page, padx=18, pady=15)
@@ -321,29 +340,59 @@ class ModernDevCleanWindow(app.DevCleanWindow):
                 activeforeground=_PRIMARY,
                 cursor="hand2",
                 font=("Segoe UI Semibold", 9),
-                padx=13,
+                padx=12,
                 pady=6,
             )
             chip.pack(side=tk.LEFT, padx=(0, 7))
 
+        mode_box = ttk.Frame(panel, style="Surface.TFrame")
+        mode_box.grid(row=0, column=1, sticky="w", padx=(28, 26))
+        ttk.Label(mode_box, text="扫描方式", style="Section.TLabel").pack(anchor=tk.W)
+        mode_row = ttk.Frame(mode_box, style="Surface.TFrame")
+        mode_row.pack(anchor=tk.W, pady=(8, 0))
+        for value, label in (("smart", "智能扫描"), ("deep", "深度扫描")):
+            radio = tk.Radiobutton(
+                mode_row,
+                text=label,
+                variable=self._scan_mode,
+                value=value,
+                command=self._sync_mode_hint,
+                indicatoron=False,
+                relief=tk.FLAT,
+                offrelief=tk.FLAT,
+                overrelief=tk.FLAT,
+                borderwidth=0,
+                highlightthickness=1,
+                highlightbackground=_BORDER_STRONG,
+                highlightcolor=_PRIMARY,
+                background=_CONTROL,
+                activebackground=_CONTROL_HOVER,
+                selectcolor=_PRIMARY_SOFT,
+                foreground=_TEXT,
+                activeforeground=_PRIMARY,
+                cursor="hand2",
+                font=("Segoe UI Semibold", 9),
+                padx=12,
+                pady=6,
+            )
+            radio.pack(side=tk.LEFT, padx=(0, 7))
+
         action_box = ttk.Frame(panel, style="Surface.TFrame")
-        action_box.grid(row=0, column=1, sticky="e")
+        action_box.grid(row=0, column=2, sticky="e")
+        ttk.Label(action_box, text="开始", style="Section.TLabel").pack(anchor=tk.E)
         self._rescan = ttk.Button(
             action_box,
-            text="扫描",
+            text="开始扫描",
             style="Primary.TButton",
             command=self._start_scan,
         )
-        self._rescan.pack(anchor=tk.E)
+        self._rescan.pack(anchor=tk.E, pady=(8, 0))
 
         ttk.Label(
             panel,
-            text=(
-                "自动检查浏览器、IDE、AI 工具和包管理器的可再生成缓存；"
-                "正在运行的应用和高重建成本内容会自动跳过。"
-            ),
-            style="Body.TLabel",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(11, 0))
+            textvariable=self._mode_hint,
+            style="ModeHint.TLabel",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(11, 0))
 
     def _build_status(self, page: ttk.Frame) -> None:
         self._progress = ttk.Progressbar(
@@ -352,6 +401,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
             mode="indeterminate",
         )
         self._progress.pack(fill=tk.X, pady=(11, 0))
+
         status_shell = ttk.Frame(page, style="Alt.TFrame", padding=(12, 8))
         status_shell.pack(fill=tk.X, pady=(5, 14))
         ttk.Label(
@@ -361,182 +411,205 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         ).pack(anchor=tk.W)
 
     def _build_results(self, page: ttk.Frame) -> None:
-        shell = self._card(page, padx=0, pady=0)
-        shell.pack(fill=tk.BOTH, expand=True)
+        result_title = ttk.Frame(page, style="App.TFrame")
+        result_title.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(
+            result_title,
+            text="扫描结果",
+            style="SectionOnPage.TLabel",
+        ).pack(side=tk.LEFT)
+        ttk.Label(
+            result_title,
+            text="结果会随扫描持续更新；双击路径可在资源管理器中确认。",
+            style="BodyOnPage.TLabel",
+        ).pack(side=tk.LEFT, padx=(10, 0), pady=(3, 0))
+
+        buckets = ttk.Frame(page, style="App.TFrame")
+        buckets.pack(fill=tk.BOTH, expand=True)
+        buckets.columnconfigure(0, weight=11, uniform="results")
+        buckets.columnconfigure(1, weight=9, uniform="results")
+        buckets.rowconfigure(0, weight=1)
+
+        self._deletable_tree = self._build_result_bucket(
+            buckets,
+            column=0,
+            accent=_SAFE,
+            accent_soft=_SAFE_SOFT,
+            title="安全可清理",
+            hint="已有明确本地证据，并会在执行前再次核验。默认勾选。",
+            total=self._deletable_total,
+            metric_style="MetricSafe.TLabel",
+            buttons=(
+                ("all", "全选", "Quiet", lambda: self._check_all(True)),
+                ("none", "清空选择", "Quiet", lambda: self._check_all(False)),
+                (
+                    "recycle",
+                    "移到回收站",
+                    "Safe",
+                    lambda: self._delete(irreversible=False),
+                ),
+                (
+                    "purge",
+                    "彻底删除",
+                    "Danger",
+                    lambda: self._delete(irreversible=True),
+                ),
+            ),
+            checkable=True,
+        )
+        self._unsure_tree = self._build_result_bucket(
+            buckets,
+            column=1,
+            accent=_REVIEW,
+            accent_soft=_REVIEW_SOFT,
+            title="需要你决定",
+            hint="技术含义明确，但保留与否取决于你的用途；拿不准可交给 AI 辅助判断。",
+            total=self._unsure_total,
+            metric_style="MetricReview.TLabel",
+            buttons=(
+                ("export", "交给 AI", "Quiet", self._export_for_ai),
+                ("import", "导入结果", "Quiet", self._import_from_ai),
+                ("decide", "我来决定", "Quiet", self._decide_ai_unsure),
+                ("forget", "清空判决", "Quiet", self._forget_verdicts),
+            ),
+        )
+        self._unsure_tree.bind(
+            "<<TreeviewSelect>>",
+            lambda _event: self._sync_buttons(),
+        )
+
+    def _open_tools(self) -> None:
+        self._root.event_generate("<<DevCleanOpenTools>>", when="tail")
+
+    def _build_result_bucket(
+        self,
+        parent: ttk.Frame,
+        *,
+        column: int,
+        accent: str,
+        accent_soft: str,
+        title: str,
+        hint: str,
+        total: tk.StringVar,
+        metric_style: str,
+        buttons: tuple[tuple[str, str, str, Any], ...],
+        checkable: bool = False,
+    ) -> ttk.Treeview:
+        shell = self._card(parent, padx=0, pady=0)
+        shell.grid(
+            row=0,
+            column=column,
+            sticky="nsew",
+            padx=(0, 7) if column == 0 else (7, 0),
+        )
         shell.rowconfigure(1, weight=1)
         shell.columnconfigure(0, weight=1)
 
-        head = tk.Frame(shell, background=_SURFACE, padx=18, pady=15)
+        head = tk.Frame(shell, background=_SURFACE, padx=16, pady=14)
         head.grid(row=0, column=0, sticky="ew")
         head.columnconfigure(0, weight=1)
+
+        title_line = tk.Frame(head, background=_SURFACE)
+        title_line.grid(row=0, column=0, sticky="w")
+        badge = tk.Label(
+            title_line,
+            text="●",
+            background=accent_soft,
+            foreground=accent,
+            font=("Segoe UI", 9),
+            padx=7,
+            pady=2,
+        )
+        badge.pack(side=tk.LEFT, padx=(0, 8))
         tk.Label(
-            head,
-            text="可清理空间",
+            title_line,
+            text=title,
             background=_SURFACE,
             foreground=_TEXT,
-            font=("Segoe UI Semibold", 12),
-        ).grid(row=0, column=0, sticky="w")
+            font=("Segoe UI Semibold", 11),
+        ).pack(side=tk.LEFT)
+
         ttk.Label(
             head,
-            textvariable=self._deletable_total,
-            style="Metric.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(5, 1))
+            textvariable=total,
+            style=metric_style,
+        ).grid(row=1, column=0, sticky="w", pady=(8, 2))
         tk.Label(
             head,
-            text="默认全部选择。这里仅显示当前可以直接清理的可再生成内容。",
+            text=hint,
             background=_SURFACE,
             foreground=_MUTED,
             font=("Segoe UI", 9),
-        ).grid(row=2, column=0, sticky="w")
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=520,
+        ).grid(row=2, column=0, sticky="ew")
 
-        holder = ttk.Frame(shell, style="Surface.TFrame", padding=(14, 0, 14, 0))
+        separator = tk.Frame(shell, background=_BORDER, height=1)
+        separator.grid(row=0, column=0, sticky="sew")
+
+        holder = ttk.Frame(
+            shell,
+            style="Surface.TFrame",
+            padding=(14, 2, 14, 0),
+        )
         holder.grid(row=1, column=0, sticky="nsew")
         holder.rowconfigure(0, weight=1)
         holder.columnconfigure(0, weight=1)
-        self._deletable_tree = ttk.Treeview(
+        tree = ttk.Treeview(
             holder,
             columns=("check", "size", "path"),
             show="headings",
             style="Modern.Treeview",
-            height=16,
+            height=15,
         )
-        self._deletable_tree.heading("check", text="", anchor=tk.CENTER)
-        self._deletable_tree.heading("size", text="大小", anchor=tk.E)
-        self._deletable_tree.heading("path", text="位置", anchor=tk.W)
-        self._deletable_tree.column("check", width=40, anchor=tk.CENTER, stretch=False)
-        self._deletable_tree.column("size", width=105, anchor=tk.E, stretch=False)
-        self._deletable_tree.column(
+        tree.heading("check", text="", anchor=tk.CENTER)
+        tree.heading("size", text="大小", anchor=tk.E)
+        tree.heading("path", text="位置", anchor=tk.W)
+        tree.column("check", width=38, anchor=tk.CENTER, stretch=False)
+        tree.column("size", width=96, anchor=tk.E, stretch=False)
+        tree.column(
             "path",
-            width=760,
-            minwidth=360,
+            width=440,
+            minwidth=220,
             anchor=tk.W,
             stretch=True,
         )
-        self._deletable_tree.tag_configure("odd", background="#FAFBFC")
-        self._deletable_tree.grid(row=0, column=0, sticky="nsew")
-        vertical = ttk.Scrollbar(
-            holder,
-            orient=tk.VERTICAL,
-            command=self._deletable_tree.yview,
-        )
-        self._deletable_tree.configure(yscrollcommand=vertical.set)
+        tree.tag_configure("odd", background="#FAFBFC")
+        tree.grid(row=0, column=0, sticky="nsew")
+        vertical = ttk.Scrollbar(holder, orient=tk.VERTICAL, command=tree.yview)
+        tree.configure(yscrollcommand=vertical.set)
         vertical.grid(row=0, column=1, sticky="ns")
-        self._deletable_tree.bind("<Button-1>", self._on_row_click)
-        self._deletable_tree.bind("<Double-1>", self._on_row_double_click)
+        if checkable:
+            tree.bind("<Button-1>", self._on_row_click)
+        tree.bind("<Double-1>", self._on_row_double_click)
 
-        # The core still tracks ambiguous items for fail-closed classification,
-        # but the normal cleaner does not ask the user to become a cache expert.
-        # Keep a non-rendered tree so the inherited event pipeline remains the
-        # single source of truth; ambiguous rows are simply protected.
-        self._unsure_tree = ttk.Treeview(
-            page,
-            columns=("check", "size", "path"),
-            show="headings",
+        actions = ttk.Frame(
+            shell,
+            style="Surface.TFrame",
+            padding=(14, 12, 6, 14),
         )
-
-        actions = ttk.Frame(shell, style="Surface.TFrame", padding=(14, 12, 14, 14))
         actions.grid(row=2, column=0, sticky="ew")
-        self._buttons["all"] = ttk.Button(
-            actions,
-            text="全选",
-            style="Quiet.TButton",
-            command=lambda: self._check_all(True),
-        )
-        self._buttons["all"].pack(side=tk.LEFT, padx=(0, 8))
-        self._buttons["none"] = ttk.Button(
-            actions,
-            text="取消选择",
-            style="Quiet.TButton",
-            command=lambda: self._check_all(False),
-        )
-        self._buttons["none"].pack(side=tk.LEFT)
-        self._buttons["purge"] = ttk.Button(
-            actions,
-            text="立即清理",
-            style="Safe.TButton",
-            command=self._confirm_and_clean,
-        )
-        self._buttons["purge"].pack(side=tk.RIGHT)
-
-        tk.Label(
-            actions,
-            text="无法自动证明安全的内容会保留，不会要求你逐项判断。",
-            background=_SURFACE,
-            foreground=_MUTED,
-            font=("Segoe UI", 9),
-        ).pack(side=tk.RIGHT, padx=(0, 14))
-
-    def _confirm_and_clean(self) -> None:
-        items = self._selected_items()
-        if not items:
-            messagebox.showinfo("DevClean", "没有选择要清理的项目。")
-            return
-        total = sum(self._size_of(item) for item in items)
-        if not messagebox.askyesno(
-            "清理缓存",
-            f"将永久清理 {len(items):,} 项可再生成内容，预计释放 "
-            f"{app._format_bytes(total)}。\n\n继续？",
-        ):
-            return
-        self._delete(irreversible=True)
-
-    def _publish(self, session: TriageSession) -> None:
-        super()._publish(session)
-        if not self._modern_scan_in_progress:
-            return
-        self._modern_scan_in_progress = False
-
-        def finish_message() -> None:
-            count = len(self._deletable)
-            if count:
-                self._status.set(
-                    f"扫描完成：找到 {count:,} 项当前可直接清理的内容。"
-                    "正在使用或不适合自动处理的内容已跳过。"
-                )
-            else:
-                self._status.set(
-                    "扫描完成：当前没有可直接清理的内容。"
-                    "正在使用的应用缓存和高重建成本内容已自动跳过。"
-                )
-
-        self._root.after_idle(finish_message)
-
-    def _report_deletion(
-        self,
-        results: tuple[CleanupExecutionResult, ...],
-        reasons: dict[str, int],
-    ) -> None:
-        finished = 0
-        failed = 0
-        freed = 0
-        for result in results:
-            finished += sum(
-                state in {ActionState.PURGED, ActionState.RECYCLED}
-                for _action, state in result.action_states
+        for key, label, kind, command in buttons:
+            button = ttk.Button(
+                actions,
+                text=label,
+                style=f"{kind}.TButton",
+                command=command,
             )
-            failed += sum(
-                state not in {ActionState.PURGED, ActionState.RECYCLED}
-                for _action, state in result.action_states
+            button.pack(side=tk.LEFT, padx=(0, 8))
+            self._buttons[key] = button
+        return tree
+
+    def _sync_mode_hint(self) -> None:
+        if self._scan_mode.get() == "deep":
+            self._mode_hint.set(
+                "深度扫描会遍历用户目录并做完整分类，适合排查；文件很多时会明显更慢。"
             )
-            freed += result.purged_logical_bytes
-        failed += sum(reasons.values())
-
-        parts = [f"已清理 {finished:,} 项"]
-        if freed:
-            parts.append(f"释放 {app._format_bytes(freed)}")
-        if failed:
-            parts.append(f"{failed:,} 项因正在变化或不再满足条件而自动跳过")
-        self._status.set("；".join(parts) + "。正在自动刷新结果…")
-
-        # Do not leave stale rows behind and tell the user to press Scan again.
-        # A cleaner should reconcile its own result automatically.
-        self._busy = "refreshing"
-        self._sync_buttons()
-        self._root.after(350, self._refresh_after_cleanup)
-
-    def _refresh_after_cleanup(self) -> None:
-        self._busy = None
-        self._start_scan()
+        else:
+            self._mode_hint.set(
+                "推荐：智能扫描只检查已有明确清理依据的位置，速度更快，也更适合日常使用。"
+            )
 
     def _start_scan(self) -> None:
         try:
@@ -544,7 +617,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         except (OSError, RuleConfigError, UnicodeError) as error:
             messagebox.showerror(
                 "规则文件有误",
-                f"{error}\n\n请点击“设置”修正后再扫描。",
+                f"{error}\n\n请点击“规则设置”修正后再扫描。",
             )
             return
         drives = tuple(
@@ -570,25 +643,33 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         self._deletable_total.set("—")
         self._unsure_total.set("—")
         self._busy = "scanning"
-        self._modern_scan_in_progress = True
         self._sync_buttons()
         self._progress.start(60)
-        self._status.set("正在扫描可直接清理的缓存…")
+
+        mode = self._scan_mode.get()
+        preparing = "正在准备智能扫描…" if mode == "smart" else "正在准备深度扫描…"
+        self._status.set(preparing)
         self._scan_rules = self._rules
 
+        # Root discovery can call installed vendor CLIs. The GUI entry point
+        # suppresses console allocation for those console child processes.
         self._known_roots = discover_known_cleanup_roots(self._scan_rules.scan)
-        roots = smart_scan_targets(self._known_roots, drives, self._scan_rules)
+        roots = (
+            smart_scan_targets(self._known_roots, drives, self._scan_rules)
+            if mode == "smart"
+            else app.scan_targets(self._known_roots, drives, self._scan_rules)
+        )
         if not roots:
             self._progress.stop()
             self._busy = None
-            self._modern_scan_in_progress = False
             self._sync_buttons()
-            self._status.set(
-                "当前没有可直接清理的位置；正在运行的应用和高重建成本内容已自动跳过。"
-            )
+            self._status.set("所选磁盘上没有符合当前扫描模式的可清理位置。")
             return
 
-        self._status.set(f"正在扫描… 已找到 {len(roots):,} 个可清理位置。")
+        mode_name = "智能" if mode == "smart" else "深度"
+        self._status.set(
+            f"正在{mode_name}扫描… 已规划 {len(roots):,} 个扫描根。"
+        )
         threading.Thread(
             target=self._scan_worker,
             args=(
@@ -602,9 +683,4 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         ).start()
 
 
-__all__ = [
-    "ModernDevCleanWindow",
-    "automatic_cleanup_roots",
-    "ordered_drive_roots",
-    "smart_scan_targets",
-]
+__all__ = ["ModernDevCleanWindow", "ordered_drive_roots", "smart_scan_targets"]

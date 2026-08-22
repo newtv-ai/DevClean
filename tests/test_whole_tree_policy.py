@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -31,7 +30,6 @@ def _rule(
     *,
     min_reclaim: int = 16 * _MIB,
     idle_days: float = 30,
-    rebuild_cost: RebuildCost = RebuildCost.LOW,
 ) -> ApplicationCleanupRule:
     return ApplicationCleanupRule(
         rule_id="test-browser-cache",
@@ -41,7 +39,7 @@ def _rule(
         match_kind=MatchKind.PREFIX,
         owner=DecisionOwner.TOOL,
         last_use=LastUseStrategy.FILE_MTIME,
-        rebuild_cost=rebuild_cost,
+        rebuild_cost=RebuildCost.LOW,
         idle_days=idle_days,
         min_reclaim_bytes=min_reclaim,
         requires_process_closed=True,
@@ -88,7 +86,7 @@ def _fake_scan(records: tuple[ScanRecord, ...]) -> object:
     return lambda *_args, **_kwargs: iter(records)
 
 
-def test_recent_low_cost_cache_remains_cleanable(
+def test_recent_child_blocks_whole_tree_even_when_root_directory_is_old(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -96,31 +94,6 @@ def test_recent_low_cost_cache_remains_cleanable(
 
     root = tmp_path / "Cache"
     rule = _rule()
-    monkeypatch.setattr(
-        policy,
-        "scan_roots",
-        _fake_scan(_records(root, size=64 * _MIB, age_days=1)),
-    )
-    monkeypatch.setattr(
-        policy,
-        "evaluate_application_path",
-        lambda *_args, **_kwargs: None,
-    )
-
-    evidence = require_application_whole_tree_policy(root, (_known(root, rule),))
-
-    assert evidence is not None
-    assert evidence.logical_bytes == 64 * _MIB
-
-
-def test_recent_high_cost_tree_still_requires_idle_time(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import devclean.core.whole_tree_policy as policy
-
-    root = tmp_path / "Index"
-    rule = _rule(rebuild_cost=RebuildCost.HIGH)
     monkeypatch.setattr(
         policy,
         "scan_roots",
@@ -232,7 +205,22 @@ def test_non_mtime_rule_without_native_evaluator_fails_closed(
     import devclean.core.whole_tree_policy as policy
 
     root = tmp_path / "Cache"
-    rule = replace(_rule(), last_use=LastUseStrategy.APP_ACTIVITY)
+    rule = _rule()
+    rule = ApplicationCleanupRule(
+        rule_id=rule.rule_id,
+        app_id=rule.app_id,
+        root_key=rule.root_key,
+        relative_pattern=rule.relative_pattern,
+        match_kind=rule.match_kind,
+        owner=rule.owner,
+        last_use=LastUseStrategy.APP_ACTIVITY,
+        rebuild_cost=rule.rebuild_cost,
+        idle_days=rule.idle_days,
+        min_reclaim_bytes=rule.min_reclaim_bytes,
+        requires_process_closed=rule.requires_process_closed,
+        allow_whole_tree=rule.allow_whole_tree,
+        label=rule.label,
+    )
     monkeypatch.setattr(
         policy,
         "scan_roots",

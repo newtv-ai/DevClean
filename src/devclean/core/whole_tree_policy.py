@@ -1,10 +1,9 @@
 """Fresh semantic gate for application-owned whole-directory cleanup.
 
 Catalog discovery grants *where* a whole tree may be considered. This module
-re-checks *whether it is worth removing now*. Cheap and moderate rebuild caches
-are allowed to clean immediately once their owning process is closed; expensive
-indexes/models retain an idle-time floor so the one-click cleaner does not trade
-space for a large rebuild cost.
+re-checks *whether it is worth removing now*. The same policy evaluator is used
+by both the fast scan summary and the final execution-time revalidation so the
+UI does not invent a second decision rule.
 """
 
 from __future__ import annotations
@@ -19,7 +18,6 @@ from devclean.core.application_cleanup import (
     DecisionOwner,
     LastUseStrategy,
     PolicyAction,
-    RebuildCost,
     effective_idle_days,
     evaluate_application_path,
 )
@@ -38,16 +36,11 @@ class WholeTreePolicyEvidence:
     latest_activity_time_ns: int
 
 
-def require_application_whole_tree_policy(
+def _require_application_whole_tree_rule(
     path: Path,
     known_roots: tuple[KnownCleanupRoot, ...],
-) -> WholeTreePolicyEvidence | None:
-    """Require the retained application TOOL policy for an exact known root.
-
-    ``None`` means this is not an application-derived whole-tree root, so the
-    existing configured/system directory policy remains unchanged. Application
-    roots are rescanned so execution still uses current size/activity evidence.
-    """
+) -> ApplicationCleanupRule | None:
+    """Return the exact audited rule before any expensive subtree work begins."""
 
     known = known_root_for_path(path, known_roots)
     if known is None or _normalized(known.path) != _normalized(path):
@@ -63,8 +56,26 @@ def require_application_whole_tree_policy(
         raise WholeTreePolicyRefusal(
             "application whole-tree authority is no longer a deletable TOOL rule"
         )
+    return rule
 
-    evidence = _fresh_tree_evidence(path)
+
+def assess_application_whole_tree_policy(
+    path: Path,
+    known_roots: tuple[KnownCleanupRoot, ...],
+    evidence: WholeTreePolicyEvidence,
+) -> WholeTreePolicyEvidence | None:
+    """Apply the audited whole-tree rule to already-collected metadata evidence.
+
+    Scan-time code may collect only aggregate metadata for a known whole-tree
+    cache instead of classifying every child file. Execution-time code collects
+    a fresh aggregate again. Both paths call this function, so performance work
+    cannot silently change the product rule.
+    """
+
+    rule = _require_application_whole_tree_rule(path, known_roots)
+    if rule is None:
+        return None
+
     observed = datetime.fromtimestamp(
         evidence.latest_activity_time_ns / 1_000_000_000,
         tz=UTC,
@@ -78,15 +89,7 @@ def require_application_whole_tree_policy(
         process_running=False,
     )
     if decision is not None and decision.rule.rule_id == rule.rule_id:
-        # For cheap/moderate regenerable caches, recent use is a performance
-        # preference rather than a data-safety boundary. The one-click cleaner
-        # therefore keeps the audited TOOL authority even if the app evaluator
-        # recommends KEEP_RECENT. Process-closed requirements are still enforced
-        # immediately before mutation in postscan_cleanup.
-        if (
-            decision.action is not PolicyAction.TOOL_DELETE
-            and rule.rebuild_cost is RebuildCost.HIGH
-        ):
+        if decision.action is not PolicyAction.TOOL_DELETE:
             raise WholeTreePolicyRefusal(
                 f"{rule.label} is not currently eligible: {decision.action.value}"
             )
@@ -102,6 +105,19 @@ def require_application_whole_tree_policy(
     return evidence
 
 
+def require_application_whole_tree_policy(
+    path: Path,
+    known_roots: tuple[KnownCleanupRoot, ...],
+) -> WholeTreePolicyEvidence | None:
+    """Collect fresh evidence and require the retained application TOOL policy."""
+
+    rule = _require_application_whole_tree_rule(path, known_roots)
+    if rule is None:
+        return None
+    evidence = _fresh_tree_evidence(path)
+    return assess_application_whole_tree_policy(path, known_roots, evidence)
+
+
 def _require_fresh_tree_floor(
     rule: ApplicationCleanupRule,
     evidence: WholeTreePolicyEvidence,
@@ -109,15 +125,6 @@ def _require_fresh_tree_floor(
 ) -> None:
     if evidence.logical_bytes < rule.min_reclaim_bytes:
         raise WholeTreePolicyRefusal(f"{rule.label} is below its minimum reclaim threshold")
-
-    # LOW/MEDIUM roots are explicitly audited, regenerable caches. Refusing them
-    # merely because they were touched recently made a scan advertise dozens of
-    # "safe" rows and then reject nearly all of them during cleanup. Expensive
-    # HIGH rebuild roots (IDE indexes, model-like artifacts, etc.) retain the
-    # original idle threshold and are also omitted from the default smart scan.
-    if rule.rebuild_cost is not RebuildCost.HIGH:
-        return
-
     threshold = effective_idle_days(rule, evidence.logical_bytes)
     if threshold is None:
         raise WholeTreePolicyRefusal("application whole-tree idle threshold is unavailable")
@@ -165,5 +172,6 @@ def _normalized(path: Path) -> str:
 __all__ = [
     "WholeTreePolicyEvidence",
     "WholeTreePolicyRefusal",
+    "assess_application_whole_tree_policy",
     "require_application_whole_tree_policy",
 ]
