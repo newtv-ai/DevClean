@@ -12,6 +12,7 @@ migration so a user can deliberately re-enable whole-profile scanning later.
 from __future__ import annotations
 
 import os
+from contextlib import suppress
 from dataclasses import replace
 from pathlib import Path
 
@@ -67,12 +68,8 @@ def _migrate_once(rules: UserRules) -> UserRules:
     # Mark both migrated and intentionally customized installations.  After the
     # first launch on this product version, an explicit user choice to scan the
     # whole profile must remain respected.
-    try:
+    with suppress(OSError):
         marker.write_text("targeted known/application roots are the default\n", encoding="utf-8")
-    except OSError:
-        # Failure to remember the migration is non-fatal; the exact-scope guard
-        # above still prevents changing a customized document.
-        pass
     return migrated
 
 
