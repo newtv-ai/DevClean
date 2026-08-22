@@ -296,6 +296,8 @@ def test_catalog_surfaces_source_proven_plugin_garbage_as_exact_trees(
         assert root.policy is CleanupPolicy.VENDOR_MANAGED
         assert root.delete_root_itself
         assert root.application_rule is not None
+    assert staging_root.application_rule is not None
+    assert orphan_root.application_rule is not None
     assert staging_root.application_rule.rule_id == "claude-plugin-stale-staging-clone"
     assert orphan_root.application_rule.rule_id == "claude-plugin-expired-orphan-version"
 
