@@ -36,18 +36,11 @@ class WholeTreePolicyEvidence:
     latest_activity_time_ns: int
 
 
-def assess_application_whole_tree_policy(
+def _require_application_whole_tree_rule(
     path: Path,
     known_roots: tuple[KnownCleanupRoot, ...],
-    evidence: WholeTreePolicyEvidence,
-) -> WholeTreePolicyEvidence | None:
-    """Apply the audited whole-tree rule to already-collected metadata evidence.
-
-    Scan-time code may collect only aggregate metadata for a known whole-tree
-    cache instead of classifying every child file. Execution-time code collects
-    a fresh aggregate again. Both paths call this function, so performance work
-    cannot silently change the product rule.
-    """
+) -> ApplicationCleanupRule | None:
+    """Return the exact audited rule before any expensive subtree work begins."""
 
     known = known_root_for_path(path, known_roots)
     if known is None or _normalized(known.path) != _normalized(path):
@@ -63,6 +56,25 @@ def assess_application_whole_tree_policy(
         raise WholeTreePolicyRefusal(
             "application whole-tree authority is no longer a deletable TOOL rule"
         )
+    return rule
+
+
+def assess_application_whole_tree_policy(
+    path: Path,
+    known_roots: tuple[KnownCleanupRoot, ...],
+    evidence: WholeTreePolicyEvidence,
+) -> WholeTreePolicyEvidence | None:
+    """Apply the audited whole-tree rule to already-collected metadata evidence.
+
+    Scan-time code may collect only aggregate metadata for a known whole-tree
+    cache instead of classifying every child file. Execution-time code collects
+    a fresh aggregate again. Both paths call this function, so performance work
+    cannot silently change the product rule.
+    """
+
+    rule = _require_application_whole_tree_rule(path, known_roots)
+    if rule is None:
+        return None
 
     observed = datetime.fromtimestamp(
         evidence.latest_activity_time_ns / 1_000_000_000,
@@ -99,8 +111,8 @@ def require_application_whole_tree_policy(
 ) -> WholeTreePolicyEvidence | None:
     """Collect fresh evidence and require the retained application TOOL policy."""
 
-    known = known_root_for_path(path, known_roots)
-    if known is None or _normalized(known.path) != _normalized(path):
+    rule = _require_application_whole_tree_rule(path, known_roots)
+    if rule is None:
         return None
     evidence = _fresh_tree_evidence(path)
     return assess_application_whole_tree_policy(path, known_roots, evidence)
