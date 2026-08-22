@@ -36,6 +36,7 @@ from devclean.core import (
     pnpm_maintenance,
     uv_maintenance,
 )
+from devclean.core.nuget_cleanup import dotnet_executable
 
 _SEAL = object()
 _CAPABILITY_KEY = secrets.token_bytes(32)
@@ -133,14 +134,14 @@ def inventory_vendor_cleanup_candidates(
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         warnings.append(f"pip inventory: {error}")
     else:
-        for entry in pip_inventory.caches:
-            if not entry.exists or entry.logical_bytes <= 0:
+        for pip_entry in pip_inventory.caches:
+            if not pip_entry.exists or pip_entry.logical_bytes <= 0:
                 continue
             candidates.append(
                 _candidate(
                     VendorCleanupKind.PIP_CACHE_PURGE,
-                    entry.path,
-                    entry.logical_bytes,
+                    pip_entry.path,
+                    pip_entry.logical_bytes,
                     "pip 缓存",
                     "由 pip cache purge 清理；执行前会再次确认同一个 cache 根目录",
                 )
@@ -151,14 +152,14 @@ def inventory_vendor_cleanup_candidates(
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         warnings.append(f"uv inventory: {error}")
     else:
-        for entry in uv_inventory.caches:
-            if not entry.exists or entry.logical_bytes <= 0:
+        for uv_entry in uv_inventory.caches:
+            if not uv_entry.exists or uv_entry.logical_bytes <= 0:
                 continue
             candidates.append(
                 _candidate(
                     VendorCleanupKind.UV_CACHE_PRUNE,
-                    entry.path,
-                    entry.logical_bytes,
+                    uv_entry.path,
+                    uv_entry.logical_bytes,
                     "uv 缓存垃圾回收",
                     "由 uv cache prune 只清理未使用条目；显示大小仅是 cache 当前占用",
                 )
@@ -169,14 +170,14 @@ def inventory_vendor_cleanup_candidates(
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         warnings.append(f"pnpm inventory: {error}")
     else:
-        for entry in pnpm_inventory.stores:
-            if not entry.exists or entry.logical_bytes <= 0:
+        for pnpm_entry in pnpm_inventory.stores:
+            if not pnpm_entry.exists or pnpm_entry.logical_bytes <= 0:
                 continue
             candidates.append(
                 _candidate(
                     VendorCleanupKind.PNPM_STORE_PRUNE,
-                    entry.path,
-                    entry.logical_bytes,
+                    pnpm_entry.path,
+                    pnpm_entry.logical_bytes,
                     "pnpm store 垃圾回收",
                     (
                         "由 pnpm store prune 只删除所有已注册项目都不再引用的包；"
@@ -190,19 +191,20 @@ def inventory_vendor_cleanup_candidates(
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         warnings.append(f"Go inventory: {error}")
     else:
-        for entry in go_inventory.caches:
+        for go_entry in go_inventory.caches:
             if (
-                not entry.exists
-                or entry.logical_bytes <= 0
-                or entry.lane is not go_maintenance.GoMaintenanceLane.DETERMINISTIC_CANDIDATE
-                or entry.kind is not go_maintenance.GoCacheKind.BUILD
+                not go_entry.exists
+                or go_entry.logical_bytes <= 0
+                or go_entry.lane
+                is not go_maintenance.GoMaintenanceLane.DETERMINISTIC_CANDIDATE
+                or go_entry.kind is not go_maintenance.GoCacheKind.BUILD
             ):
                 continue
             candidates.append(
                 _candidate(
                     VendorCleanupKind.GO_BUILD_CACHE_CLEAN,
-                    entry.path,
-                    entry.logical_bytes,
+                    go_entry.path,
+                    go_entry.logical_bytes,
                     "Go 构建缓存",
                     "由 go clean -cache 清理可重新编译的构建缓存；module cache 不在此自动清理",
                 )
@@ -222,23 +224,23 @@ def inventory_vendor_cleanup_candidates(
                 VendorCleanupKind.NUGET_PLUGINS_CACHE_CLEAR
             ),
         }
-        for entry in nuget_inventory.locals:
-            kind = nuget_kinds.get(entry.kind)
+        for nuget_entry in nuget_inventory.locals:
+            vendor_kind = nuget_kinds.get(nuget_entry.kind)
             if (
-                kind is None
-                or not entry.exists
-                or entry.logical_bytes <= 0
-                or entry.lane
+                vendor_kind is None
+                or not nuget_entry.exists
+                or nuget_entry.logical_bytes <= 0
+                or nuget_entry.lane
                 is not nuget_maintenance.NuGetMaintenanceLane.DETERMINISTIC_CANDIDATE
             ):
                 continue
             candidates.append(
                 _candidate(
-                    kind,
-                    entry.path,
-                    entry.logical_bytes,
-                    _nuget_label(entry.kind),
-                    entry.reason,
+                    vendor_kind,
+                    nuget_entry.path,
+                    nuget_entry.logical_bytes,
+                    _nuget_label(nuget_entry.kind),
+                    nuget_entry.reason,
                 )
             )
 
@@ -247,16 +249,16 @@ def inventory_vendor_cleanup_candidates(
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         warnings.append(f"Conda inventory: {error}")
     else:
-        for entry in conda_inventory.package_caches:
-            if not entry.exists or entry.logical_bytes <= 0:
+        for conda_entry in conda_inventory.package_caches:
+            if not conda_entry.exists or conda_entry.logical_bytes <= 0:
                 continue
             candidates.append(
                 _candidate(
                     VendorCleanupKind.CONDA_TARBALL_INDEX_CLEAN,
-                    entry.path,
-                    entry.logical_bytes,
+                    conda_entry.path,
+                    conda_entry.logical_bytes,
                     "Conda 下载/索引缓存清理",
-                    entry.reason + "；显示大小仅是整个 package cache 当前占用",
+                    conda_entry.reason + "；显示大小仅是整个 package cache 当前占用",
                 )
             )
 
@@ -283,54 +285,58 @@ def execute_vendor_cleanup(
 
     _require_candidate(candidate)
     if candidate.kind is VendorCleanupKind.PIP_CACHE_PURGE:
-        result = pip_maintenance.purge_pip_cache(candidate.path, environment)
+        pip_result = pip_maintenance.purge_pip_cache(candidate.path, environment)
         return _execution_result(
             candidate,
-            result.cache_path,
-            result.before_bytes,
-            result.after_bytes,
-            result.command,
-            result.output,
+            pip_result.cache_path,
+            pip_result.before_bytes,
+            pip_result.after_bytes,
+            pip_result.command,
+            pip_result.output,
         )
     if candidate.kind is VendorCleanupKind.UV_CACHE_PRUNE:
-        result = uv_maintenance.prune_uv_cache(candidate.path, environment)
+        uv_result = uv_maintenance.prune_uv_cache(candidate.path, environment)
         return _execution_result(
             candidate,
-            result.cache_path,
-            result.before_bytes,
-            result.after_bytes,
-            result.command,
-            result.output,
+            uv_result.cache_path,
+            uv_result.before_bytes,
+            uv_result.after_bytes,
+            uv_result.command,
+            uv_result.output,
         )
     if candidate.kind is VendorCleanupKind.PNPM_STORE_PRUNE:
-        result = pnpm_maintenance.prune_pnpm_store(candidate.path, environment)
+        pnpm_result = pnpm_maintenance.prune_pnpm_store(candidate.path, environment)
         return _execution_result(
             candidate,
-            result.store_path,
-            result.before_bytes,
-            result.after_bytes,
-            result.command,
-            result.output,
+            pnpm_result.store_path,
+            pnpm_result.before_bytes,
+            pnpm_result.after_bytes,
+            pnpm_result.command,
+            pnpm_result.output,
         )
     if candidate.kind is VendorCleanupKind.GO_BUILD_CACHE_CLEAN:
-        result = go_maintenance.clean_go_cache(
+        go_result = go_maintenance.clean_go_cache(
             go_maintenance.GoCacheKind.BUILD,
             candidate.path,
             environment,
         )
         return _execution_result(
             candidate,
-            result.path,
-            result.before_bytes,
-            result.after_bytes,
-            result.command,
-            result.output,
+            go_result.path,
+            go_result.before_bytes,
+            go_result.after_bytes,
+            go_result.command,
+            go_result.output,
         )
     nuget_kind = _nuget_kind_for_vendor(candidate.kind)
     if nuget_kind is not None:
-        result = nuget_maintenance.clear_nuget_local(nuget_kind, candidate.path, environment)
+        nuget_result = nuget_maintenance.clear_nuget_local(
+            nuget_kind,
+            candidate.path,
+            environment,
+        )
         command = (
-            nuget_maintenance.dotnet_executable(environment),
+            dotnet_executable(environment),
             "nuget",
             "locals",
             nuget_kind.value,
@@ -339,21 +345,24 @@ def execute_vendor_cleanup(
         )
         return _execution_result(
             candidate,
-            result.path,
-            result.before_bytes,
-            result.after_bytes,
+            nuget_result.path,
+            nuget_result.before_bytes,
+            nuget_result.after_bytes,
             command,
-            result.stdout,
+            nuget_result.stdout,
         )
     if candidate.kind is VendorCleanupKind.CONDA_TARBALL_INDEX_CLEAN:
-        result = conda_maintenance.clean_conda_package_cache(candidate.path, environment)
+        conda_result = conda_maintenance.clean_conda_package_cache(
+            candidate.path,
+            environment,
+        )
         return _execution_result(
             candidate,
-            result.package_cache_path,
-            result.before_bytes,
-            result.after_bytes,
-            result.command,
-            result.output,
+            conda_result.package_cache_path,
+            conda_result.before_bytes,
+            conda_result.after_bytes,
+            conda_result.command,
+            conda_result.output,
         )
     raise VendorCleanupRefusal(f"unsupported vendor cleanup kind: {candidate.kind}")
 
