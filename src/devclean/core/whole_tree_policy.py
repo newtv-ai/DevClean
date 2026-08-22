@@ -95,7 +95,11 @@ def assess_application_whole_tree_policy(
         last_used=observed,
         process_running=False,
     )
-    if decision is not None and decision.rule.rule_id == rule.rule_id:
+    if decision is not None:
+        if decision.rule.rule_id != rule.rule_id:
+            raise WholeTreePolicyRefusal(
+                "application evaluator resolved the exact root to a different rule"
+            )
         if decision.rule.owner is not DecisionOwner.TOOL:
             raise WholeTreePolicyRefusal(
                 "application evaluator no longer classifies the exact root as TOOL-owned"
