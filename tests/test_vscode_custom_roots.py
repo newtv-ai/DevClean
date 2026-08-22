@@ -60,4 +60,4 @@ def test_insiders_workspace_state_is_user_owned() -> None:
     )
     assert decision is not None
     assert decision.rule.owner is DecisionOwner.USER
-    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert decision.action is PolicyAction.USER_DECISION
