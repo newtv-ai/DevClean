@@ -8,8 +8,10 @@ sealed candidate back to the same provider. There is no raw-delete fallback.
 
 A size/recommendation threshold is never a safety gate here. Once an audited
 provider says a cache class is deterministic, any existing non-empty instance
-is a safe-clean candidate; size may affect presentation order, not whether the
-program pushes the decision back to the user.
+is a safe-clean candidate. ``observed_bytes`` is only the storage currently
+occupied by the provider root; it is not advertised as a reclaim estimate for
+partial-GC operations such as ``uv cache prune`` or ``pnpm store prune``.
+Actual reclaimed bytes come only from the post-command before/after measurement.
 """
 
 # Chinese user-facing reasons use fullwidth punctuation.
@@ -61,7 +63,7 @@ class VendorCleanupCandidate:
     candidate_id: str
     kind: VendorCleanupKind
     path: Path
-    estimated_bytes: int
+    observed_bytes: int
     label: str
     reason: str
     _integrity: str = field(repr=False, compare=False, default="")
@@ -72,13 +74,13 @@ class VendorCleanupCandidate:
             raise VendorCleanupRefusal(
                 "vendor cleanup candidates must come from audited inventory"
             )
-        if self.estimated_bytes <= 0:
-            raise VendorCleanupRefusal("vendor cleanup candidate must reclaim visible storage")
+        if self.observed_bytes <= 0:
+            raise VendorCleanupRefusal("vendor cleanup candidate must reference visible storage")
         expected = _candidate_integrity(
             self.candidate_id,
             self.kind,
             self.path,
-            self.estimated_bytes,
+            self.observed_bytes,
             self.label,
             self.reason,
         )
@@ -92,8 +94,10 @@ class VendorCleanupInventory:
     warnings: tuple[str, ...] = ()
 
     @property
-    def estimated_bytes(self) -> int:
-        return sum(candidate.estimated_bytes for candidate in self.candidates)
+    def observed_bytes(self) -> int:
+        """Storage occupied by candidate roots, not a promised reclaim total."""
+
+        return sum(candidate.observed_bytes for candidate in self.candidates)
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,8 +159,8 @@ def inventory_vendor_cleanup_candidates(
                     VendorCleanupKind.UV_CACHE_PRUNE,
                     entry.path,
                     entry.logical_bytes,
-                    "uv 缓存",
-                    "由 uv cache prune 清理；执行前会再次确认同一个 cache 根目录",
+                    "uv 缓存垃圾回收",
+                    "由 uv cache prune 只清理未使用条目；显示大小仅是 cache 当前占用",
                 )
             )
 
@@ -173,8 +177,8 @@ def inventory_vendor_cleanup_candidates(
                     VendorCleanupKind.PNPM_STORE_PRUNE,
                     entry.path,
                     entry.logical_bytes,
-                    "pnpm 未引用 store 数据",
-                    "由 pnpm store prune 判断并清理所有已注册项目都不再引用的包",
+                    "pnpm store 垃圾回收",
+                    "由 pnpm store prune 只删除所有已注册项目都不再引用的包；显示大小仅是 store 当前占用",
                 )
             )
 
@@ -244,8 +248,8 @@ def inventory_vendor_cleanup_candidates(
                     VendorCleanupKind.CONDA_TARBALL_INDEX_CLEAN,
                     entry.path,
                     entry.logical_bytes,
-                    "Conda 下载与索引缓存",
-                    entry.reason,
+                    "Conda 下载/索引缓存清理",
+                    entry.reason + "；显示大小仅是整个 package cache 当前占用",
                 )
             )
 
@@ -253,12 +257,12 @@ def inventory_vendor_cleanup_candidates(
     for candidate in candidates:
         key = (candidate.kind, _normalized(candidate.path))
         previous = unique.get(key)
-        if previous is None or candidate.estimated_bytes > previous.estimated_bytes:
+        if previous is None or candidate.observed_bytes > previous.observed_bytes:
             unique[key] = candidate
     ordered = tuple(
         sorted(
             unique.values(),
-            key=lambda candidate: (-candidate.estimated_bytes, candidate.kind, str(candidate.path)),
+            key=lambda candidate: (-candidate.observed_bytes, candidate.kind, str(candidate.path)),
         )
     )
     return VendorCleanupInventory(ordered, tuple(warnings))
@@ -388,7 +392,7 @@ def _nuget_kind_for_vendor(
 def _candidate(
     kind: VendorCleanupKind,
     path: Path,
-    estimated_bytes: int,
+    observed_bytes: int,
     label: str,
     reason: str,
 ) -> VendorCleanupCandidate:
@@ -400,7 +404,7 @@ def _candidate(
         candidate_id,
         kind,
         path,
-        estimated_bytes,
+        observed_bytes,
         label,
         reason,
     )
@@ -408,7 +412,7 @@ def _candidate(
         candidate_id=candidate_id,
         kind=kind,
         path=path,
-        estimated_bytes=estimated_bytes,
+        observed_bytes=observed_bytes,
         label=label,
         reason=reason,
         _integrity=integrity,
@@ -423,7 +427,7 @@ def _require_candidate(candidate: VendorCleanupCandidate) -> None:
         candidate.candidate_id,
         candidate.kind,
         candidate.path,
-        candidate.estimated_bytes,
+        candidate.observed_bytes,
         candidate.label,
         candidate.reason,
     )
@@ -435,7 +439,7 @@ def _candidate_integrity(
     candidate_id: str,
     kind: VendorCleanupKind,
     path: Path,
-    estimated_bytes: int,
+    observed_bytes: int,
     label: str,
     reason: str,
 ) -> str:
@@ -444,7 +448,7 @@ def _candidate_integrity(
             candidate_id,
             kind.value,
             _normalized(path),
-            str(estimated_bytes),
+            str(observed_bytes),
             label,
             reason,
         )
