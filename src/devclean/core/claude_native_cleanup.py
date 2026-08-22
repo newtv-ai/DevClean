@@ -246,7 +246,11 @@ def match_claude_rule(
             if binary_dir is None:
                 return _NATIVE_UNVERIFIED_BACKUP
             launcher = binary_dir / "claude.exe"
-            return _NATIVE_OLD_LAUNCHER if _healthy_launcher(str(launcher)) else _NATIVE_UNVERIFIED_BACKUP
+            return (
+                _NATIVE_OLD_LAUNCHER
+                if _healthy_launcher(str(launcher))
+                else _NATIVE_UNVERIFIED_BACKUP
+            )
 
     return _ORIGINAL_MATCH_RULE(path, environment)
 
@@ -266,7 +270,7 @@ def install() -> None:
     _claude.claude_scan_roots = claude_scan_roots
     _claude.match_claude_rule = match_claude_rule
     _claude.clear_claude_process_cache = clear_claude_process_cache
-    setattr(_claude, "_devclean_native_updater_rules", True)
+    vars(_claude)["_devclean_native_updater_rules"] = True
 
 
 install()
