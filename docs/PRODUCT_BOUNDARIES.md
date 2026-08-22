@@ -19,7 +19,11 @@ There is **one normal scan**, not a smart/deep mode choice exposed to the user.
 
 ## UX invariant
 
-The normal flow is: **scan -> known rules resolve automatically -> unresolved reviewable items go to AI -> user cleans approved results**. Advanced maintenance tools may remain available for exceptional vendor operations, but a rule-covered cache must not require the user to open a separate tool just to obtain the decision DevClean already knows.
+The normal flow is: **scan -> known rules resolve automatically -> unresolved reviewable items go to AI -> user cleans approved results**.
+
+There is **no user-facing Tool Center and no per-application maintenance checklist**. If a package manager, IDE, browser, model store, build tool, Windows component, WSL cache, or other source has a rule that DevClean can evaluate safely, that rule belongs in the normal scan/decision engine. A user must not be asked to open a separate dialog and rediscover the same storage manually.
+
+A maintenance capability that cannot yet be represented safely in the normal decision engine must stay non-destructive until it is integrated; it must not be used as an excuse to reintroduce a manual tool palette.
 
 ## Engineering rule
 
