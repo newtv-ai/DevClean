@@ -15,7 +15,11 @@ from devclean.core.triage import (
 from devclean.scanner import ScanRecord, ScanRecordKind
 
 
-def _item(*, tags: tuple[str, ...], target_kind: CleanupTargetKind = CleanupTargetKind.FILE) -> TriageItem:
+def _item(
+    *,
+    tags: tuple[str, ...],
+    target_kind: CleanupTargetKind = CleanupTargetKind.FILE,
+) -> TriageItem:
     record = ScanRecord(
         root="C:\\",
         path="C:\\Users\\tester\\mystery.cache",
@@ -29,7 +33,7 @@ def _item(*, tags: tuple[str, ...], target_kind: CleanupTargetKind = CleanupTarg
         logical_size=record.logical_size,
         allocated_size=record.allocated_size,
         category=CleanupCategory.OTHER,
-        source_domain=SourceDomain.USER_PROFILE,
+        source_domain=SourceDomain.GENERAL_STORAGE,
         lane=ReviewLane.REPORT_ONLY,
         risk_tier=RiskTier.PROTECTED,
         evidence_kind=EvidenceKind.FILESYSTEM_OBSERVATION,
