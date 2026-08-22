@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from dataclasses import dataclass
+from functools import partial
 
 _BG = "#F6F1EA"
 _SURFACE = "#FFFDFC"
@@ -176,7 +177,7 @@ def open_tool_palette(root: tk.Tk, menu: tk.Menu) -> None:
                 button = tk.Button(
                     card,
                     text=tool.label,
-                    command=lambda index=tool.menu_index: invoke(index),
+                    command=partial(invoke, tool.menu_index),
                     anchor="w",
                     justify=tk.LEFT,
                     relief=tk.FLAT,
