@@ -1,10 +1,14 @@
 """Single product surface that also executes audited vendor cleanup actions.
 
 Vendor commands are not exposed as a second tool center. During the normal scan
-DevClean inventories them, prunes their roots from generic per-file traversal,
-and surfaces only operations whose pre-clean reclaim amount is actually known.
+DevClean inventories only actions that can report a truthful pre-clean reclaim
+amount, prunes those roots from generic traversal, and surfaces them in the same
+safe-cleanup list as filesystem rules.
+
 Partial garbage collectors stay out of the byte-counted safe list until their
-junk can be quantified without mutating storage.
+junk can be quantified without mutation. Their already-audited cache/store roots
+are also pruned from generic per-file traversal: scanning every package inside a
+known provider cache cannot make that provider action more precise.
 """
 
 from __future__ import annotations
@@ -12,12 +16,14 @@ from __future__ import annotations
 import os
 import threading
 import tkinter as tk
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import cast
 from uuid import uuid4
 
+from devclean.core.cleanup_catalog import KnownCleanupRoot
 from devclean.core.cleanup_journal import ActionState, CleanupMode
 from devclean.core.postscan_cleanup import (
     CleanupExecutionResult,
@@ -26,6 +32,7 @@ from devclean.core.postscan_cleanup import (
     execute_cleanup_batch,
     prepare_cleanup_plan,
 )
+from devclean.core.rule_schema import CleanupCategory
 from devclean.core.triage import CleanupTargetKind, TriageItem, TriageSession
 from devclean.core.user_rules import UserRules, normalise_path
 from devclean.core.vendor_cleanup_actions import (
@@ -39,9 +46,8 @@ from devclean.ui import app
 from devclean.ui.product_app import ProductDevCleanWindow as _BaseProductDevCleanWindow
 
 # These operations clear the audited provider resource represented by the row,
-# so its observed bytes are a truthful pre-clean reclaim figure. Partial-GC
-# operations (uv prune, pnpm prune, Conda tarball/index cleanup) are deliberately
-# not listed here: a non-empty provider root does not prove reclaimable junk.
+# so observed bytes are a truthful pre-clean reclaim figure. Partial-GC actions
+# are deliberately absent: a non-empty provider root does not prove junk bytes.
 _QUANTIFIED_VENDOR_KINDS = frozenset(
     {
         VendorCleanupKind.PIP_CACHE_PURGE,
@@ -51,6 +57,16 @@ _QUANTIFIED_VENDOR_KINDS = frozenset(
         VendorCleanupKind.NUGET_PLUGINS_CACHE_CLEAR,
     }
 )
+# These roots have already-audited provider semantics but their current action
+# only removes a subset. Do not pay the cost of classifying every child as if it
+# were an unknown file while exact pre-clean GC accounting is still being added.
+_SKIP_GENERIC_CACHE_CATEGORIES = frozenset(
+    {
+        CleanupCategory.UV_CACHE,
+        CleanupCategory.PNPM_STORE,
+        CleanupCategory.CONDA_CACHE,
+    }
+)
 _VENDOR_PREFIX = "vendor:"
 
 
@@ -58,25 +74,46 @@ def _vendor_row_id(candidate: VendorCleanupCandidate) -> str:
     return f"{_VENDOR_PREFIX}{candidate.candidate_id}"
 
 
-def _candidate_reachable(candidate: VendorCleanupCandidate, roots: tuple[Path, ...]) -> bool:
-    target = normalise_path(candidate.path)
+def _path_reachable(target: Path, roots: Sequence[Path]) -> bool:
+    normalized = normalise_path(target)
     for root in roots:
-        base = normalise_path(root)
-        if target == base or target.startswith(base.rstrip(os.sep) + os.sep):
+        root_normalized = normalise_path(root)
+        if normalized == root_normalized:
+            return True
+        if normalized.startswith(root_normalized.rstrip(os.sep) + os.sep):
             return True
     return False
 
 
 def _surfaceable_vendor_candidates(
-    candidates: tuple[VendorCleanupCandidate, ...],
-    drives: tuple[Path, ...],
+    candidates: Sequence[VendorCleanupCandidate],
+    drives: Sequence[Path],
 ) -> tuple[VendorCleanupCandidate, ...]:
     return tuple(
         candidate
         for candidate in candidates
         if candidate.kind in _QUANTIFIED_VENDOR_KINDS
-        and _candidate_reachable(candidate, drives)
+        and _path_reachable(candidate.path, drives)
     )
+
+
+def _generic_vendor_skip_paths(
+    known_roots: Sequence[KnownCleanupRoot],
+    candidates: Sequence[VendorCleanupCandidate],
+    drives: Sequence[Path],
+) -> tuple[str, ...]:
+    paths: list[str] = [
+        str(candidate.path)
+        for candidate in candidates
+        if _path_reachable(candidate.path, drives)
+    ]
+    paths.extend(
+        str(root.path)
+        for root in known_roots
+        if root.category in _SKIP_GENERIC_CACHE_CATEGORIES
+        and _path_reachable(root.path, drives)
+    )
+    return tuple(dict.fromkeys(paths))
 
 
 class ProductDevCleanWindow(_BaseProductDevCleanWindow):
@@ -85,7 +122,6 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
     def __init__(self, root: tk.Tk) -> None:
         self._vendor_candidates: dict[str, VendorCleanupCandidate] = {}
         self._vendor_scan_candidates: dict[str, tuple[VendorCleanupCandidate, ...]] = {}
-        self._vendor_scan_warnings: dict[str, tuple[str, ...]] = {}
         self._active_scan_drives: tuple[Path, ...] = ()
         super().__init__(root)
 
@@ -95,6 +131,10 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
         cleanup = self._buttons.get("recycle")
         if cleanup is not None:
             cleanup.configure(text="清理所选", command=lambda: self._delete(irreversible=False))
+        # A cache cleaner that sends bytes to Recycle Bin does not free disk
+        # space. The product therefore has one cleanup action; filesystem rows
+        # use the existing permanent exact-object executor and provider rows use
+        # their vendor command.
         purge = self._buttons.get("purge")
         if purge is not None:
             purge.pack_forget()
@@ -105,7 +145,6 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
         )
         self._vendor_candidates.clear()
         self._vendor_scan_candidates.clear()
-        self._vendor_scan_warnings.clear()
         super()._start_scan()
 
     def _scan_worker(
@@ -114,31 +153,27 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
         roots: tuple[Path, ...],
         cancel: CancellationToken,
         active_rules: UserRules,
-        known_roots: tuple[object, ...],
+        known_roots: tuple[KnownCleanupRoot, ...],
     ) -> None:
-        """Inventory vendor roots once, then prune them from generic traversal."""
+        """Inventory actionable provider roots once, then prune known stores."""
 
         try:
-            inventory = inventory_vendor_cleanup_candidates()
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            inventory = inventory_vendor_cleanup_candidates(
+                kinds=_QUANTIFIED_VENDOR_KINDS
+            )
+        except (OSError, RuntimeError, TypeError, ValueError):
             inventory_candidates: tuple[VendorCleanupCandidate, ...] = ()
-            warnings = (f"vendor inventory: {error}",)
         else:
             inventory_candidates = inventory.candidates
-            warnings = inventory.warnings
 
         drives = self._active_scan_drives
         visible = _surfaceable_vendor_candidates(inventory_candidates, drives)
         self._vendor_scan_candidates[token] = visible
-        self._vendor_scan_warnings[token] = warnings
 
-        # Every inventoried vendor root has already been walked by its provider
-        # inventory. Scanning the same tree again file-by-file would only add
-        # latency and can never create stronger authority than the provider.
-        skip_vendor_paths = tuple(
-            str(candidate.path)
-            for candidate in inventory_candidates
-            if _candidate_reachable(candidate, drives)
+        skip_vendor_paths = _generic_vendor_skip_paths(
+            known_roots,
+            inventory_candidates,
+            drives,
         )
         scan_rules = replace(
             active_rules.scan,
@@ -153,23 +188,28 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
             roots,
             cancel,
             effective_rules,
-            cast(tuple, known_roots),
+            known_roots,
         )
 
     def _publish(self, session: TriageSession) -> None:
         pending = self._vendor_scan_candidates.pop(self._scan_token, None)
+        new_vendor_rows: set[str] = set()
         if pending is not None:
             self._vendor_candidates = {
                 _vendor_row_id(candidate): candidate for candidate in pending
             }
+            new_vendor_rows = set(self._vendor_candidates)
         super()._publish(session)
-        warnings = self._vendor_scan_warnings.pop(self._scan_token, ())
-        if warnings and self._scan_started_at is None:
-            self._status.set(
-                f"扫描完成；{len(warnings):,} 个可选工具无法读取，其余结果不受影响。"
-            )
+        # Scan-produced deterministic rows are selected by default exactly like
+        # direct filesystem safe rows. Later republishing (AI import/rule edit)
+        # does not re-check a vendor row the user explicitly unticked.
+        if new_vendor_rows:
+            self._checked.update(new_vendor_rows)
+            self._fill(self._deletable_tree, self._deletable)
+            self._refresh_totals()
+            self._sync_buttons()
 
-    def _fill(self, tree: ttk.Treeview, items: tuple[TriageItem, ...] | list[TriageItem]) -> None:
+    def _fill(self, tree: ttk.Treeview, items: Sequence[TriageItem]) -> None:
         if not hasattr(self, "_deletable_tree") or tree is not self._deletable_tree:
             super()._fill(tree, items)
             return
@@ -288,7 +328,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
         )
 
     def _delete(self, *, irreversible: bool) -> None:
-        del irreversible  # Product cleanup has one clear action, not two mutation modes.
+        del irreversible  # The product exposes one cleanup action.
         items = self._selected_items()
         vendor = self._selected_vendor_candidates()
         if not items and not vendor:
@@ -401,6 +441,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
 
 __all__ = [
     "ProductDevCleanWindow",
+    "_generic_vendor_skip_paths",
     "_surfaceable_vendor_candidates",
     "_vendor_row_id",
 ]
