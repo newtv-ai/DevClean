@@ -5,6 +5,9 @@ items stay in the review/AI lane, and the UI must not invent new cleanup policy.
 This wrapper only adds visible scan timing to the modern window.
 """
 
+# Chinese UI prose uses fullwidth punctuation.
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import time
