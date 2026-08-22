@@ -6,12 +6,14 @@ import tkinter as tk
 from dataclasses import dataclass
 from functools import partial
 
-_BG = "#F6F1EA"
-_SURFACE = "#FFFDFC"
-_BORDER = "#E4D9CC"
-_TEXT = "#26342F"
-_MUTED = "#6F756F"
-_PRIMARY = "#B85F43"
+_BG = "#F5F7FA"
+_SURFACE = "#FFFFFF"
+_SURFACE_ALT = "#F8FAFC"
+_BORDER = "#E5E7EB"
+_TEXT = "#1F2937"
+_MUTED = "#6B7280"
+_PRIMARY = "#2563EB"
+_PRIMARY_SOFT = "#EAF1FF"
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,22 +48,27 @@ def _read_tools(menu: tk.Menu) -> tuple[_Tool, ...]:
 
 
 def open_tool_palette(root: tk.Tk, menu: tk.Menu) -> None:
-    """Open a warm searchable palette over the existing trusted menu commands."""
+    """Open a searchable palette over the existing trusted menu commands."""
 
     tools = _read_tools(menu)
     window = tk.Toplevel(root)
     window.title("DevClean · 工具中心")
-    window.geometry("820x650")
-    window.minsize(680, 520)
+    window.geometry("840x660")
+    window.minsize(700, 540)
     window.configure(background=_BG)
     window.transient(root)
 
-    header = tk.Frame(window, background=_SURFACE, padx=24, pady=20)
-    header.pack(fill=tk.X, padx=18, pady=(18, 10))
+    header = tk.Frame(
+        window,
+        background=_BG,
+        padx=2,
+        pady=2,
+    )
+    header.pack(fill=tk.X, padx=22, pady=(20, 12))
     tk.Label(
         header,
         text="工具中心",
-        background=_SURFACE,
+        background=_BG,
         foreground=_TEXT,
         font=("Segoe UI Semibold", 20),
     ).pack(anchor=tk.W)
@@ -69,29 +76,29 @@ def open_tool_palette(root: tk.Tk, menu: tk.Menu) -> None:
         header,
         text=(
             "主页扫描只负责有明确删除依据的文件。厂商维护、包管理器、模型、"
-            "Windows 与 WSL 清理都在这里。"
+            "Windows 与 WSL 清理都集中在这里。"
         ),
-        background=_SURFACE,
+        background=_BG,
         foreground=_MUTED,
         font=("Segoe UI", 10),
-        wraplength=730,
+        wraplength=760,
         justify=tk.LEFT,
     ).pack(anchor=tk.W, pady=(4, 12))
 
     query = tk.StringVar()
     search_shell = tk.Frame(
         header,
-        background="#F1E9DE",
+        background=_SURFACE,
         highlightbackground=_BORDER,
         highlightthickness=1,
-        padx=10,
-        pady=7,
+        padx=11,
+        pady=8,
     )
     search_shell.pack(fill=tk.X)
     tk.Label(
         search_shell,
         text="⌕",
-        background="#F1E9DE",
+        background=_SURFACE,
         foreground=_PRIMARY,
         font=("Segoe UI Semibold", 14),
     ).pack(side=tk.LEFT, padx=(2, 8))
@@ -100,7 +107,7 @@ def open_tool_palette(root: tk.Tk, menu: tk.Menu) -> None:
         textvariable=query,
         relief=tk.FLAT,
         borderwidth=0,
-        background="#F1E9DE",
+        background=_SURFACE,
         foreground=_TEXT,
         insertbackground=_TEXT,
         font=("Segoe UI", 11),
@@ -108,7 +115,7 @@ def open_tool_palette(root: tk.Tk, menu: tk.Menu) -> None:
     search.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     shell = tk.Frame(window, background=_BG)
-    shell.pack(fill=tk.BOTH, expand=True, padx=18, pady=(0, 18))
+    shell.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 18))
     canvas = tk.Canvas(
         shell,
         background=_BG,
@@ -183,7 +190,7 @@ def open_tool_palette(root: tk.Tk, menu: tk.Menu) -> None:
                     relief=tk.FLAT,
                     borderwidth=0,
                     background=_SURFACE,
-                    activebackground="#F1E9DE",
+                    activebackground=_PRIMARY_SOFT,
                     foreground=_TEXT,
                     activeforeground=_PRIMARY,
                     cursor="hand2",
