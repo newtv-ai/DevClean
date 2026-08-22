@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from devclean.core.application_cleanup import (
     ApplicationCleanupRule,
     DecisionOwner,
@@ -40,19 +42,13 @@ def test_gui_subprocess_policy_hides_normal_console_children() -> None:
 def test_gui_subprocess_policy_respects_explicit_console_requests() -> None:
     create_new_console = 0x00000010
     detached_process = 0x00000008
-    assert (
-        subprocess_policy._hidden_console_creationflags(create_new_console)
-        == create_new_console
-    )
-    assert (
-        subprocess_policy._hidden_console_creationflags(detached_process)
-        == detached_process
-    )
+    assert subprocess_policy._hidden_console_creationflags(create_new_console) == create_new_console
+    assert subprocess_policy._hidden_console_creationflags(detached_process) == detached_process
 
 
 def test_smart_scan_uses_audited_actionable_roots_not_profile_inventory(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     profile = tmp_path / "profile"
     actionable = profile / ".tool" / "cache"
