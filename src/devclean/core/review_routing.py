@@ -7,6 +7,9 @@ that are merely ambiguous may be reviewed by AI and, after a validated answer,
 become reusable learned rules.
 """
 
+# Chinese UI-facing reason text uses fullwidth punctuation.
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 from dataclasses import replace
