@@ -7,6 +7,9 @@ opaque candidate from an audited provider, and execution dispatches only that
 sealed candidate back to the same provider.  There is no raw-delete fallback.
 """
 
+# Chinese user-facing reasons use fullwidth punctuation.
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import hashlib
