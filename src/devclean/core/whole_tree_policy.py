@@ -1,9 +1,9 @@
 """Fresh semantic gate for application-owned whole-directory cleanup.
 
-Catalog discovery grants *where* a whole tree may be considered.  This module
-re-checks *whether it is worth removing now*.  It deliberately performs a fresh,
-read-only subtree inventory at the capability boundary so a cache used after the
-main scan cannot inherit an old idle/benefit decision.
+Catalog discovery grants *where* a whole tree may be considered. This module
+re-checks *whether it is worth removing now*. The same policy evaluator is used
+by both the fast scan summary and the final execution-time revalidation so the
+UI does not invent a second decision rule.
 """
 
 from __future__ import annotations
@@ -36,16 +36,17 @@ class WholeTreePolicyEvidence:
     latest_activity_time_ns: int
 
 
-def require_application_whole_tree_policy(
+def assess_application_whole_tree_policy(
     path: Path,
     known_roots: tuple[KnownCleanupRoot, ...],
+    evidence: WholeTreePolicyEvidence,
 ) -> WholeTreePolicyEvidence | None:
-    """Require the retained application TOOL policy for an exact known root.
+    """Apply the audited whole-tree rule to already-collected metadata evidence.
 
-    ``None`` means this is not an application-derived whole-tree root, so the
-    existing configured/system directory policy remains unchanged.  Application
-    roots are rescanned because scan-time directory mtimes alone do not reveal a
-    recently rewritten child file.
+    Scan-time code may collect only aggregate metadata for a known whole-tree
+    cache instead of classifying every child file. Execution-time code collects
+    a fresh aggregate again. Both paths call this function, so performance work
+    cannot silently change the product rule.
     """
 
     known = known_root_for_path(path, known_roots)
@@ -63,21 +64,12 @@ def require_application_whole_tree_policy(
             "application whole-tree authority is no longer a deletable TOOL rule"
         )
 
-    evidence = _fresh_tree_evidence(path)
     observed = datetime.fromtimestamp(
         evidence.latest_activity_time_ns / 1_000_000_000,
         tz=UTC,
     )
-    # Fresh child activity is always a lower bound on recency, even when an app
-    # has a stronger source such as APP_ACTIVITY.  That stronger source may make
-    # cleanup stricter, but it must never make a recently rewritten tree older.
     _require_fresh_tree_floor(rule, evidence, observed)
 
-    # Prefer the application's own evaluator.  Fixed/default roots and special
-    # last-use strategies (for example Codex APP_ACTIVITY) retain their native
-    # semantics here.  A runtime-only redirected cache can disappear from live
-    # discovery after its process exits, so a FILE/DIRECTORY_MTIME rule has a
-    # conservative generic fallback using the retained audited rule itself.
     decision = evaluate_application_path(
         path,
         logical_size=evidence.logical_bytes,
@@ -99,6 +91,19 @@ def require_application_whole_tree_policy(
             "application-specific last-use evidence cannot be re-established"
         )
     return evidence
+
+
+def require_application_whole_tree_policy(
+    path: Path,
+    known_roots: tuple[KnownCleanupRoot, ...],
+) -> WholeTreePolicyEvidence | None:
+    """Collect fresh evidence and require the retained application TOOL policy."""
+
+    known = known_root_for_path(path, known_roots)
+    if known is None or _normalized(known.path) != _normalized(path):
+        return None
+    evidence = _fresh_tree_evidence(path)
+    return assess_application_whole_tree_policy(path, known_roots, evidence)
 
 
 def _require_fresh_tree_floor(
@@ -135,9 +140,6 @@ def _fresh_tree_evidence(path: Path) -> WholeTreePolicyEvidence:
             raise WholeTreePolicyRefusal(
                 f"fresh whole-tree policy scan was incomplete at {record.path}"
             )
-        # Creation time catches newly copied/generated cache entries whose mtime
-        # was deliberately preserved.  Either timestamp may only make the gate
-        # stricter than the application's own last-use policy.
         for timestamp in (record.creation_time_ns, record.last_write_time_ns):
             if timestamp is not None:
                 latest_ns = timestamp if latest_ns is None else max(latest_ns, timestamp)
@@ -158,5 +160,6 @@ def _normalized(path: Path) -> str:
 __all__ = [
     "WholeTreePolicyEvidence",
     "WholeTreePolicyRefusal",
+    "assess_application_whole_tree_policy",
     "require_application_whole_tree_policy",
 ]
