@@ -120,7 +120,7 @@ def test_claude_temp_catches_huge_stopped_output_but_not_recent_writes() -> None
     assert active.action is PolicyAction.TOOL_KEEP_RECENT
 
 
-def test_claude_user_history_is_not_generic_delete_authority() -> None:
+def test_claude_user_history_is_a_real_user_decision() -> None:
     env = _env()
     paths = (
         r"D:\ClaudeState\projects\D--work\session.jsonl",
@@ -142,7 +142,7 @@ def test_claude_user_history_is_not_generic_delete_authority() -> None:
         )
         assert decision is not None
         assert decision.rule.owner is DecisionOwner.USER
-        assert decision.action is PolicyAction.KEEP_PROTECTED
+        assert decision.action is PolicyAction.USER_DECISION
 
 
 def test_claude_documented_regenerable_state_is_tool_owned() -> None:
@@ -279,12 +279,12 @@ def test_claude_working_directory_temp_marker_is_scoped_by_name() -> None:
     assert ordinary is None
 
 
-def test_process_guard_refuses_claude_state_and_rechecks_tool_process(
+def test_process_guard_allows_user_choice_blocks_keep_and_rechecks_tool_process(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     env = _env()
-    assert not process_guard_allows(r"D:\ClaudeState\history.jsonl", env)
-    assert not process_guard_allows(r"D:\ClaudeState\paste-cache\large-paste.txt", env)
+    assert process_guard_allows(r"D:\ClaudeState\history.jsonl", env)
+    assert process_guard_allows(r"D:\ClaudeState\paste-cache\large-paste.txt", env)
     assert not process_guard_allows(r"D:\ClaudeState\jobs\123\state.json", env)
 
     monkeypatch.setattr(
