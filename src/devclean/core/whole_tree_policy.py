@@ -1,10 +1,9 @@
 """Fresh semantic gate for application-owned whole-directory cleanup.
 
-Catalog discovery grants *where* a whole tree may be considered. This module
-re-checks *whether it is worth removing now*. Cheap and moderate rebuild caches
-are allowed to clean immediately once their owning process is closed; expensive
-indexes/models retain an idle-time floor so the one-click cleaner does not trade
-space for a large rebuild cost.
+Catalog discovery grants *where* a whole tree may be considered.  This module
+re-checks *whether it is worth removing now*.  It deliberately performs a fresh,
+read-only subtree inventory at the capability boundary so a cache used after the
+main scan cannot inherit an old idle/benefit decision.
 """
 
 from __future__ import annotations
@@ -19,7 +18,6 @@ from devclean.core.application_cleanup import (
     DecisionOwner,
     LastUseStrategy,
     PolicyAction,
-    RebuildCost,
     effective_idle_days,
     evaluate_application_path,
 )
@@ -45,8 +43,9 @@ def require_application_whole_tree_policy(
     """Require the retained application TOOL policy for an exact known root.
 
     ``None`` means this is not an application-derived whole-tree root, so the
-    existing configured/system directory policy remains unchanged. Application
-    roots are rescanned so execution still uses current size/activity evidence.
+    existing configured/system directory policy remains unchanged.  Application
+    roots are rescanned because scan-time directory mtimes alone do not reveal a
+    recently rewritten child file.
     """
 
     known = known_root_for_path(path, known_roots)
@@ -69,8 +68,16 @@ def require_application_whole_tree_policy(
         evidence.latest_activity_time_ns / 1_000_000_000,
         tz=UTC,
     )
+    # Fresh child activity is always a lower bound on recency, even when an app
+    # has a stronger source such as APP_ACTIVITY.  That stronger source may make
+    # cleanup stricter, but it must never make a recently rewritten tree older.
     _require_fresh_tree_floor(rule, evidence, observed)
 
+    # Prefer the application's own evaluator.  Fixed/default roots and special
+    # last-use strategies (for example Codex APP_ACTIVITY) retain their native
+    # semantics here.  A runtime-only redirected cache can disappear from live
+    # discovery after its process exits, so a FILE/DIRECTORY_MTIME rule has a
+    # conservative generic fallback using the retained audited rule itself.
     decision = evaluate_application_path(
         path,
         logical_size=evidence.logical_bytes,
@@ -78,15 +85,7 @@ def require_application_whole_tree_policy(
         process_running=False,
     )
     if decision is not None and decision.rule.rule_id == rule.rule_id:
-        # For cheap/moderate regenerable caches, recent use is a performance
-        # preference rather than a data-safety boundary. The one-click cleaner
-        # therefore keeps the audited TOOL authority even if the app evaluator
-        # recommends KEEP_RECENT. Process-closed requirements are still enforced
-        # immediately before mutation in postscan_cleanup.
-        if (
-            decision.action is not PolicyAction.TOOL_DELETE
-            and rule.rebuild_cost is RebuildCost.HIGH
-        ):
+        if decision.action is not PolicyAction.TOOL_DELETE:
             raise WholeTreePolicyRefusal(
                 f"{rule.label} is not currently eligible: {decision.action.value}"
             )
@@ -109,15 +108,6 @@ def _require_fresh_tree_floor(
 ) -> None:
     if evidence.logical_bytes < rule.min_reclaim_bytes:
         raise WholeTreePolicyRefusal(f"{rule.label} is below its minimum reclaim threshold")
-
-    # LOW/MEDIUM roots are explicitly audited, regenerable caches. Refusing them
-    # merely because they were touched recently made a scan advertise dozens of
-    # "safe" rows and then reject nearly all of them during cleanup. Expensive
-    # HIGH rebuild roots (IDE indexes, model-like artifacts, etc.) retain the
-    # original idle threshold and are also omitted from the default smart scan.
-    if rule.rebuild_cost is not RebuildCost.HIGH:
-        return
-
     threshold = effective_idle_days(rule, evidence.logical_bytes)
     if threshold is None:
         raise WholeTreePolicyRefusal("application whole-tree idle threshold is unavailable")
@@ -145,6 +135,9 @@ def _fresh_tree_evidence(path: Path) -> WholeTreePolicyEvidence:
             raise WholeTreePolicyRefusal(
                 f"fresh whole-tree policy scan was incomplete at {record.path}"
             )
+        # Creation time catches newly copied/generated cache entries whose mtime
+        # was deliberately preserved.  Either timestamp may only make the gate
+        # stricter than the application's own last-use policy.
         for timestamp in (record.creation_time_ns, record.last_write_time_ns):
             if timestamp is not None:
                 latest_ns = timestamp if latest_ns is None else max(latest_ns, timestamp)
