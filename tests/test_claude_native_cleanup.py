@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pytest import MonkeyPatch
+
 from devclean.core import claude_native_cleanup
 from devclean.core._application_cleanup_impl import DecisionOwner, PolicyAction
 from devclean.core.claude_cleanup import (
@@ -22,8 +24,8 @@ def _native_layout(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
 
 
 def _large_file(path: Path) -> None:
-    path.write_bytes(b"x")
-    path.truncate(9 * 1024 * 1024)
+    with path.open("wb") as stream:
+        stream.truncate(9 * 1024 * 1024)
 
 
 def test_native_scan_roots_do_not_need_whole_profile(tmp_path: Path) -> None:
@@ -78,7 +80,7 @@ def test_partial_newest_download_is_not_used_as_recovery_copy(tmp_path: Path) ->
 
 def test_old_windows_launcher_is_tool_owned_only_with_healthy_live_launcher(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: MonkeyPatch,
 ) -> None:
     environment, _versions, binary_dir = _native_layout(tmp_path)
     _large_file(binary_dir / "claude.exe")
