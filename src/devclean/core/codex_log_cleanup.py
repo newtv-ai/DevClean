@@ -63,7 +63,7 @@ def _protect_runtime_log_database(
                 idle_days=None,
                 min_reclaim_bytes=0,
                 size_sensitive_idle=False,
-                label="Codex 当前运行日志数据库，需要按 SQLite 文件族原子维护",
+                label="Codex 当前运行日志数据库 - 需按 SQLite 文件族原子维护",
             )
         )
     return tuple(protected)
