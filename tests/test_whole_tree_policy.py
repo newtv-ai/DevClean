@@ -86,7 +86,7 @@ def _fake_scan(records: tuple[ScanRecord, ...]) -> object:
     return lambda *_args, **_kwargs: iter(records)
 
 
-def test_recent_child_blocks_whole_tree_even_when_root_directory_is_old(
+def test_recent_child_does_not_revoke_audited_whole_tree_safety(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -105,8 +105,11 @@ def test_recent_child_blocks_whole_tree_even_when_root_directory_is_old(
         lambda *_args, **_kwargs: None,
     )
 
-    with pytest.raises(WholeTreePolicyRefusal, match="too recently"):
-        require_application_whole_tree_policy(root, (_known(root, rule),))
+    evidence = require_application_whole_tree_policy(root, (_known(root, rule),))
+
+    assert evidence is not None
+    assert evidence.files == 1
+    assert evidence.logical_bytes == 64 * _MIB
 
 
 def test_stale_large_application_tree_passes_and_returns_fresh_evidence(
@@ -135,7 +138,7 @@ def test_stale_large_application_tree_passes_and_returns_fresh_evidence(
     assert evidence.logical_bytes == 64 * _MIB
 
 
-def test_application_tree_below_reclaim_threshold_is_refused(
+def test_small_application_tree_does_not_lose_audited_safety(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -154,8 +157,10 @@ def test_application_tree_below_reclaim_threshold_is_refused(
         lambda *_args, **_kwargs: None,
     )
 
-    with pytest.raises(WholeTreePolicyRefusal, match="minimum reclaim"):
-        require_application_whole_tree_policy(root, (_known(root, rule),))
+    evidence = require_application_whole_tree_policy(root, (_known(root, rule),))
+
+    assert evidence is not None
+    assert evidence.logical_bytes == 2 * _MIB
 
 
 def test_incomplete_fresh_scan_fails_closed(
