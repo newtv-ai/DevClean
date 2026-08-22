@@ -1,15 +1,15 @@
 """Public semantic boundary for application-aware cleanup.
 
 The stable Codex engine and each audited application profile live behind this
-facade. Generic scan/delete code imports only this module, so USER-owned history
-and KEEP state can be inventoried but never receive generic deletion authority.
+facade. Generic scan/delete code imports only this module so application-owned
+paths keep their source-specific semantics: TOOL is program-decided, USER is a
+real user-preference decision, and KEEP remains non-deletable.
 """
 
 from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import replace
 from datetime import datetime
 from pathlib import PureWindowsPath
 
@@ -637,10 +637,8 @@ def evaluate_application_path(
 ) -> ApplicationPolicyDecision | None:
     """Evaluate one path for the generic scan/review pipeline.
 
-    TOOL items retain their normal recommendation. USER-owned data keeps its
-    metadata internally but is projected to ``KEEP_PROTECTED`` for the generic
-    pipeline; a dedicated application action is the only place a user can choose
-    to remove it.
+    TOOL items retain their program decision, USER-owned data remains a real
+    ``USER_DECISION`` for the review lane, and KEEP remains protected.
     """
 
     decision = evaluate_android_avd_path(
@@ -984,9 +982,7 @@ def evaluate_application_path(
             process_running=process_running,
             environment=environment,
         )
-    if decision is None or decision.rule.owner is not DecisionOwner.USER:
-        return decision
-    return replace(decision, action=PolicyAction.KEEP_PROTECTED)
+    return decision
 
 
 def application_process_running(app_id: str) -> bool:
@@ -1112,11 +1108,17 @@ def process_guard_allows(
     path: str | os.PathLike[str],
     environment: Mapping[str, str] | None = None,
 ) -> bool:
-    """Refuse USER/KEEP mutation, then re-check any application process guard."""
+    """Re-check application ownership and any live-process requirement.
+
+    Candidate authority is established by the completed scan plus explicit user
+    selection. A USER rule therefore must not be treated like KEEP here: USER is
+    allowed after that selection, KEEP remains a hard block, and TOOL/USER paths
+    with a process-close requirement still need the owning application closed.
+    """
 
     clear_process_cache()
     rule = match_application_rule(path, environment)
-    if rule is not None and rule.owner is not DecisionOwner.TOOL:
+    if rule is not None and rule.owner is DecisionOwner.KEEP:
         return False
     if rule is None or not rule.requires_process_closed:
         return True
