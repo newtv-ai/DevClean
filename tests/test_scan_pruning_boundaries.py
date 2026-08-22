@@ -18,10 +18,14 @@ from devclean.scanner.filesystem import ScanOptions, scan_roots
 from devclean.ui import app
 
 
-def _rules_with_additional(path: Path) -> UserRules:
+def _rules_with_additional(path: Path, *, include_user_profile: bool = False) -> UserRules:
     base = default_rules()
     return UserRules(
-        scan=replace(base.scan, additional_paths=(str(path),)),
+        scan=replace(
+            base.scan,
+            additional_paths=(str(path),),
+            include_user_profile=include_user_profile,
+        ),
         delete=base.delete,
         keep=base.keep,
     )
@@ -76,7 +80,9 @@ def test_additional_path_below_pruned_profile_survives_outermost_dedup(
     project = profile / "Documents" / "project"
     project.mkdir(parents=True)
     monkeypatch.setenv("USERPROFILE", str(profile))
-    rules = _rules_with_additional(project)
+    # Whole-profile traversal is no longer the packaged default, but remains a
+    # supported explicit setting.  This test keeps covering its dedup boundary.
+    rules = _rules_with_additional(project, include_user_profile=True)
     assert "documents" in rules.scan.skip_directory_names
 
     roots = app.scan_targets((), rules=rules)
@@ -92,7 +98,12 @@ def test_audited_application_root_below_pruned_ancestor_survives(
     audited = profile / "Documents" / "tool-cache"
     audited.mkdir(parents=True)
     monkeypatch.setenv("USERPROFILE", str(profile))
-    base = default_rules()
+    defaults = default_rules()
+    base = UserRules(
+        scan=replace(defaults.scan, include_user_profile=True),
+        delete=defaults.delete,
+        keep=defaults.keep,
+    )
     known = KnownCleanupRoot(
         path=audited,
         category=CleanupCategory.OTHER,
