@@ -21,7 +21,11 @@ from tkinter import messagebox, ttk
 from uuid import uuid4
 
 from devclean.core.application_cleanup import DecisionOwner
-from devclean.core.cleanup_catalog import CleanupPolicy, KnownCleanupRoot, discover_known_cleanup_roots
+from devclean.core.cleanup_catalog import (
+    CleanupPolicy,
+    KnownCleanupRoot,
+    discover_known_cleanup_roots,
+)
 from devclean.core.paths import data_dir
 from devclean.core.review_routing import route_unresolved_file_to_ai
 from devclean.core.triage import (
@@ -52,8 +56,13 @@ from devclean.scanner import (
     ScanStats,
     scan_roots,
 )
-from devclean.scanner.tree_summary import TreeSummary, TreeSummaryIncomplete, summarize_tree
-from devclean.ui import app, modern_app as modern
+from devclean.scanner.tree_summary import (
+    TreeSummary,
+    TreeSummaryIncomplete,
+    summarize_tree,
+)
+from devclean.ui import app
+from devclean.ui import modern_app as modern
 from devclean.ui.modern_app import ModernDevCleanWindow
 
 
@@ -141,7 +150,11 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
 
         explanation = ttk.Frame(panel, style="Surface.TFrame")
         explanation.grid(row=0, column=1, sticky="w", padx=(30, 24))
-        ttk.Label(explanation, text="自动按规则扫描", style="Section.TLabel").pack(anchor=tk.W)
+        ttk.Label(
+            explanation,
+            text="自动按规则扫描",
+            style="Section.TLabel",
+        ).pack(anchor=tk.W)
         ttk.Label(
             explanation,
             text="已知规则目录只做快速汇总；只有未决内容才逐文件分析并进入 AI 复核。",
