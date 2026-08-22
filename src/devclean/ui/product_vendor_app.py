@@ -11,6 +11,9 @@ are also pruned from generic per-file traversal: scanning every package inside a
 known provider cache cannot make that provider action more precise.
 """
 
+# Chinese user-facing prose uses fullwidth punctuation.
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import os
@@ -298,7 +301,9 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
     def _refresh_totals(self) -> None:
         effective = app._drop_targets_covered_by_directory(self._deletable)
         direct_total = sum(self._size_of(item) for item in effective)
-        vendor_total = sum(candidate.observed_bytes for candidate in self._vendor_candidates.values())
+        vendor_total = sum(
+            candidate.observed_bytes for candidate in self._vendor_candidates.values()
+        )
         found = direct_total + vendor_total
         all_rows = self._all_safe_row_ids()
 
