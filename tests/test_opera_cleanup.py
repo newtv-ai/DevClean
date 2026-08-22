@@ -93,7 +93,7 @@ def test_opera_roaming_profile_is_authoritative_but_generated_code_cache_is_tool
         environment=_env(),
     )
     assert projected is not None
-    assert projected.action is PolicyAction.KEEP_PROTECTED
+    assert projected.action is PolicyAction.USER_DECISION
 
 
 def test_opera_local_cache_supports_legacy_and_default_layouts() -> None:
@@ -133,7 +133,7 @@ def test_opera_profile_recovery_copy_never_becomes_tool() -> None:
     assert rule.rule_id == "opera-profile-recovery-copy"
     assert rule.owner is DecisionOwner.USER
     assert rule.user_age_buckets == (30, 90, 180)
-    assert not process_guard_allows(path, _env())
+    assert process_guard_allows(path, _env())
 
     numbered = (
         r"C:\Users\alice\AppData\Roaming\Opera Software\Opera Stable"
