@@ -14,7 +14,7 @@
       "不确定的路径不要加入 known_cleanup_roots，先保留原配置。"
     ]
   },
-  "include_user_profile": true,
+  "include_user_profile": false,
   "include_known_cleanup_roots": true,
   "review_sample_per_category": 500,
   "additional_paths": [],
