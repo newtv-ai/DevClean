@@ -112,14 +112,14 @@ def inventory_vendor_cleanup_candidates(
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         warnings.append(f"pip inventory: {error}")
     else:
-        for entry in pip_inventory.caches:
-            if not entry.exists or not entry.recommended or entry.logical_bytes <= 0:
+        for pip_entry in pip_inventory.caches:
+            if not pip_entry.exists or not pip_entry.recommended or pip_entry.logical_bytes <= 0:
                 continue
             candidates.append(
                 _candidate(
                     VendorCleanupKind.PIP_CACHE_PURGE,
-                    entry.path,
-                    entry.logical_bytes,
+                    pip_entry.path,
+                    pip_entry.logical_bytes,
                     "pip 缓存",
                     "由 pip cache purge 清理；执行前会再次确认同一个 cache 根目录",
                 )
@@ -130,14 +130,14 @@ def inventory_vendor_cleanup_candidates(
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         warnings.append(f"uv inventory: {error}")
     else:
-        for entry in uv_inventory.caches:
-            if not entry.exists or not entry.recommended or entry.logical_bytes <= 0:
+        for uv_entry in uv_inventory.caches:
+            if not uv_entry.exists or not uv_entry.recommended or uv_entry.logical_bytes <= 0:
                 continue
             candidates.append(
                 _candidate(
                     VendorCleanupKind.UV_CACHE_PRUNE,
-                    entry.path,
-                    entry.logical_bytes,
+                    uv_entry.path,
+                    uv_entry.logical_bytes,
                     "uv 缓存",
                     "由 uv cache prune 清理；执行前会再次确认同一个 cache 根目录",
                 )
