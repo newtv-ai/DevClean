@@ -114,7 +114,11 @@ def test_catalog_surfaces_stale_staging_as_exact_vendor_managed_tree(
     stale.mkdir()
 
     discovered = discover_known_cleanup_roots(default_rules().scan, env)
-    matching = [root for root in discovered if os.path.normcase(str(root.path)) == os.path.normcase(str(stale))]
+    matching = [
+        root
+        for root in discovered
+        if os.path.normcase(str(root.path)) == os.path.normcase(str(stale))
+    ]
 
     assert len(matching) == 1
     root = matching[0]
