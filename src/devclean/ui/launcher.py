@@ -12,7 +12,6 @@ from devclean.ui.android_project_sdk_reference_dialog import (
 from devclean.ui.android_sdk_package_maintenance_dialog import (
     open_android_sdk_package_maintenance_dialog,
 )
-from devclean.ui.app import DevCleanWindow
 from devclean.ui.bazel_maintenance_dialog import open_bazel_maintenance_dialog
 from devclean.ui.cargo_project_maintenance_dialog import open_cargo_project_maintenance_dialog
 from devclean.ui.claude_maintenance_dialog import open_claude_maintenance_dialog
@@ -36,6 +35,7 @@ from devclean.ui.jetbrains_leftover_maintenance_dialog import (
     open_jetbrains_leftover_maintenance_dialog,
 )
 from devclean.ui.meson_project_maintenance_dialog import open_meson_project_maintenance_dialog
+from devclean.ui.modern_app import ModernDevCleanWindow
 from devclean.ui.npm_maintenance_dialog import open_npm_maintenance_dialog
 from devclean.ui.nuget_maintenance_dialog import open_nuget_maintenance_dialog
 from devclean.ui.ollama_model_maintenance_dialog import open_ollama_model_maintenance_dialog
@@ -48,6 +48,7 @@ from devclean.ui.podman_image_maintenance_dialog import open_podman_image_mainte
 from devclean.ui.task_manager_live_dump_maintenance_dialog import (
     open_task_manager_live_dump_maintenance_dialog,
 )
+from devclean.ui.tool_palette import bind_tool_palette
 from devclean.ui.torch_hub_inventory_dialog import open_torch_hub_inventory_dialog
 from devclean.ui.unity_asset_store_maintenance_dialog import (
     open_unity_asset_store_maintenance_dialog,
@@ -78,7 +79,7 @@ from devclean.ui.wsl_pnpm_maintenance_dialog import open_wsl_pnpm_maintenance_di
 from devclean.ui.wsl_uv_maintenance_dialog import open_wsl_uv_maintenance_dialog
 
 
-def _install_tools_menu(root: tk.Tk) -> None:
+def _install_tools_menu(root: tk.Tk) -> tk.Menu:
     menu = tk.Menu(root)
     tools = tk.Menu(menu, tearoff=False)
     tools.add_command(
@@ -258,6 +259,8 @@ def _install_tools_menu(root: tk.Tk) -> None:
     )
     menu.add_cascade(label="工具", menu=tools)
     root.configure(menu=menu)
+    bind_tool_palette(root, tools)
+    return tools
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -267,13 +270,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments == ("--ui-smoke",):
         root = tk.Tk()
         root.withdraw()
-        DevCleanWindow(root)
+        ModernDevCleanWindow(root)
         _install_tools_menu(root)
         root.update_idletasks()
         root.destroy()
         return 0
     root = tk.Tk()
-    DevCleanWindow(root)
+    ModernDevCleanWindow(root)
     _install_tools_menu(root)
     root.mainloop()
     return 0
