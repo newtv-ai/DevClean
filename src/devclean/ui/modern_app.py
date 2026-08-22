@@ -430,7 +430,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         buckets.columnconfigure(1, weight=9, uniform="results")
         buckets.rowconfigure(0, weight=1)
 
-        self._deletable_tree = self._build_bucket(
+        self._deletable_tree = self._build_result_bucket(
             buckets,
             column=0,
             accent=_SAFE,
@@ -457,7 +457,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
             ),
             checkable=True,
         )
-        self._unsure_tree = self._build_bucket(
+        self._unsure_tree = self._build_result_bucket(
             buckets,
             column=1,
             accent=_REVIEW,
@@ -481,7 +481,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
     def _open_tools(self) -> None:
         self._root.event_generate("<<DevCleanOpenTools>>", when="tail")
 
-    def _build_bucket(
+    def _build_result_bucket(
         self,
         parent: ttk.Frame,
         *,
