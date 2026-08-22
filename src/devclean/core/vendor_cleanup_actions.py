@@ -108,11 +108,11 @@ def inventory_vendor_cleanup_candidates(
     warnings: list[str] = []
 
     try:
-        inventory = pip_maintenance.inventory_pip_storage(environment)
+        pip_inventory = pip_maintenance.inventory_pip_storage(environment)
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         warnings.append(f"pip inventory: {error}")
     else:
-        for entry in inventory.caches:
+        for entry in pip_inventory.caches:
             if not entry.exists or not entry.recommended or entry.logical_bytes <= 0:
                 continue
             candidates.append(
@@ -126,11 +126,11 @@ def inventory_vendor_cleanup_candidates(
             )
 
     try:
-        inventory = uv_maintenance.inventory_uv_storage(environment)
+        uv_inventory = uv_maintenance.inventory_uv_storage(environment)
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         warnings.append(f"uv inventory: {error}")
     else:
-        for entry in inventory.caches:
+        for entry in uv_inventory.caches:
             if not entry.exists or not entry.recommended or entry.logical_bytes <= 0:
                 continue
             candidates.append(
@@ -168,26 +168,26 @@ def execute_vendor_cleanup(
 
     _require_candidate(candidate)
     if candidate.kind is VendorCleanupKind.PIP_CACHE_PURGE:
-        result = pip_maintenance.purge_pip_cache(candidate.path, environment)
+        pip_result = pip_maintenance.purge_pip_cache(candidate.path, environment)
         return VendorCleanupExecutionResult(
             candidate_id=candidate.candidate_id,
             kind=candidate.kind,
-            path=result.cache_path,
-            before_bytes=result.before_bytes,
-            after_bytes=result.after_bytes,
-            command=result.command,
-            output=result.output,
+            path=pip_result.cache_path,
+            before_bytes=pip_result.before_bytes,
+            after_bytes=pip_result.after_bytes,
+            command=pip_result.command,
+            output=pip_result.output,
         )
     if candidate.kind is VendorCleanupKind.UV_CACHE_PRUNE:
-        result = uv_maintenance.prune_uv_cache(candidate.path, environment)
+        uv_result = uv_maintenance.prune_uv_cache(candidate.path, environment)
         return VendorCleanupExecutionResult(
             candidate_id=candidate.candidate_id,
             kind=candidate.kind,
-            path=result.cache_path,
-            before_bytes=result.before_bytes,
-            after_bytes=result.after_bytes,
-            command=result.command,
-            output=result.output,
+            path=uv_result.cache_path,
+            before_bytes=uv_result.before_bytes,
+            after_bytes=uv_result.after_bytes,
+            command=uv_result.command,
+            output=uv_result.output,
         )
     raise VendorCleanupRefusal(f"unsupported vendor cleanup kind: {candidate.kind}")
 
