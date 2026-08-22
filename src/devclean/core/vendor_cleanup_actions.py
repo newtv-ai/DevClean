@@ -118,149 +118,167 @@ class VendorCleanupExecutionResult:
 
 def inventory_vendor_cleanup_candidates(
     environment: Mapping[str, str] | None = None,
+    *,
+    kinds: frozenset[VendorCleanupKind] | None = None,
 ) -> VendorCleanupInventory:
-    """Return every non-empty deterministic vendor action without mutation.
+    """Return selected non-empty deterministic vendor actions without mutation.
 
-    Provider discovery is isolated so a broken optional tool cannot make the
-    whole DevClean scan fail. USER-review resources exposed by a provider are
-    deliberately not promoted here; they remain in the user-decision lane.
+    ``kinds`` lets the normal product scan avoid walking providers whose action
+    cannot yet be represented with an honest pre-clean reclaim amount. ``None``
+    preserves the full provider inventory used by lower-level maintenance code.
+    Provider discovery remains isolated so one broken optional tool cannot make
+    the whole DevClean scan fail. USER-review resources stay outside this API.
     """
 
     candidates: list[VendorCleanupCandidate] = []
     warnings: list[str] = []
 
-    try:
-        pip_inventory = pip_maintenance.inventory_pip_storage(environment)
-    except (OSError, RuntimeError, TypeError, ValueError) as error:
-        warnings.append(f"pip inventory: {error}")
-    else:
-        for pip_entry in pip_inventory.caches:
-            if not pip_entry.exists or pip_entry.logical_bytes <= 0:
-                continue
-            candidates.append(
-                _candidate(
-                    VendorCleanupKind.PIP_CACHE_PURGE,
-                    pip_entry.path,
-                    pip_entry.logical_bytes,
-                    "pip 缓存",
-                    "由 pip cache purge 清理；执行前会再次确认同一个 cache 根目录",
+    if _wants(kinds, VendorCleanupKind.PIP_CACHE_PURGE):
+        try:
+            pip_inventory = pip_maintenance.inventory_pip_storage(environment)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            warnings.append(f"pip inventory: {error}")
+        else:
+            for pip_entry in pip_inventory.caches:
+                if not pip_entry.exists or pip_entry.logical_bytes <= 0:
+                    continue
+                candidates.append(
+                    _candidate(
+                        VendorCleanupKind.PIP_CACHE_PURGE,
+                        pip_entry.path,
+                        pip_entry.logical_bytes,
+                        "pip 缓存",
+                        "由 pip cache purge 清理；执行前会再次确认同一个 cache 根目录",
+                    )
                 )
-            )
 
-    try:
-        uv_inventory = uv_maintenance.inventory_uv_storage(environment)
-    except (OSError, RuntimeError, TypeError, ValueError) as error:
-        warnings.append(f"uv inventory: {error}")
-    else:
-        for uv_entry in uv_inventory.caches:
-            if not uv_entry.exists or uv_entry.logical_bytes <= 0:
-                continue
-            candidates.append(
-                _candidate(
-                    VendorCleanupKind.UV_CACHE_PRUNE,
-                    uv_entry.path,
-                    uv_entry.logical_bytes,
-                    "uv 缓存垃圾回收",
-                    "由 uv cache prune 只清理未使用条目；显示大小仅是 cache 当前占用",
+    if _wants(kinds, VendorCleanupKind.UV_CACHE_PRUNE):
+        try:
+            uv_inventory = uv_maintenance.inventory_uv_storage(environment)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            warnings.append(f"uv inventory: {error}")
+        else:
+            for uv_entry in uv_inventory.caches:
+                if not uv_entry.exists or uv_entry.logical_bytes <= 0:
+                    continue
+                candidates.append(
+                    _candidate(
+                        VendorCleanupKind.UV_CACHE_PRUNE,
+                        uv_entry.path,
+                        uv_entry.logical_bytes,
+                        "uv 缓存垃圾回收",
+                        "由 uv cache prune 只清理未使用条目；显示大小仅是 cache 当前占用",
+                    )
                 )
-            )
 
-    try:
-        pnpm_inventory = pnpm_maintenance.inventory_pnpm_storage(environment)
-    except (OSError, RuntimeError, TypeError, ValueError) as error:
-        warnings.append(f"pnpm inventory: {error}")
-    else:
-        for pnpm_entry in pnpm_inventory.stores:
-            if not pnpm_entry.exists or pnpm_entry.logical_bytes <= 0:
-                continue
-            candidates.append(
-                _candidate(
-                    VendorCleanupKind.PNPM_STORE_PRUNE,
-                    pnpm_entry.path,
-                    pnpm_entry.logical_bytes,
-                    "pnpm store 垃圾回收",
-                    (
-                        "由 pnpm store prune 只删除所有已注册项目都不再引用的包；"
-                        "显示大小仅是 store 当前占用"
-                    ),
+    if _wants(kinds, VendorCleanupKind.PNPM_STORE_PRUNE):
+        try:
+            pnpm_inventory = pnpm_maintenance.inventory_pnpm_storage(environment)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            warnings.append(f"pnpm inventory: {error}")
+        else:
+            for pnpm_entry in pnpm_inventory.stores:
+                if not pnpm_entry.exists or pnpm_entry.logical_bytes <= 0:
+                    continue
+                candidates.append(
+                    _candidate(
+                        VendorCleanupKind.PNPM_STORE_PRUNE,
+                        pnpm_entry.path,
+                        pnpm_entry.logical_bytes,
+                        "pnpm store 垃圾回收",
+                        (
+                            "由 pnpm store prune 只删除所有已注册项目都不再引用的包；"
+                            "显示大小仅是 store 当前占用"
+                        ),
+                    )
                 )
-            )
 
-    try:
-        go_inventory = go_maintenance.inventory_go_storage(environment)
-    except (OSError, RuntimeError, TypeError, ValueError) as error:
-        warnings.append(f"Go inventory: {error}")
-    else:
-        for go_entry in go_inventory.caches:
-            if (
-                not go_entry.exists
-                or go_entry.logical_bytes <= 0
-                or go_entry.lane
-                is not go_maintenance.GoMaintenanceLane.DETERMINISTIC_CANDIDATE
-                or go_entry.kind is not go_maintenance.GoCacheKind.BUILD
-            ):
-                continue
-            candidates.append(
-                _candidate(
-                    VendorCleanupKind.GO_BUILD_CACHE_CLEAN,
-                    go_entry.path,
-                    go_entry.logical_bytes,
-                    "Go 构建缓存",
-                    "由 go clean -cache 清理可重新编译的构建缓存；module cache 不在此自动清理",
+    if _wants(kinds, VendorCleanupKind.GO_BUILD_CACHE_CLEAN):
+        try:
+            go_inventory = go_maintenance.inventory_go_storage(environment)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            warnings.append(f"Go inventory: {error}")
+        else:
+            for go_entry in go_inventory.caches:
+                if (
+                    not go_entry.exists
+                    or go_entry.logical_bytes <= 0
+                    or go_entry.lane
+                    is not go_maintenance.GoMaintenanceLane.DETERMINISTIC_CANDIDATE
+                    or go_entry.kind is not go_maintenance.GoCacheKind.BUILD
+                ):
+                    continue
+                candidates.append(
+                    _candidate(
+                        VendorCleanupKind.GO_BUILD_CACHE_CLEAN,
+                        go_entry.path,
+                        go_entry.logical_bytes,
+                        "Go 构建缓存",
+                        "由 go clean -cache 清理可重新编译的构建缓存；module cache 不在此自动清理",
+                    )
                 )
-            )
 
-    try:
-        nuget_inventory = nuget_maintenance.inventory_nuget_storage(environment)
-    except (OSError, RuntimeError, TypeError, ValueError) as error:
-        warnings.append(f"NuGet inventory: {error}")
-    else:
-        nuget_kinds = {
-            nuget_maintenance.NuGetLocalKind.HTTP_CACHE: (
-                VendorCleanupKind.NUGET_HTTP_CACHE_CLEAR
-            ),
-            nuget_maintenance.NuGetLocalKind.TEMP: VendorCleanupKind.NUGET_TEMP_CLEAR,
-            nuget_maintenance.NuGetLocalKind.PLUGINS_CACHE: (
-                VendorCleanupKind.NUGET_PLUGINS_CACHE_CLEAR
-            ),
+    nuget_requested = frozenset(
+        {
+            VendorCleanupKind.NUGET_HTTP_CACHE_CLEAR,
+            VendorCleanupKind.NUGET_TEMP_CLEAR,
+            VendorCleanupKind.NUGET_PLUGINS_CACHE_CLEAR,
         }
-        for nuget_entry in nuget_inventory.locals:
-            vendor_kind = nuget_kinds.get(nuget_entry.kind)
-            if (
-                vendor_kind is None
-                or not nuget_entry.exists
-                or nuget_entry.logical_bytes <= 0
-                or nuget_entry.lane
-                is not nuget_maintenance.NuGetMaintenanceLane.DETERMINISTIC_CANDIDATE
-            ):
-                continue
-            candidates.append(
-                _candidate(
-                    vendor_kind,
-                    nuget_entry.path,
-                    nuget_entry.logical_bytes,
-                    _nuget_label(nuget_entry.kind),
-                    nuget_entry.reason,
+    )
+    if kinds is None or kinds & nuget_requested:
+        try:
+            nuget_inventory = nuget_maintenance.inventory_nuget_storage(environment)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            warnings.append(f"NuGet inventory: {error}")
+        else:
+            nuget_kinds = {
+                nuget_maintenance.NuGetLocalKind.HTTP_CACHE: (
+                    VendorCleanupKind.NUGET_HTTP_CACHE_CLEAR
+                ),
+                nuget_maintenance.NuGetLocalKind.TEMP: VendorCleanupKind.NUGET_TEMP_CLEAR,
+                nuget_maintenance.NuGetLocalKind.PLUGINS_CACHE: (
+                    VendorCleanupKind.NUGET_PLUGINS_CACHE_CLEAR
+                ),
+            }
+            for nuget_entry in nuget_inventory.locals:
+                vendor_kind = nuget_kinds.get(nuget_entry.kind)
+                if (
+                    vendor_kind is None
+                    or (kinds is not None and vendor_kind not in kinds)
+                    or not nuget_entry.exists
+                    or nuget_entry.logical_bytes <= 0
+                    or nuget_entry.lane
+                    is not nuget_maintenance.NuGetMaintenanceLane.DETERMINISTIC_CANDIDATE
+                ):
+                    continue
+                candidates.append(
+                    _candidate(
+                        vendor_kind,
+                        nuget_entry.path,
+                        nuget_entry.logical_bytes,
+                        _nuget_label(nuget_entry.kind),
+                        nuget_entry.reason,
+                    )
                 )
-            )
 
-    try:
-        conda_inventory = conda_maintenance.inventory_conda_storage(environment)
-    except (OSError, RuntimeError, TypeError, ValueError) as error:
-        warnings.append(f"Conda inventory: {error}")
-    else:
-        for conda_entry in conda_inventory.package_caches:
-            if not conda_entry.exists or conda_entry.logical_bytes <= 0:
-                continue
-            candidates.append(
-                _candidate(
-                    VendorCleanupKind.CONDA_TARBALL_INDEX_CLEAN,
-                    conda_entry.path,
-                    conda_entry.logical_bytes,
-                    "Conda 下载/索引缓存清理",
-                    conda_entry.reason + "；显示大小仅是整个 package cache 当前占用",
+    if _wants(kinds, VendorCleanupKind.CONDA_TARBALL_INDEX_CLEAN):
+        try:
+            conda_inventory = conda_maintenance.inventory_conda_storage(environment)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            warnings.append(f"Conda inventory: {error}")
+        else:
+            for conda_entry in conda_inventory.package_caches:
+                if not conda_entry.exists or conda_entry.logical_bytes <= 0:
+                    continue
+                candidates.append(
+                    _candidate(
+                        VendorCleanupKind.CONDA_TARBALL_INDEX_CLEAN,
+                        conda_entry.path,
+                        conda_entry.logical_bytes,
+                        "Conda 下载/索引缓存清理",
+                        conda_entry.reason + "；显示大小仅是整个 package cache 当前占用",
+                    )
                 )
-            )
 
     unique: dict[tuple[VendorCleanupKind, str], VendorCleanupCandidate] = {}
     for candidate in candidates:
@@ -403,6 +421,13 @@ def _nuget_kind_for_vendor(
         VendorCleanupKind.NUGET_TEMP_CLEAR: nuget_maintenance.NuGetLocalKind.TEMP,
         VendorCleanupKind.NUGET_PLUGINS_CACHE_CLEAR: nuget_maintenance.NuGetLocalKind.PLUGINS_CACHE,
     }.get(kind)
+
+
+def _wants(
+    requested: frozenset[VendorCleanupKind] | None,
+    kind: VendorCleanupKind,
+) -> bool:
+    return requested is None or kind in requested
 
 
 def _candidate(

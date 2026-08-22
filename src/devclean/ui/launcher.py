@@ -11,7 +11,7 @@ import sys
 import tkinter as tk
 from collections.abc import Sequence
 
-from devclean.ui.product_app import ProductDevCleanWindow
+from devclean.ui.product_vendor_app import ProductDevCleanWindow
 
 
 def main(argv: Sequence[str] | None = None) -> int:
