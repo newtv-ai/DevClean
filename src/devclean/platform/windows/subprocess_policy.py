@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from typing import Any, cast
+from typing import Any
 
 _INSTALLED = False
 _ORIGINAL_POPEN = subprocess.Popen
@@ -55,7 +55,7 @@ def install_no_console_subprocess_policy() -> None:
     global _INSTALLED
     if os.name != "nt" or _INSTALLED:
         return
-    subprocess.Popen = cast(Any, _no_console_popen)
+    setattr(subprocess, "Popen", _no_console_popen)
     _INSTALLED = True
 
 
