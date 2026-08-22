@@ -11,6 +11,6 @@ from devclean.ui.product_app import ProductDevCleanWindow  # noqa: E402
 
 # Keep the launcher's existing advanced menus, but use the product window that
 # adds visible scan timing without changing rule/AI classification semantics.
-setattr(launcher, "ModernDevCleanWindow", ProductDevCleanWindow)
+vars(launcher)["ModernDevCleanWindow"] = ProductDevCleanWindow
 
 raise SystemExit(launcher.main())
