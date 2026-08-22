@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 
 from devclean.ui import launcher
-from devclean.ui.product_app import ProductDevCleanWindow
+from devclean.ui.product_vendor_app import ProductDevCleanWindow
 
 
 def test_launcher_exposes_only_the_product_window() -> None:
