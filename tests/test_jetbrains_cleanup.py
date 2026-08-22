@@ -91,15 +91,16 @@ def test_jetbrains_mixed_system_root_delegates_only_source_backed_subtrees(
         assert rule.owner is owner
 
 
-def test_jetbrains_user_and_keep_state_are_projected_to_generic_protection(
+def test_jetbrains_user_state_is_reviewable_while_keep_state_is_protected(
     tmp_path: Path,
 ) -> None:
     env, _config, system = _layout(tmp_path)
-    for path in (
-        system / "LocalHistory" / "storageData",
-        system / "jcef_cache" / "Cookies",
-        system / "caches" / "names.dat",
-    ):
+    cases = {
+        system / "LocalHistory" / "storageData": DecisionOwner.USER,
+        system / "jcef_cache" / "Cookies": DecisionOwner.USER,
+        system / "caches" / "names.dat": DecisionOwner.KEEP,
+    }
+    for path, owner in cases.items():
         decision = evaluate_application_path(
             path,
             logical_size=512 * _MIB,
@@ -109,8 +110,13 @@ def test_jetbrains_user_and_keep_state_are_projected_to_generic_protection(
             environment=env,
         )
         assert decision is not None
-        assert decision.action is PolicyAction.KEEP_PROTECTED
-        assert not process_guard_allows(path, env)
+        assert decision.rule.owner is owner
+        if owner is DecisionOwner.USER:
+            assert decision.action is PolicyAction.USER_DECISION
+            assert process_guard_allows(path, env)
+        else:
+            assert decision.action is PolicyAction.KEEP_PROTECTED
+            assert not process_guard_allows(path, env)
 
 
 def test_jetbrains_index_policy_honors_idle_reclaim_and_process_guard(
