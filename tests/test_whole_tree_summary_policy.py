@@ -56,7 +56,10 @@ def _evidence(*, size: int, age_days: int) -> WholeTreePolicyEvidence:
     )
 
 
-def test_precomputed_summary_uses_same_idle_rule(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_precomputed_summary_uses_same_idle_rule(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import devclean.core.whole_tree_policy as policy
 
     root = tmp_path / "cache"
