@@ -135,7 +135,7 @@ def test_cursor_workspace_and_chat_databases_are_user_owned() -> None:
         )
         assert decision is not None
         assert decision.rule.owner is DecisionOwner.USER
-        assert decision.action is PolicyAction.KEEP_PROTECTED
+        assert decision.action is PolicyAction.USER_DECISION
 
 
 def test_cursor_recovery_copy_rule_outranks_global_storage_keep() -> None:
@@ -187,7 +187,7 @@ def test_cursor_unknown_state_unsaved_backups_and_extensions_are_kept() -> None:
     assert extension is not None and extension.owner is DecisionOwner.KEEP
 
 
-def test_cursor_process_guard_never_allows_user_database(
+def test_cursor_process_guard_allows_user_database_but_rechecks_tool_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     db = r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage\state.vscdb"
@@ -195,8 +195,8 @@ def test_cursor_process_guard_never_allows_user_database(
         r"C:\Users\alice\AppData\Roaming\Cursor\User\globalStorage"
         r"\state.vscdb.corrupted.123"
     )
-    assert not process_guard_allows(db, _env())
-    assert not process_guard_allows(recovery, _env())
+    assert process_guard_allows(db, _env())
+    assert process_guard_allows(recovery, _env())
 
     monkeypatch.setattr(
         "devclean.core.application_cleanup.cursor_process_running",

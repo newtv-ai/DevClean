@@ -147,7 +147,7 @@ def test_vscode_cache_storage_is_user_owned_persistent_data() -> None:
         environment=_env(),
     )
     assert decision is not None
-    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert decision.action is PolicyAction.USER_DECISION
     assert whole_tree_application_rule(
         r"C:\Users\alice\AppData\Roaming\Code\Service Worker\CacheStorage",
         _env(),
@@ -234,7 +234,12 @@ def test_vscode_workspace_history_and_recovery_are_not_generic_cache() -> None:
         )
         assert decision is not None
         assert decision.rule.owner is owner
-        assert decision.action is PolicyAction.KEEP_PROTECTED
+        expected = (
+            PolicyAction.USER_DECISION
+            if owner is DecisionOwner.USER
+            else PolicyAction.KEEP_PROTECTED
+        )
+        assert decision.action is expected
 
 
 def test_vscode_portable_temp_is_tool_owned_but_recent_data_is_kept() -> None:
@@ -286,7 +291,7 @@ def test_vscode_dynamic_whole_tree_cache_roots_are_exact() -> None:
     ) is None
 
 
-def test_vscode_process_guard_never_allows_workspace_or_backup_state(
+def test_vscode_process_guard_allows_user_choice_but_not_keep_or_running_tool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = (
@@ -294,7 +299,7 @@ def test_vscode_process_guard_never_allows_workspace_or_backup_state(
         r"\abc\state.vscdb"
     )
     backup = r"C:\Users\alice\AppData\Roaming\Code\Backups\window\untitled.txt"
-    assert not process_guard_allows(workspace, _env())
+    assert process_guard_allows(workspace, _env())
     assert not process_guard_allows(backup, _env())
 
     monkeypatch.setattr(

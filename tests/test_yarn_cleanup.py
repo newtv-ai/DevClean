@@ -100,7 +100,7 @@ def test_yarn_project_local_cache_is_user_owned_for_zero_installs(tmp_path: Path
         environment=env,
     )
     assert decision is not None
-    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert decision.action is PolicyAction.USER_DECISION
 
 
 def test_yarn_machine_cache_never_becomes_age_or_size_delete_candidate(

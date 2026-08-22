@@ -232,7 +232,7 @@ def test_android_avd_qcow2_cache_pair_fails_closed(tmp_path: Path) -> None:
     assert decision.action is PolicyAction.KEEP_PROTECTED
 
 
-def test_android_avd_user_owned_data_projects_to_generic_protection(
+def test_android_avd_user_owned_data_is_a_real_user_decision(
     tmp_path: Path,
 ) -> None:
     env, _, content = _layout(tmp_path)
@@ -252,7 +252,8 @@ def test_android_avd_user_owned_data_projects_to_generic_protection(
             environment=env,
         )
         assert decision is not None
-        assert decision.action is PolicyAction.KEEP_PROTECTED
+        assert decision.rule.owner is DecisionOwner.USER
+        assert decision.action is PolicyAction.USER_DECISION
 
 
 def test_android_avd_never_grants_whole_tree_deletion(tmp_path: Path) -> None:
@@ -265,7 +266,7 @@ def test_android_avd_never_grants_whole_tree_deletion(tmp_path: Path) -> None:
     assert whole_tree_application_rule(snapshots, env) is None
 
 
-def test_android_avd_process_guard_applies_only_to_deletable_cache_partition(
+def test_android_avd_process_guard_blocks_keep_and_live_tool_but_not_user_choice(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -279,5 +280,6 @@ def test_android_avd_process_guard_applies_only_to_deletable_cache_partition(
     monkeypatch.setattr(application_cleanup, "android_avd_process_running", lambda: False)
     assert application_cleanup.process_guard_allows(cache, env)
 
-    # User data is refused regardless of process state.
-    assert not application_cleanup.process_guard_allows(content / "userdata-qemu.img", env)
+    # USER is not KEEP. Explicit selection is enforced before this execution guard.
+    assert application_cleanup.process_guard_allows(content / "userdata-qemu.img", env)
+    assert not application_cleanup.process_guard_allows(content / "config.ini", env)

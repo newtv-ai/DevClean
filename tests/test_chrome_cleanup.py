@@ -158,7 +158,7 @@ def test_chrome_cache_storage_is_user_data_but_script_cache_is_tool() -> None:
         environment=_env(),
     )
     assert site_decision is not None
-    assert site_decision.action is PolicyAction.KEEP_PROTECTED
+    assert site_decision.action is PolicyAction.USER_DECISION
     assert script_decision is not None
     assert script_decision.action is PolicyAction.TOOL_DELETE
     assert (

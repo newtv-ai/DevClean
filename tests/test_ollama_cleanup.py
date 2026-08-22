@@ -79,7 +79,7 @@ def test_ollama_model_store_is_user_owned_not_generic_tool(tmp_path: Path) -> No
         environment=env,
     )
     assert decision is not None
-    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert decision.action is PolicyAction.USER_DECISION
 
 
 def test_ollama_home_configuration_and_unknown_state_are_keep(tmp_path: Path) -> None:
@@ -102,7 +102,9 @@ def test_ollama_never_grants_raw_whole_tree_authority(tmp_path: Path) -> None:
 
     assert ollama_audited_tool_roots(env) == ()
     assert whole_tree_application_rule(models, env) is None
-    assert not application_cleanup.process_guard_allows(models, env)
+    # USER-owned model storage may proceed only after explicit user selection;
+    # the absence of whole-tree TOOL authority remains unchanged.
+    assert application_cleanup.process_guard_allows(models, env)
 
 
 def test_ollama_model_root_is_catalogued_report_only(tmp_path: Path) -> None:

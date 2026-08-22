@@ -117,7 +117,7 @@ def test_conda_environment_metadata_is_protected_even_outside_known_envs(
     assert rule.owner is DecisionOwner.KEEP
 
 
-def test_conda_user_environment_is_projected_to_keep_in_generic_pipeline(
+def test_conda_user_environment_stays_user_decided_in_generic_pipeline(
     tmp_path: Path,
 ) -> None:
     env, _, _, envs, _ = _layout(tmp_path)
@@ -139,7 +139,7 @@ def test_conda_user_environment_is_projected_to_keep_in_generic_pipeline(
     )
 
     assert direct is not None and direct.action is PolicyAction.USER_DECISION
-    assert generic is not None and generic.action is PolicyAction.KEEP_PROTECTED
+    assert generic is not None and generic.action is PolicyAction.USER_DECISION
 
 
 def test_conda_never_grants_raw_whole_tree_authority(tmp_path: Path) -> None:

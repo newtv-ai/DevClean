@@ -123,7 +123,7 @@ def test_edge_site_cache_storage_is_user_owned_and_profile_state_is_keep() -> No
         environment=_env(),
     )
     assert decision is not None
-    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert decision.action is PolicyAction.USER_DECISION
     assert whole_tree_application_rule(
         r"C:\Users\alice\AppData\Local\Microsoft\Edge\User Data\Default"
         r"\Service Worker\CacheStorage",

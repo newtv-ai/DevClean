@@ -129,7 +129,7 @@ def test_windsurf_cache_storage_is_user_owned_persistent_data() -> None:
         environment=_env(),
     )
     assert decision is not None
-    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert decision.action is PolicyAction.USER_DECISION
     assert whole_tree_application_rule(
         r"C:\Users\alice\AppData\Roaming\Windsurf\Service Worker\CacheStorage",
         _env(),
@@ -158,7 +158,7 @@ def test_windsurf_cascade_memories_and_plans_are_user_owned() -> None:
         )
         assert decision is not None
         assert decision.rule.owner is DecisionOwner.USER
-        assert decision.action is PolicyAction.KEEP_PROTECTED
+        assert decision.action is PolicyAction.USER_DECISION
 
 
 def test_windsurf_authored_config_extensions_and_system_policy_are_kept() -> None:

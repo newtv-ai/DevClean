@@ -80,7 +80,7 @@ def test_trae_known_electron_cache_is_tool_owned_and_process_guarded() -> None:
     assert running.action is PolicyAction.TOOL_KEEP_IN_USE
 
 
-def test_trae_user_and_unknown_state_are_protected() -> None:
+def test_trae_user_state_is_reviewable_and_unknown_state_is_protected() -> None:
     paths = (
         (
             r"C:\Users\alice\AppData\Roaming\Trae\User\workspaceStorage"
@@ -119,7 +119,12 @@ def test_trae_user_and_unknown_state_are_protected() -> None:
         )
         assert decision is not None
         assert decision.rule.owner is owner
-        assert decision.action is PolicyAction.KEEP_PROTECTED
+        expected = (
+            PolicyAction.USER_DECISION
+            if owner is DecisionOwner.USER
+            else PolicyAction.KEEP_PROTECTED
+        )
+        assert decision.action is expected
 
 
 def test_trae_dynamic_whole_tree_cache_root_is_exact_only() -> None:
@@ -132,14 +137,14 @@ def test_trae_dynamic_whole_tree_cache_root_is_exact_only() -> None:
     assert whole_tree_application_rule(r"D:\TraeState\User", env) is None
 
 
-def test_trae_process_guard_refuses_user_state_and_running_cache(
+def test_trae_process_guard_allows_user_choice_and_blocks_running_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = (
         r"C:\Users\alice\AppData\Roaming\Trae\User\workspaceStorage"
         r"\abc\state.vscdb"
     )
-    assert not process_guard_allows(workspace, _env())
+    assert process_guard_allows(workspace, _env())
 
     monkeypatch.setattr(
         "devclean.core.application_cleanup.trae_process_running",

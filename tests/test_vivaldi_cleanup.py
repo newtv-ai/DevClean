@@ -84,7 +84,7 @@ def test_vivaldi_chromium_cache_user_data_and_crash_boundaries() -> None:
         environment=_env(),
     )
     assert projected is not None
-    assert projected.action is PolicyAction.KEEP_PROTECTED
+    assert projected.action is PolicyAction.USER_DECISION
 
 
 def test_vivaldi_crash_reports_stay_protected_regardless_of_age_or_size() -> None:

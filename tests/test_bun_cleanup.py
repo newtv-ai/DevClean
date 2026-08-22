@@ -91,7 +91,9 @@ def test_bun_custom_cache_environment_is_source_backed_but_not_delete_authority(
     assert whole_tree_application_rule(custom, env) is None
 
 
-def test_bun_project_local_cache_and_metadata_are_protected(tmp_path: Path) -> None:
+def test_bun_project_local_cache_is_user_decided_and_metadata_is_protected(
+    tmp_path: Path,
+) -> None:
     env, _, _ = _layout(tmp_path)
     project = tmp_path / "work" / "project"
     project_cache = project / ".bun" / "cache" / "offline-package"
@@ -120,7 +122,7 @@ def test_bun_project_local_cache_and_metadata_are_protected(tmp_path: Path) -> N
         environment=env,
     )
     assert decision is not None
-    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert decision.action is PolicyAction.USER_DECISION
     assert whole_tree_application_rule(project / ".bun" / "cache", env) is None
 
 
