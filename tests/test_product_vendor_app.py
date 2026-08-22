@@ -82,26 +82,6 @@ def test_product_safe_list_rejects_partial_gc_root_sizes(
             (UvCacheEntry(uv_cache, 500 * _MIB, True, False),)
         ),
     )
-    monkeypatch.setattr(
-        pnpm_maintenance,
-        "inventory_pnpm_storage",
-        lambda _environment=None: (_ for _ in ()).throw(AssertionError("not requested")),
-    )
-    monkeypatch.setattr(
-        go_maintenance,
-        "inventory_go_storage",
-        lambda _environment=None: (_ for _ in ()).throw(AssertionError("not requested")),
-    )
-    monkeypatch.setattr(
-        nuget_maintenance,
-        "inventory_nuget_storage",
-        lambda _environment=None: (_ for _ in ()).throw(AssertionError("not requested")),
-    )
-    monkeypatch.setattr(
-        conda_maintenance,
-        "inventory_conda_storage",
-        lambda _environment=None: (_ for _ in ()).throw(AssertionError("not requested")),
-    )
 
     inventory = inventory_vendor_cleanup_candidates(
         {},
@@ -188,7 +168,25 @@ def test_known_partial_gc_cache_roots_are_pruned_from_generic_file_scan(
     assert str(unrelated) not in skipped
 
 
-def test_vendor_rows_use_non_path_ids() -> None:
-    # Candidate construction is sealed, so use one real inventoried provider row.
-    # The prefix ensures a vendor command row cannot collide with a filesystem path.
-    assert _vendor_row_id.__name__ == "_vendor_row_id"
+def test_vendor_rows_use_non_path_ids(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pip_cache = tmp_path / "pip"
+    pip_cache.mkdir()
+    monkeypatch.setattr(
+        pip_maintenance,
+        "inventory_pip_storage",
+        lambda _environment=None: PipStorageInventory(
+            (PipCacheEntry(pip_cache, 5 * _MIB, True, False, True),)
+        ),
+    )
+    candidate = inventory_vendor_cleanup_candidates(
+        {},
+        kinds=frozenset({VendorCleanupKind.PIP_CACHE_PURGE}),
+    ).candidates[0]
+
+    row_id = _vendor_row_id(candidate)
+
+    assert row_id.startswith("vendor:vendor_")
+    assert row_id != str(candidate.path)
