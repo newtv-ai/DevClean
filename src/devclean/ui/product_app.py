@@ -1,9 +1,12 @@
 """Product shell for DevClean's rule-first, AI-assisted cleanup workflow.
 
-There is one scan button, not a smart/deep choice. Known whole-tree rules are
+There is one scan button and one decision engine. Known whole-tree rules are
 handled as directory objects using a lightweight aggregate metadata pass; their
 children are not fed through per-file classification. Only unresolved areas are
 walked file-by-file, and residual reviewable ambiguity is routed to the AI lane.
+
+There is deliberately no separate "tool center": a rule that DevClean knows
+belongs in this pipeline rather than in a manual per-tool dialog.
 """
 
 # Chinese UI prose uses fullwidth punctuation.
@@ -110,6 +113,32 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
         self._scan_duration = tk.StringVar(master=root, value="扫描耗时：—")
         super().__init__(root)
 
+    def _build_header(self, page: ttk.Frame) -> None:
+        """Build the product header without a manual per-tool maintenance entry."""
+
+        header = ttk.Frame(page, style="App.TFrame")
+        header.pack(fill=tk.X, pady=(0, 14))
+        header.columnconfigure(0, weight=1)
+
+        brand = ttk.Frame(header, style="App.TFrame")
+        brand.grid(row=0, column=0, sticky="w")
+        ttk.Label(brand, text="DevClean", style="Title.TLabel").pack(anchor=tk.W)
+        ttk.Label(
+            brand,
+            text="扫描一次，规则自动判断；本地规则无法确定的项目再进入 AI 复核",
+            style="Subtitle.TLabel",
+        ).pack(anchor=tk.W, pady=(2, 0))
+
+        header_actions = ttk.Frame(header, style="App.TFrame")
+        header_actions.grid(row=0, column=1, sticky="e")
+        self._rule_button = ttk.Button(
+            header_actions,
+            text="规则设置",
+            style="Quiet.TButton",
+            command=self._edit_rules,
+        )
+        self._rule_button.pack(side=tk.LEFT)
+
     def _build_scan_controls(self, page: ttk.Frame) -> None:
         panel = self._card(page, padx=18, pady=15)
         panel.pack(fill=tk.X)
@@ -157,7 +186,7 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
         ).pack(anchor=tk.W)
         ttk.Label(
             explanation,
-            text="已知规则目录只做快速汇总；只有未决内容才逐文件分析并进入 AI 复核。",
+            text="规则能决定的自动归类；已知整目录缓存快速汇总，只有未决内容才逐文件分析。",
             style="Body.TLabel",
         ).pack(anchor=tk.W, pady=(8, 0))
 
