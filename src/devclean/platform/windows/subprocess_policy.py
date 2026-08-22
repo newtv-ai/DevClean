@@ -55,7 +55,7 @@ def install_no_console_subprocess_policy() -> None:
     global _INSTALLED
     if os.name != "nt" or _INSTALLED:
         return
-    setattr(subprocess, "Popen", _no_console_popen)
+    subprocess.__dict__["Popen"] = _no_console_popen
     _INSTALLED = True
 
 
