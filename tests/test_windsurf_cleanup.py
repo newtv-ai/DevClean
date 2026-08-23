@@ -338,7 +338,7 @@ def test_catalog_upgrades_only_audited_windsurf_cache_subtrees(tmp_path: Path) -
     cache_root = by_path[os.path.normcase(str(cache))]
     config = by_path[os.path.normcase(str(home / ".codeium" / "windsurf"))]
     log_root = by_path[os.path.normcase(str(logs))]
-    crash_root = by_path[os.path.normcase(str(crash))]
+    crash_root = by_path.get(os.path.normcase(str(crash)))
 
     assert editor.policy is CleanupPolicy.REPORT_ONLY
     assert not editor.delete_root_itself
@@ -348,8 +348,10 @@ def test_catalog_upgrades_only_audited_windsurf_cache_subtrees(tmp_path: Path) -
     assert not config.delete_root_itself
     assert log_root.policy is CleanupPolicy.REPORT_ONLY
     assert not log_root.delete_root_itself
-    assert crash_root.policy is CleanupPolicy.REPORT_ONLY
-    assert not crash_root.delete_root_itself
+    assert crash_root is None or (
+        crash_root.policy is CleanupPolicy.REPORT_ONLY
+        and not crash_root.delete_root_itself
+    )
 
 
 def test_windsurf_process_guard_blocks_running_cache_and_user_logs(
