@@ -19,6 +19,22 @@ from devclean.core.npm_cleanup import clear_npm_process_cache, npm_process_runni
 from devclean.platform.windows.filesystem import read_file_metadata
 from devclean.platform.windows.volumes import is_local_fixed_path
 
+_NPM_STABLE_BOUNDARY_CONFIG_KEYS = (
+    "cache",
+    "prefix",
+    "userconfig",
+    "globalconfig",
+    "cafile",
+    "init-module",
+    "init.module",
+    "node-gyp",
+    "logs-dir",
+)
+_NPM_V12_BOUNDARY_CONFIG_KEYS = ("global-ignore-file",)
+_NPM_BOUNDARY_CONFIG_KEYS = frozenset(
+    (*_NPM_STABLE_BOUNDARY_CONFIG_KEYS, *_NPM_V12_BOUNDARY_CONFIG_KEYS)
+)
+
 
 @dataclass(frozen=True, slots=True)
 class NpmPathIdentity:
@@ -367,6 +383,21 @@ def _discover_cache_root(tool: NpmPathIdentity, environment: Mapping[str, str]) 
     return Path(str(candidate))
 
 
+def _npm_major_version(
+    tool: NpmPathIdentity,
+    environment: Mapping[str, str],
+) -> int:
+    result = _run_npm(tool, ("--version",), environment, timeout=30)
+    _require_success(result, "npm --version")
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if len(lines) != 1:
+        raise RuntimeError("npm --version 未返回唯一版本; 已安全停止")
+    major_text = lines[0].split(".", 1)[0]
+    if not major_text.isdigit() or int(major_text) < 1:
+        raise RuntimeError(f"无法解析 npm major 版本: {lines[0]}")
+    return int(major_text)
+
+
 def _require_no_protected_overlap(
     inventory: NpmStorageInventory,
     mutation_root: Path,
@@ -375,17 +406,22 @@ def _require_no_protected_overlap(
     """Fail closed if npm redirects persistent/user data into this mutation root."""
 
     pinned_env = _npm_environment(inventory.cache_root, environment)
+    major = _npm_major_version(inventory.npm_tool, pinned_env)
+    config_keys = list(_NPM_STABLE_BOUNDARY_CONFIG_KEYS)
+    if major >= 12:
+        config_keys.extend(_NPM_V12_BOUNDARY_CONFIG_KEYS)
     result = _run_npm(
         inventory.npm_tool,
-        ("config", "get", "cache", "prefix", "userconfig", "logs-dir"),
+        ("config", "get", *config_keys),
         pinned_env,
         timeout=30,
     )
     _require_success(result, "npm config get mutation boundaries")
     values = _parse_config_values(result.stdout)
-    required = {"cache", "prefix", "userconfig", "logs-dir"}
+    required = set(config_keys)
     if set(values) != required:
-        raise RuntimeError("npm 未完整返回 cache/prefix/userconfig/logs-dir; 已安全停止")
+        missing = ", ".join(sorted(required - set(values))) or "unknown"
+        raise RuntimeError(f"npm 未完整返回 mutation boundary 配置 ({missing}); 已安全停止")
 
     confirmed_cache = _config_path(values["cache"], "npm cache", allow_null=False)
     if confirmed_cache is None or _normalize(confirmed_cache) != _normalize(
@@ -396,15 +432,30 @@ def _require_no_protected_overlap(
     protected: list[tuple[str, Path]] = [
         ("default logs", inventory.cache_root / "_logs"),
     ]
-    for key, label in (("prefix", "global prefix"), ("userconfig", "user config")):
+    required_paths = (
+        ("prefix", "global prefix"),
+        ("userconfig", "user config"),
+        ("globalconfig", "global config"),
+    )
+    for key, label in required_paths:
         path = _config_path(values[key], f"npm {label}", allow_null=False)
         if path is None:
             raise RuntimeError(f"npm 未返回 {label} 路径; 已安全停止")
         protected.append((label, path))
 
-    logs_dir = _config_path(values["logs-dir"], "npm logs-dir", allow_null=True)
-    if logs_dir is not None:
-        protected.append(("logs-dir", logs_dir))
+    optional_paths: tuple[tuple[str, str], ...] = (
+        ("cafile", "CA file"),
+        ("init-module", "init module"),
+        ("init.module", "legacy init module"),
+        ("node-gyp", "node-gyp executable"),
+        ("logs-dir", "logs-dir"),
+    )
+    if major >= 12:
+        optional_paths = (*optional_paths, ("global-ignore-file", "global ignore file"))
+    for key, label in optional_paths:
+        path = _config_path(values[key], f"npm {label}", allow_null=True)
+        if path is not None:
+            protected.append((label, path))
 
     for label, protected_path in protected:
         if _path_is_inside(mutation_root, protected_path):
@@ -415,13 +466,12 @@ def _require_no_protected_overlap(
 
 def _parse_config_values(stdout: str) -> dict[str, str]:
     values: dict[str, str] = {}
-    allowed = {"cache", "prefix", "userconfig", "logs-dir"}
     for line in stdout.splitlines():
         key, separator, raw = line.partition("=")
         if not separator:
             continue
         normalized = key.strip().casefold()
-        if normalized not in allowed or normalized in values:
+        if normalized not in _NPM_BOUNDARY_CONFIG_KEYS or normalized in values:
             continue
         values[normalized] = raw.strip()
     return values

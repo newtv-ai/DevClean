@@ -13,6 +13,18 @@ from devclean.core.npm_maintenance import (
     NpmStorageInventory,
 )
 
+_STABLE_KEYS = (
+    "cache",
+    "prefix",
+    "userconfig",
+    "globalconfig",
+    "cafile",
+    "init-module",
+    "init.module",
+    "node-gyp",
+    "logs-dir",
+)
+
 
 def _inventory(tmp_path: Path) -> NpmStorageInventory:
     root = tmp_path / "npm-cache"
@@ -38,27 +50,47 @@ def _inventory(tmp_path: Path) -> NpmStorageInventory:
     )
 
 
+def _default_paths(tmp_path: Path) -> dict[str, Path | None]:
+    return {
+        "prefix": tmp_path / "global-prefix",
+        "userconfig": tmp_path / ".npmrc",
+        "globalconfig": tmp_path / "global.npmrc",
+        "cafile": tmp_path / "ca.pem",
+        "init-module": tmp_path / "npm-init.js",
+        "init.module": tmp_path / "legacy-npm-init.js",
+        "node-gyp": tmp_path / "node-gyp.js",
+        "logs-dir": tmp_path / "npm-logs",
+        "global-ignore-file": tmp_path / "global.npmignore",
+    }
+
+
 def _output(
     inventory: NpmStorageInventory,
+    paths: dict[str, Path | None],
     *,
-    prefix: Path,
-    userconfig: Path,
-    logs_dir: Path | None,
     cache: Path | None = None,
+    include_global_ignore: bool,
+    omit: frozenset[str] = frozenset(),
 ) -> str:
-    return "\n".join(
-        (
-            f"cache = {cache or inventory.cache_root}",
-            f"prefix = {prefix}",
-            f"userconfig = {userconfig}",
-            f"logs-dir = {logs_dir if logs_dir is not None else 'null'}",
-        )
-    )
+    values: list[tuple[str, str]] = [
+        ("cache", str(cache or inventory.cache_root)),
+    ]
+    for key in _STABLE_KEYS[1:]:
+        if key in omit:
+            continue
+        value = paths[key]
+        values.append((key, "null" if value is None else str(value)))
+    if include_global_ignore and "global-ignore-file" not in omit:
+        value = paths["global-ignore-file"]
+        values.append(("global-ignore-file", "null" if value is None else str(value)))
+    return "\n".join(f"{key} = {value}" for key, value in values)
 
 
-def _mock_config(
+def _mock_npm(
     monkeypatch: pytest.MonkeyPatch,
-    stdout: str,
+    *,
+    major: int,
+    config_stdout: str,
 ) -> list[tuple[tuple[str, ...], dict[str, str]]]:
     calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
 
@@ -72,69 +104,127 @@ def _mock_config(
         del tool
         calls.append((arguments, dict(environment)))
         assert timeout == 30
-        return subprocess.CompletedProcess([], 0, stdout, "")
+        if arguments == ("--version",):
+            return subprocess.CompletedProcess([], 0, f"{major}.6.2\n", "")
+        assert arguments[:2] == ("config", "get")
+        return subprocess.CompletedProcess([], 0, config_stdout, "")
 
     monkeypatch.setattr(npm, "_run_npm", fake_run)
     return calls
 
 
 @pytest.mark.skipif(os.name != "nt", reason="npm maintenance targets Windows paths")
-def test_scope_guard_allows_persistent_paths_outside_content_cache(
+def test_scope_guard_keeps_npm11_compatible_and_protects_stable_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     inventory = _inventory(tmp_path)
-    prefix = tmp_path / "global-prefix"
-    userconfig = tmp_path / ".npmrc"
-    logs = tmp_path / "npm-logs"
-    calls = _mock_config(
+    paths = _default_paths(tmp_path)
+    calls = _mock_npm(
         monkeypatch,
-        _output(
+        major=11,
+        config_stdout=_output(
             inventory,
-            prefix=prefix,
-            userconfig=userconfig,
-            logs_dir=logs,
+            paths,
+            include_global_ignore=False,
         ),
     )
 
     npm._require_no_protected_overlap(inventory, inventory.content_cache.path, {})
 
-    assert len(calls) == 1
-    arguments, environment = calls[0]
-    assert arguments == ("config", "get", "cache", "prefix", "userconfig", "logs-dir")
-    assert environment["NPM_CONFIG_CACHE"] == str(inventory.cache_root)
-    assert environment["NPM_CONFIG_UPDATE_NOTIFIER"] == "false"
+    assert len(calls) == 2
+    version_args, version_env = calls[0]
+    config_args, config_env = calls[1]
+    assert version_args == ("--version",)
+    assert config_args == ("config", "get", *_STABLE_KEYS)
+    assert "global-ignore-file" not in config_args
+    for environment in (version_env, config_env):
+        assert environment["NPM_CONFIG_CACHE"] == str(inventory.cache_root)
+        assert environment["NPM_CONFIG_UPDATE_NOTIFIER"] == "false"
 
 
 @pytest.mark.skipif(os.name != "nt", reason="npm maintenance targets Windows paths")
-@pytest.mark.parametrize("protected_kind", ["prefix", "userconfig", "logs-dir"])
-def test_scope_guard_refuses_redirected_persistent_state_inside_content_cache(
+def test_scope_guard_queries_v12_global_ignore_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inventory = _inventory(tmp_path)
+    paths = _default_paths(tmp_path)
+    calls = _mock_npm(
+        monkeypatch,
+        major=12,
+        config_stdout=_output(
+            inventory,
+            paths,
+            include_global_ignore=True,
+        ),
+    )
+
+    npm._require_no_protected_overlap(inventory, inventory.content_cache.path, {})
+
+    assert calls[1][0] == (
+        "config",
+        "get",
+        *_STABLE_KEYS,
+        "global-ignore-file",
+    )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="npm maintenance targets Windows paths")
+@pytest.mark.parametrize(
+    "protected_kind",
+    [
+        "prefix",
+        "userconfig",
+        "globalconfig",
+        "cafile",
+        "init-module",
+        "init.module",
+        "node-gyp",
+        "logs-dir",
+    ],
+)
+def test_scope_guard_refuses_stable_persistent_paths_inside_content_cache(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     protected_kind: str,
 ) -> None:
     inventory = _inventory(tmp_path)
-    outside_prefix = tmp_path / "global-prefix"
-    outside_userconfig = tmp_path / ".npmrc"
-    outside_logs = tmp_path / "logs"
-    inside = inventory.content_cache.path / "persistent"
-    values = {
-        "prefix": outside_prefix,
-        "userconfig": outside_userconfig,
-        "logs-dir": outside_logs,
-    }
-    values[protected_kind] = inside
-    _mock_config(
+    paths = _default_paths(tmp_path)
+    paths[protected_kind] = inventory.content_cache.path / "persistent"
+    _mock_npm(
         monkeypatch,
-        _output(
+        major=11,
+        config_stdout=_output(
             inventory,
-            prefix=values["prefix"],
-            userconfig=values["userconfig"],
-            logs_dir=values["logs-dir"],
+            paths,
+            include_global_ignore=False,
         ),
     )
 
     with pytest.raises(RuntimeError, match="vendor mutation 范围内"):
+        npm._require_no_protected_overlap(inventory, inventory.content_cache.path, {})
+
+
+@pytest.mark.skipif(os.name != "nt", reason="npm maintenance targets Windows paths")
+def test_scope_guard_refuses_v12_global_ignore_file_inside_content_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inventory = _inventory(tmp_path)
+    paths = _default_paths(tmp_path)
+    paths["global-ignore-file"] = inventory.content_cache.path / "global.npmignore"
+    _mock_npm(
+        monkeypatch,
+        major=12,
+        config_stdout=_output(
+            inventory,
+            paths,
+            include_global_ignore=True,
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="global ignore file"):
         npm._require_no_protected_overlap(inventory, inventory.content_cache.path, {})
 
 
@@ -145,13 +235,15 @@ def test_scope_guard_applies_to_exact_npx_entry_range(
 ) -> None:
     inventory = _inventory(tmp_path)
     entry = inventory.npx_cache.path / "entry-key"
-    _mock_config(
+    paths = _default_paths(tmp_path)
+    paths["logs-dir"] = entry / "diagnostics"
+    _mock_npm(
         monkeypatch,
-        _output(
+        major=11,
+        config_stdout=_output(
             inventory,
-            prefix=tmp_path / "prefix",
-            userconfig=tmp_path / ".npmrc",
-            logs_dir=entry / "diagnostics",
+            paths,
+            include_global_ignore=False,
         ),
     )
 
@@ -160,23 +252,46 @@ def test_scope_guard_applies_to_exact_npx_entry_range(
 
 
 @pytest.mark.skipif(os.name != "nt", reason="npm maintenance targets Windows paths")
+def test_scope_guard_allows_optional_boundary_paths_to_be_null(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inventory = _inventory(tmp_path)
+    paths = _default_paths(tmp_path)
+    for key in ("cafile", "init-module", "init.module", "node-gyp", "logs-dir"):
+        paths[key] = None
+    _mock_npm(
+        monkeypatch,
+        major=11,
+        config_stdout=_output(
+            inventory,
+            paths,
+            include_global_ignore=False,
+        ),
+    )
+
+    npm._require_no_protected_overlap(inventory, inventory.content_cache.path, {})
+
+
+@pytest.mark.skipif(os.name != "nt", reason="npm maintenance targets Windows paths")
 def test_scope_guard_refuses_incomplete_vendor_config_output(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     inventory = _inventory(tmp_path)
-    _mock_config(
+    paths = _default_paths(tmp_path)
+    _mock_npm(
         monkeypatch,
-        "\n".join(
-            (
-                f"cache = {inventory.cache_root}",
-                f"prefix = {tmp_path / 'prefix'}",
-                "logs-dir = null",
-            )
+        major=11,
+        config_stdout=_output(
+            inventory,
+            paths,
+            include_global_ignore=False,
+            omit=frozenset({"globalconfig"}),
         ),
     )
 
-    with pytest.raises(RuntimeError, match="未完整返回"):
+    with pytest.raises(RuntimeError, match="globalconfig"):
         npm._require_no_protected_overlap(inventory, inventory.content_cache.path, {})
 
 
@@ -186,16 +301,44 @@ def test_scope_guard_refuses_cache_retarget_before_mutation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     inventory = _inventory(tmp_path)
-    _mock_config(
+    paths = _default_paths(tmp_path)
+    _mock_npm(
         monkeypatch,
-        _output(
+        major=11,
+        config_stdout=_output(
             inventory,
-            prefix=tmp_path / "prefix",
-            userconfig=tmp_path / ".npmrc",
-            logs_dir=None,
+            paths,
             cache=tmp_path / "other-cache",
+            include_global_ignore=False,
         ),
     )
 
     with pytest.raises(RuntimeError, match="未再次确认固定"):
+        npm._require_no_protected_overlap(inventory, inventory.content_cache.path, {})
+
+
+@pytest.mark.skipif(os.name != "nt", reason="npm maintenance targets Windows paths")
+@pytest.mark.parametrize("version_output", ["", "not-a-version\n", "12.0.2\nextra\n"])
+def test_scope_guard_fails_closed_when_npm_major_cannot_be_proven(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    version_output: str,
+) -> None:
+    inventory = _inventory(tmp_path)
+
+    def fake_run(
+        tool: NpmPathIdentity,
+        arguments: tuple[str, ...],
+        environment: dict[str, str],
+        *,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        del tool, environment
+        assert arguments == ("--version",)
+        assert timeout == 30
+        return subprocess.CompletedProcess([], 0, version_output, "")
+
+    monkeypatch.setattr(npm, "_run_npm", fake_run)
+
+    with pytest.raises(RuntimeError, match=r"npm --version|npm major"):
         npm._require_no_protected_overlap(inventory, inventory.content_cache.path, {})
