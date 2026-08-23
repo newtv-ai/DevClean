@@ -172,7 +172,7 @@ def clean_go_cache(
     roots = go_roots(environment)
     if kind is GoCacheKind.BUILD and roots.build_cache_program:
         raise RuntimeError(
-            "GOCACHEPROG 已配置外部 Go build cache; 本地 build cache 仅报告，不自动清理"
+            "GOCACHEPROG 已配置外部 Go build cache; 本地 build cache 仅报告,不自动清理"
         )
 
     expected = {
@@ -281,7 +281,7 @@ def _confirm_go_config(
             raise RuntimeError("go env 未返回字符串 GOCACHEPROG; 已安全停止")
         if raw_program.strip():
             raise RuntimeError(
-                "GOCACHEPROG 已配置外部 Go build cache; 本地 build cache 仅报告，不自动清理"
+                "GOCACHEPROG 已配置外部 Go build cache; 本地 build cache 仅报告,不自动清理"
             )
 
 
@@ -432,7 +432,7 @@ def _decision_reason(kind: GoCacheKind, build_cache_program: str = "") -> str:
     if kind is GoCacheKind.BUILD:
         if build_cache_program.strip():
             return (
-                "Go 已配置 GOCACHEPROG 外部构建缓存后端; 本地 GOCACHE 仅报告，"
+                "Go 已配置 GOCACHEPROG 外部构建缓存后端; 本地 GOCACHE 仅报告,"
                 "不授予自动维护权限"
             )
         return "Go 编译构建缓存; 清理后只是后续构建重新编译, 不需要 AI 判断"
