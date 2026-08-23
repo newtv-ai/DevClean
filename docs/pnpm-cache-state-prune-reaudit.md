@@ -130,30 +130,37 @@ selected store.
 DevClean now narrows the command back to the reviewed user-side scope before
 execution:
 
-1. create a private temporary sandbox;
-2. remove conflicting pnpm environment overrides for the secondary scopes;
-3. pin `PNPM_CONFIG_CACHE_DIR` to `<sandbox>/cache`;
-4. pin `PNPM_CONFIG_GLOBAL_DIR` to `<sandbox>/global`;
-5. pin `PNPM_CONFIG_DLX_CACHE_MAX_AGE=Infinity`;
-6. ask the selected pnpm binary to report all three effective values and fail
+1. resolve one exact pnpm executable, require it to be a regular local-fixed
+   non-reparse/non-cloud file, and capture its stable volume/file identity;
+2. create a private temporary sandbox;
+3. remove conflicting pnpm environment overrides for the secondary scopes;
+4. pin `PNPM_CONFIG_CACHE_DIR` to `<sandbox>/cache`;
+5. pin `PNPM_CONFIG_GLOBAL_DIR` to `<sandbox>/global`;
+6. pin `PNPM_CONFIG_DLX_CACHE_MAX_AGE=Infinity`;
+7. ask that exact pnpm binary to report all three effective values and fail
    closed unless they exactly match the pins;
-7. ask the same command scope to confirm the exact selected store;
-8. recheck pnpm process state and stable store filesystem identity;
-9. confirm the store again immediately before mutation;
-10. run exactly `pnpm --store-dir <reviewed-store> store prune` with the same
-    verified pinned environment;
-11. require the store root identity to remain unchanged and report logical
-    before/after evidence.
+8. ask the same command scope to confirm the exact selected store;
+9. recheck pnpm process state, pnpm executable identity, and stable store
+   filesystem identity immediately before mutation;
+10. confirm the store again immediately before mutation;
+11. run exactly `pnpm --store-dir <reviewed-store> store prune` with the same
+    verified pinned environment and exact executable path;
+12. require both the pnpm executable identity and store-root identity to remain
+    unchanged afterward, then report logical before/after evidence.
 
-Current pnpm's environment parser accepts uppercase `PNPM_CONFIG_*`, parses
-`dlx-cache-max-age` as Number, and `Number("Infinity")` yields the Infinity value
-that `cleanExpiredDlxCache` explicitly treats as an immediate no-op. Pinning the
-cache/global paths is defense in depth: even if another current vendor step
-consults those configured locations, it sees only DevClean-owned temporary
-state.
+Current pnpm's environment parser accepts lowercase/uppercase
+`pnpm_config_*`/`PNPM_CONFIG_*`, parses `dlx-cache-max-age` as Number, and
+`Number("Infinity")` yields the Infinity value that `cleanExpiredDlxCache`
+explicitly treats as an immediate no-op. The v11 parser does not use the old
+`NPM_CONFIG_*` prefix for this configuration path. Pinning the cache/global paths
+is defense in depth: even if another current vendor step consults those
+configured locations, it sees only DevClean-owned temporary state.
 
 The selected store itself must be on a local fixed path, must not be a
 reparse/cloud boundary, and must expose a stable volume-scoped file identity.
+The pnpm executable receives the same local-fixed/reparse/cloud/stable-identity
+requirements so PATH replacement or an executable swap cannot redirect an
+already reviewed operation without being detected.
 
 ## Retained protection
 
