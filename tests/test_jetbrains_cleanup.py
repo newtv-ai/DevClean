@@ -57,7 +57,7 @@ def test_jetbrains_mixed_system_root_delegates_only_source_backed_subtrees(
         system / "index" / "file.idx": ("jetbrains-index-cache", DecisionOwner.TOOL),
         system / "tmp" / "download.tmp": ("jetbrains-system-temp", DecisionOwner.TOOL),
         system / "vcs-log" / "log.db": ("jetbrains-vcs-log-cache", DecisionOwner.TOOL),
-        system / "log" / "idea.log": ("jetbrains-product-logs", DecisionOwner.TOOL),
+        system / "log" / "idea.log": ("jetbrains-product-logs", DecisionOwner.KEEP),
         system / "LocalHistory" / "storageData": (
             "jetbrains-local-history",
             DecisionOwner.USER,
@@ -99,6 +99,7 @@ def test_jetbrains_user_state_is_reviewable_while_keep_state_is_protected(
         system / "LocalHistory" / "storageData": DecisionOwner.USER,
         system / "jcef_cache" / "Cookies": DecisionOwner.USER,
         system / "caches" / "names.dat": DecisionOwner.KEEP,
+        system / "log" / "idea.log": DecisionOwner.KEEP,
     }
     for path, owner in cases.items():
         decision = evaluate_application_path(
@@ -119,49 +120,58 @@ def test_jetbrains_user_state_is_reviewable_while_keep_state_is_protected(
             assert not process_guard_allows(path, env)
 
 
-def test_jetbrains_index_policy_honors_idle_reclaim_and_process_guard(
+def test_jetbrains_audited_cache_safety_is_not_revoked_by_heuristics(
     tmp_path: Path,
 ) -> None:
     env, _config, system = _layout(tmp_path)
-    index = system / "index"
+    cases = (
+        (system / "index", 1, _NOW - timedelta(minutes=1)),
+        (system / "tmp", 1, None),
+        (system / "vcs-log", 1, _NOW),
+    )
+    for path, size, last_used in cases:
+        decision = evaluate_application_path(
+            path,
+            logical_size=size,
+            last_used=last_used,
+            now=_NOW,
+            process_running=False,
+            environment=env,
+        )
+        assert decision is not None
+        assert decision.rule.owner is DecisionOwner.TOOL
+        assert decision.action is PolicyAction.TOOL_DELETE
 
-    stale = evaluate_application_path(
-        index,
-        logical_size=512 * _MIB,
-        last_used=_NOW - timedelta(days=45),
-        now=_NOW,
-        process_running=False,
-        environment=env,
-    )
-    recent = evaluate_application_path(
-        index,
-        logical_size=512 * _MIB,
-        last_used=_NOW - timedelta(days=2),
-        now=_NOW,
-        process_running=False,
-        environment=env,
-    )
-    small = evaluate_application_path(
-        index,
-        logical_size=32 * _MIB,
-        last_used=_NOW - timedelta(days=90),
-        now=_NOW,
-        process_running=False,
-        environment=env,
-    )
     running = evaluate_application_path(
-        index,
+        system / "index",
         logical_size=512 * _MIB,
         last_used=_NOW - timedelta(days=90),
         now=_NOW,
         process_running=True,
         environment=env,
     )
+    assert running is not None
+    assert running.action is PolicyAction.TOOL_KEEP_IN_USE
 
-    assert stale is not None and stale.action is PolicyAction.TOOL_DELETE
-    assert recent is not None and recent.action is PolicyAction.TOOL_KEEP_RECENT
-    assert small is not None and small.action is PolicyAction.TOOL_KEEP_LOW_BENEFIT
-    assert running is not None and running.action is PolicyAction.TOOL_KEEP_IN_USE
+
+def test_jetbrains_current_logs_never_gain_raw_delete_authority_from_age_or_size(
+    tmp_path: Path,
+) -> None:
+    env, _config, system = _layout(tmp_path)
+    log = system / "log" / "idea.log"
+    decision = evaluate_application_path(
+        log,
+        logical_size=16 * 1024**3,
+        last_used=_NOW - timedelta(days=3650),
+        now=_NOW,
+        process_running=False,
+        environment=env,
+    )
+    assert decision is not None
+    assert decision.rule.rule_id == "jetbrains-product-logs"
+    assert decision.rule.owner is DecisionOwner.KEEP
+    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert whole_tree_application_rule(system / "log", env) is None
 
 
 def test_jetbrains_whole_tree_authority_is_exact_and_catalogued(tmp_path: Path) -> None:
@@ -176,7 +186,7 @@ def test_jetbrains_whole_tree_authority_is_exact_and_catalogued(tmp_path: Path) 
     assert whole_tree_application_rule(index, env) is not None
     assert whole_tree_application_rule(temp, env) is not None
     assert whole_tree_application_rule(vcs_log, env) is not None
-    assert whole_tree_application_rule(log, env) is not None
+    assert whole_tree_application_rule(log, env) is None
     assert whole_tree_application_rule(system, env) is None
     assert whole_tree_application_rule(system / "LocalHistory", env) is None
     assert whole_tree_application_rule(system / "caches", env) is None
@@ -186,7 +196,6 @@ def test_jetbrains_whole_tree_authority_is_exact_and_catalogued(tmp_path: Path) 
     by_path = {os.path.normcase(str(root.path)): root for root in discovered}
     system_root = by_path[os.path.normcase(str(system))]
     index_root = by_path[os.path.normcase(str(index))]
-    log_root = by_path[os.path.normcase(str(log))]
 
     assert system_root.policy is CleanupPolicy.REPORT_ONLY
     assert not system_root.delete_root_itself
@@ -194,8 +203,7 @@ def test_jetbrains_whole_tree_authority_is_exact_and_catalogued(tmp_path: Path) 
     assert index_root.policy is CleanupPolicy.VENDOR_MANAGED
     assert index_root.delete_root_itself
     assert index_root.application_rule is not None
-    assert log_root.category is CleanupCategory.SYSTEM_LOGS
-    assert log_root.delete_root_itself
+    assert os.path.normcase(str(log)) not in by_path
 
 
 def test_idea_properties_redirects_are_discovered_without_widening_parent(
@@ -228,7 +236,7 @@ def test_idea_properties_redirects_are_discovered_without_widening_parent(
     log_rule = match_application_rule(custom_log / "idea.log", env)
     sibling_rule = match_application_rule(tmp_path / "custom" / "unrelated" / "Cache", env)
     assert plugin_rule is not None and plugin_rule.owner is DecisionOwner.KEEP
-    assert log_rule is not None and log_rule.owner is DecisionOwner.TOOL
+    assert log_rule is not None and log_rule.owner is DecisionOwner.KEEP
     assert sibling_rule is None
 
 
