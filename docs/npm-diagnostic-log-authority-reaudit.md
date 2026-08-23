@@ -135,3 +135,7 @@ Regression coverage must prove:
 
 The normal final-head lock/dependency, Ruff, strict mypy, full pytest, Windows
 EXE, and CodeQL gates remain mandatory before merge.
+
+After Visual Studio PR #190 merged into `main`, this branch received a fresh
+synchronize commit so the final pull-request merge ref is revalidated against
+the updated `main` rather than relying on the earlier pre-#190 green run.
