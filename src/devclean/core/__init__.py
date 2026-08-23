@@ -35,3 +35,8 @@ from devclean.core import opera_cache_semantics as _opera_cache_semantics  # noq
 # Firefox distinguishes disposable ProfLD/cache subtrees from persistent ProfD,
 # crash-report and updater state; only the audited cache rules get this semantics.
 from devclean.core import firefox_cache_semantics as _firefox_cache_semantics  # noqa: F401
+# JetBrains/Android Studio second pass keeps exact platform caches source-backed,
+# while current product logs remain protected diagnostic state.
+from devclean.core import (  # noqa: F401
+    jetbrains_android_studio_cache_semantics as _jb_as_cache_semantics,
+)
