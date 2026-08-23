@@ -77,10 +77,6 @@ def test_windsurf_electron_caches_are_tool_owned_and_process_guarded() -> None:
             r"C:\Users\alice\AppData\Roaming\Windsurf"
             r"\Service Worker\ScriptCache\entry"
         ): "windsurf-service-worker-script-cache",
-        (
-            r"C:\Users\alice\AppData\Roaming\Windsurf"
-            r"\Crashpad\reports\crash.dmp"
-        ): "windsurf-crashpad-reports",
     }
     for path, rule_id in paths.items():
         rule = match_application_rule(path, _env())
@@ -109,6 +105,90 @@ def test_windsurf_electron_caches_are_tool_owned_and_process_guarded() -> None:
     )
     assert running is not None
     assert running.action is PolicyAction.TOOL_KEEP_IN_USE
+
+
+def test_windsurf_audited_cache_safety_is_not_revoked_by_heuristics() -> None:
+    cases = (
+        (r"C:\Users\alice\AppData\Roaming\Windsurf\Cache\data_0", 1, _NOW),
+        (r"C:\Users\alice\AppData\Roaming\Windsurf\CachedData\entry", 1, None),
+        (r"C:\Users\alice\AppData\Roaming\Windsurf\GPUCache\data_0", 1, _NOW),
+        (
+            r"C:\Users\alice\AppData\Roaming\Windsurf"
+            r"\Service Worker\ScriptCache\entry",
+            1,
+            _NOW,
+        ),
+        (
+            r"C:\Users\alice\AppData\Roaming\Windsurf"
+            r"\CachedExtensionVSIXs\ext.vsix",
+            1,
+            _NOW,
+        ),
+    )
+    for path, size, last_used in cases:
+        decision = evaluate_application_path(
+            path,
+            logical_size=size,
+            last_used=last_used,
+            now=_NOW,
+            process_running=False,
+            environment=_env(),
+        )
+        assert decision is not None
+        assert decision.rule.owner is DecisionOwner.TOOL
+        assert decision.action is PolicyAction.TOOL_DELETE
+
+
+def test_windsurf_logs_are_user_review_and_crashpad_is_protected() -> None:
+    log = r"C:\Users\alice\AppData\Roaming\Windsurf\logs\20260816\window.log"
+    reports = r"C:\Users\alice\AppData\Roaming\Windsurf\Crashpad\reports\crash.dmp"
+    pending = r"C:\Users\alice\AppData\Roaming\Windsurf\Crashpad\pending\crash.dmp"
+
+    log_rule = match_application_rule(log, _env())
+    assert log_rule is not None
+    assert log_rule.rule_id == "windsurf-logs"
+    assert log_rule.owner is DecisionOwner.USER
+    assert log_rule.requires_process_closed
+
+    log_decision = evaluate_application_path(
+        log,
+        logical_size=8 * 1024**3,
+        last_used=_NOW - timedelta(days=3650),
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+    assert log_decision is not None
+    assert log_decision.action is PolicyAction.USER_DECISION
+
+    for path, rule_id in (
+        (reports, "windsurf-crashpad-reports"),
+        (pending, "windsurf-crashpad-pending"),
+    ):
+        rule = match_application_rule(path, _env())
+        assert rule is not None
+        assert rule.rule_id == rule_id
+        assert rule.owner is DecisionOwner.KEEP
+        decision = evaluate_application_path(
+            path,
+            logical_size=8 * 1024**3,
+            last_used=_NOW - timedelta(days=3650),
+            now=_NOW,
+            process_running=False,
+            environment=_env(),
+        )
+        assert decision is not None
+        assert decision.action is PolicyAction.KEEP_PROTECTED
+
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Windsurf\logs", _env()
+    ) is None
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Windsurf\Crashpad\reports", _env()
+    ) is None
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Windsurf\Crashpad\pending", _env()
+    ) is None
 
 
 def test_windsurf_cache_storage_is_user_owned_persistent_data() -> None:
@@ -222,6 +302,14 @@ def test_windsurf_whole_tree_delete_is_exact_cache_only() -> None:
         r"C:\Users\alice\.windsurf\plans",
         _env(),
     ) is None
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Windsurf\logs",
+        _env(),
+    ) is None
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Windsurf\Crashpad\reports",
+        _env(),
+    ) is None
 
 
 def test_catalog_upgrades_only_audited_windsurf_cache_subtrees(tmp_path: Path) -> None:
@@ -229,8 +317,12 @@ def test_catalog_upgrades_only_audited_windsurf_cache_subtrees(tmp_path: Path) -
     home = tmp_path / "home"
     data_root = appdata / "Windsurf"
     cache = data_root / "Cache"
+    logs = data_root / "logs"
+    crash = data_root / "Crashpad" / "reports"
     cascade = home / ".codeium" / "windsurf" / "cascade"
     cache.mkdir(parents=True)
+    logs.mkdir(parents=True)
+    crash.mkdir(parents=True)
     cascade.mkdir(parents=True)
     env = {
         "USERPROFILE": str(home),
@@ -252,9 +344,11 @@ def test_catalog_upgrades_only_audited_windsurf_cache_subtrees(tmp_path: Path) -
     assert cache_root.delete_root_itself
     assert config.policy is CleanupPolicy.REPORT_ONLY
     assert not config.delete_root_itself
+    assert os.path.normcase(str(logs)) not in by_path
+    assert os.path.normcase(str(crash)) not in by_path
 
 
-def test_windsurf_process_guard_blocks_running_cache(
+def test_windsurf_process_guard_blocks_running_cache_and_user_logs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -263,5 +357,13 @@ def test_windsurf_process_guard_blocks_running_cache(
     )
     assert not process_guard_allows(
         r"C:\Users\alice\AppData\Roaming\Windsurf\Cache\data_0",
+        _env(),
+    )
+    assert not process_guard_allows(
+        r"C:\Users\alice\AppData\Roaming\Windsurf\logs\today.log",
+        _env(),
+    )
+    assert not process_guard_allows(
+        r"C:\Users\alice\AppData\Roaming\Windsurf\Crashpad\reports\crash.dmp",
         _env(),
     )
