@@ -15,7 +15,11 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 
 from devclean.core import _application_cleanup_impl as _impl
-from devclean.core.npm_cleanup import clear_npm_process_cache, npm_process_running
+from devclean.core.npm_cleanup import (
+    clear_npm_process_cache,
+    match_npm_rule,
+    npm_process_running,
+)
 from devclean.platform.windows.filesystem import read_file_metadata
 from devclean.platform.windows.volumes import is_local_fixed_path
 
@@ -33,6 +37,11 @@ _NPM_STABLE_BOUNDARY_CONFIG_KEYS = (
 _NPM_V12_BOUNDARY_CONFIG_KEYS = ("global-ignore-file",)
 _NPM_BOUNDARY_CONFIG_KEYS = frozenset(
     (*_NPM_STABLE_BOUNDARY_CONFIG_KEYS, *_NPM_V12_BOUNDARY_CONFIG_KEYS)
+)
+_NPM_GENERIC_SCAN_CHILD_RULES = (
+    ("_cacache", "npm-content-cache"),
+    ("_npx", "npm-npx-cache"),
+    ("_tuf", "npm-tuf-cache"),
 )
 
 
@@ -195,6 +204,64 @@ def inventory_npm_storage(
         npx_entries=tuple(entries),
         warnings=tuple(warnings),
     )
+
+
+def npm_generic_scan_skip_paths(
+    environment: Mapping[str, str] | None = None,
+) -> tuple[Path, ...]:
+    """Return exact npm provider children safe to omit from generic traversal.
+
+    This is deliberately a constant-cost source/config/identity proof. It never
+    inventories cache contents and never grants raw filesystem deletion authority.
+    A child is omitted only when its exact npm rule, local directory identity and
+    non-overlap with persistent/user paths are all proven.
+    """
+
+    tool = _resolve_npm_tool(environment)
+    cache_root = _discover_cache_root(tool, _base_environment(environment))
+    root_identity = _path_identity(
+        cache_root,
+        expect_directory=True,
+        label="npm scan cache root",
+    )
+    protected_paths = _read_npm_boundary_paths(tool, cache_root, environment)
+    matcher_environment = _npm_environment(cache_root, environment)
+
+    skipped: list[Path] = []
+    for relative, expected_rule_id in _NPM_GENERIC_SCAN_CHILD_RULES:
+        child = cache_root / relative
+        try:
+            child_identity = _path_identity(
+                child,
+                expect_directory=True,
+                label=f"npm scan {relative}",
+            )
+        except (OSError, RuntimeError):
+            # Missing, redirected, cloud or otherwise unstable children remain
+            # visible to the generic scanner so it can emit its normal evidence.
+            continue
+
+        rule = match_npm_rule(child_identity.path, matcher_environment)
+        if rule is None or rule.rule_id != expected_rule_id:
+            continue
+        if any(
+            _path_is_inside(child_identity.path, protected_path)
+            for _label, protected_path in protected_paths
+        ):
+            continue
+        skipped.append(child_identity.path)
+
+    fresh_tool = _path_identity(tool.path, expect_directory=False, label="npm CLI")
+    if fresh_tool != tool:
+        raise RuntimeError("npm CLI 身份在 scan pruning proof 期间发生变化")
+    fresh_root = _path_identity(
+        cache_root,
+        expect_directory=True,
+        label="npm scan cache root",
+    )
+    if fresh_root != root_identity:
+        raise RuntimeError("npm cache root 身份在 scan pruning proof 期间发生变化")
+    return tuple(skipped)
 
 
 def verify_npm_content_cache(
@@ -398,20 +465,20 @@ def _npm_major_version(
     return int(major_text)
 
 
-def _require_no_protected_overlap(
-    inventory: NpmStorageInventory,
-    mutation_root: Path,
+def _read_npm_boundary_paths(
+    tool: NpmPathIdentity,
+    cache_root: Path,
     environment: Mapping[str, str] | None,
-) -> None:
-    """Fail closed if npm redirects persistent/user data into this mutation root."""
+) -> tuple[tuple[str, Path], ...]:
+    """Read effective persistent/user path boundaries from the bound npm CLI."""
 
-    pinned_env = _npm_environment(inventory.cache_root, environment)
-    major = _npm_major_version(inventory.npm_tool, pinned_env)
+    pinned_env = _npm_environment(cache_root, environment)
+    major = _npm_major_version(tool, pinned_env)
     config_keys = list(_NPM_STABLE_BOUNDARY_CONFIG_KEYS)
     if major >= 12:
         config_keys.extend(_NPM_V12_BOUNDARY_CONFIG_KEYS)
     result = _run_npm(
-        inventory.npm_tool,
+        tool,
         ("config", "get", *config_keys),
         pinned_env,
         timeout=30,
@@ -424,13 +491,11 @@ def _require_no_protected_overlap(
         raise RuntimeError(f"npm 未完整返回 mutation boundary 配置 ({missing}); 已安全停止")
 
     confirmed_cache = _config_path(values["cache"], "npm cache", allow_null=False)
-    if confirmed_cache is None or _normalize(confirmed_cache) != _normalize(
-        inventory.cache_root
-    ):
-        raise RuntimeError("npm mutation 前未再次确认固定的 cache 根目录; 已安全停止")
+    if confirmed_cache is None or _normalize(confirmed_cache) != _normalize(cache_root):
+        raise RuntimeError("npm 未再次确认固定的 cache 根目录; 已安全停止")
 
     protected: list[tuple[str, Path]] = [
-        ("default logs", inventory.cache_root / "_logs"),
+        ("default logs", cache_root / "_logs"),
     ]
     required_paths = (
         ("prefix", "global prefix"),
@@ -456,7 +521,21 @@ def _require_no_protected_overlap(
         path = _config_path(values[key], f"npm {label}", allow_null=True)
         if path is not None:
             protected.append((label, path))
+    return tuple(protected)
 
+
+def _require_no_protected_overlap(
+    inventory: NpmStorageInventory,
+    mutation_root: Path,
+    environment: Mapping[str, str] | None,
+) -> None:
+    """Fail closed if npm redirects persistent/user data into this mutation root."""
+
+    protected = _read_npm_boundary_paths(
+        inventory.npm_tool,
+        inventory.cache_root,
+        environment,
+    )
     for label, protected_path in protected:
         if _path_is_inside(mutation_root, protected_path):
             raise RuntimeError(
@@ -748,6 +827,7 @@ __all__ = [
     "NpmStorageInventory",
     "clean_npm_content_cache",
     "inventory_npm_storage",
+    "npm_generic_scan_skip_paths",
     "remove_npm_npx_entry",
     "verify_npm_content_cache",
 ]
