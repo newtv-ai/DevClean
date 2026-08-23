@@ -1,6 +1,7 @@
 # npm cache maintenance audit
 
-Audited/implemented: 2026-08-20
+Audited/implemented: 2026-08-20  
+Diagnostic-log boundary re-audited: 2026-08-23
 
 ## Product conclusion
 
@@ -12,14 +13,16 @@ Current lanes:
 - whole package content cache clear via `npm cache clean --force`: **USER_REVIEW**;
 - one exact full key returned by `npm cache npx ls`, removed through `npm cache npx rm <full-key>` after matching vendor dry-run: **USER_REVIEW**;
 - TUF cache (`<cache>/_tuf`): **REPORT_ONLY / vendor-managed**;
-- npm diagnostic logs: retain the existing narrow source-backed generic log cleanup lane;
+- npm diagnostic logs: **USER_REVIEW**, with no generic whole-tree TOOL authority;
 - global prefix, `.npmrc`, project/package metadata and unclassified cache-root state: protected.
 
-The old generic raw-delete authority for `_cacache`, `_npx`, and `_tuf` is removed.
+The old generic raw-delete authority for `_cacache`, `_npx`, and `_tuf` remains removed. The 2026-08-23 diagnostic re-audit additionally removes the older age/size-based generic TOOL authority for `_logs`, configured `logs-dir` debug logs, and arbitrary `npm-debug.log` filenames.
+
+See `docs/npm-diagnostic-log-authority-reaudit.md` for the focused logging evidence.
 
 ## Primary source
 
-Audited against npm CLI commit:
+The cache-maintenance implementation was audited against npm CLI commit:
 
 `51c2bf81fa2c31547d0fec44fff2aaac3d9a9862`
 
@@ -36,6 +39,12 @@ Source URLs:
 - https://github.com/npm/cli/blob/51c2bf81fa2c31547d0fec44fff2aaac3d9a9862/lib/commands/cache.js
 - https://github.com/npm/cli/blob/51c2bf81fa2c31547d0fec44fff2aaac3d9a9862/workspaces/config/lib/definitions/definitions.js
 - https://github.com/npm/cli/blob/51c2bf81fa2c31547d0fec44fff2aaac3d9a9862/test/lib/commands/cache.js
+
+Current npm documentation rechecked for the diagnostic boundary:
+
+- https://docs.npmjs.com/using-npm/config/
+- https://docs.npmjs.com/cli/v11/using-npm/logging/
+- https://docs.npmjs.com/generating-and-locating-npm-debug.log-files/
 
 ## Exact cache-root semantics
 
@@ -124,11 +133,24 @@ npm derives `_tuf` from the same configured base cache, but the audited cache co
 
 The UI reports its logical size for transparency but provides no raw delete button. Generic scanner authority is also removed from `_tuf`.
 
-## Diagnostic logs remain separate
+## Diagnostic logs: USER_REVIEW after the second pass
 
-npm diagnostic `_logs` and exact configured npm debug-log patterns already have a narrow source-backed lifecycle in DevClean. This audit does not need to route ordinary diagnostic log expiration through package-cache commands.
+The earlier cache-maintenance audit intentionally left npm's diagnostic-log lane unchanged. A separate 2026-08-23 source review found that the old generic rule had over-interpreted npm's logging lifecycle.
 
-Package/npx/TUF semantics and diagnostic logs remain separate lanes.
+Current npm defines the default log directory as `<cache>/_logs`, allows `logs-dir` to redirect it, and manages retention through `logs-max` (default 10): once the number of log files exceeds the configured maximum, npm removes the oldest logs. npm also documents these files as debug/troubleshooting records and warns that best-effort credential redaction should not be treated as a complete secrecy guarantee.
+
+That contract does not justify DevClean's former `7 days + minimum bytes` automatic deletion rule.
+
+Current generic scan semantics are therefore:
+
+- default `<cache>/_logs`: **USER_REVIEW**;
+- npm-shaped timestamped debug logs in an exact configured `logs-dir`: **USER_REVIEW**;
+- unrelated siblings in a configured `logs-dir`: **KEEP**;
+- legacy arbitrary-path `npm-debug.log`: recognizable **USER_REVIEW**, but the filename alone creates no directory or automatic-delete authority;
+- no npm diagnostic log root is a deterministic whole-tree raw-delete root;
+- user-approved mutation still requires npm/npx to be idle.
+
+Package/npx/TUF vendor maintenance remains separate from this diagnostic lane. See `docs/npm-diagnostic-log-authority-reaudit.md`.
 
 ## Accounting
 
@@ -141,11 +163,12 @@ Vendor cache key counts are object/state evidence, not physical byte accounting.
 No authority is granted to:
 
 - raw-delete the configured npm base cache root;
-- raw-delete `_cacache`, `_npx`, or `_tuf`;
+- raw-delete `_cacache`, `_npx`, `_tuf`, or `_logs` as generic TOOL directories;
 - remove arbitrary cacache integrity/key entries;
 - use abbreviated npx keys;
 - run `npm cache npx rm` with no key / force-all;
 - delete TUF state by directory name;
+- automatically delete diagnostic logs by age/size or by a bare `npm-debug.log` filename;
 - touch npm global installs, shims, `.npmrc`, package manifests or lockfiles;
 - clean while npm/npx is active;
 - infer delete authority from age, size, suffix or “redownloadable” status;
