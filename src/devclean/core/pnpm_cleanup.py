@@ -1,8 +1,11 @@
-"""Audited pnpm storage semantics for Windows cleanup.
+r"""Audited pnpm storage semantics for Windows cleanup.
 
-pnpm separates registry/dlx caches, state, its content-addressable store,
-global installations, and PNPM_HOME. Cache subtrees are regenerable, but the
-store may back active projects, so raw whole-tree store deletion is forbidden.
+Current pnpm owns several distinct storage lifecycles. Its store and DLX cache
+have vendor cleanup operations, metadata mirrors can be intentionally useful for
+offline resolution, and global installations are persistent payload. DevClean
+therefore grants no raw whole-tree authority to those roots. The exact
+``pnpm-state.json`` update-check throttle is separately source-backed as
+regenerable TOOL state.
 """
 
 from __future__ import annotations
@@ -25,12 +28,8 @@ from devclean.core._application_cleanup_impl import (
     MatchKind,
     PolicyAction,
     RebuildCost,
-    effective_idle_days,
 )
 from devclean.platform.windows.volumes import fixed_volume_roots
-
-_MIB = 1024**2
-_DLX_IDLE_DAYS = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +55,7 @@ def _rule(
     min_reclaim_bytes: int = 0,
     requires_process_closed: bool = False,
     size_sensitive_idle: bool = True,
+    user_age_buckets: tuple[int, ...] = (),
     allow_whole_tree: bool = False,
 ) -> ApplicationCleanupRule:
     return ApplicationCleanupRule(
@@ -71,104 +71,121 @@ def _rule(
         min_reclaim_bytes=min_reclaim_bytes,
         requires_process_closed=requires_process_closed,
         size_sensitive_idle=size_sensitive_idle,
+        user_age_buckets=user_age_buckets,
         allow_whole_tree=allow_whole_tree,
         label=label,
     )
 
 
+_PNPM_DLX_RULE = _rule(
+    "pnpm-dlx-cache",
+    "dlx",
+    MatchKind.PREFIX,
+    DecisionOwner.USER,
+    RebuildCost.MEDIUM,
+    "pnpm dlx temporary environments; expiry is managed by pnpm store prune",
+    root_kind="cache",
+    requires_process_closed=True,
+    user_age_buckets=(7, 30, 90),
+)
+
+# Matching is performed by _is_metadata_cache_path rather than by this sentinel
+# pattern. Current pnpm uses vN/metadata* while older releases used metadata-v*.
+_PNPM_METADATA_RULE = _rule(
+    "pnpm-metadata-cache",
+    "<vendor-metadata-cache>",
+    MatchKind.EXACT,
+    DecisionOwner.USER,
+    RebuildCost.MEDIUM,
+    "pnpm registry metadata mirror; may be required for offline resolution",
+    root_kind="cache",
+    requires_process_closed=True,
+    user_age_buckets=(30, 90, 180),
+)
+
+_PNPM_CACHE_UNCLASSIFIED_RULE = _rule(
+    "pnpm-cache-unclassified",
+    "",
+    MatchKind.PREFIX,
+    DecisionOwner.KEEP,
+    RebuildCost.HIGH,
+    "Unclassified pnpm cache-root state",
+    root_kind="cache",
+)
+
+_PNPM_UPDATE_STATE_RULE = _rule(
+    "pnpm-update-state",
+    "pnpm-state.json",
+    MatchKind.EXACT,
+    DecisionOwner.TOOL,
+    RebuildCost.NONE,
+    "pnpm update-check throttle state",
+    root_kind="state",
+    idle_days=1,
+    requires_process_closed=True,
+    size_sensitive_idle=False,
+)
+
+_PNPM_STATE_UNCLASSIFIED_RULE = _rule(
+    "pnpm-state-unclassified",
+    "",
+    MatchKind.PREFIX,
+    DecisionOwner.KEEP,
+    RebuildCost.HIGH,
+    "Unclassified pnpm state directory",
+    root_kind="state",
+)
+
+_PNPM_STORE_RULE = _rule(
+    "pnpm-store",
+    "",
+    MatchKind.PREFIX,
+    DecisionOwner.KEEP,
+    RebuildCost.HIGH,
+    "pnpm store; maintain with source-bounded pnpm store prune",
+    root_kind="store",
+)
+
+_PNPM_GLOBAL_RULE = _rule(
+    "pnpm-global-install",
+    "",
+    MatchKind.PREFIX,
+    DecisionOwner.KEEP,
+    RebuildCost.HIGH,
+    "pnpm globally installed packages",
+    root_kind="global",
+)
+
+_PNPM_GLOBAL_BIN_RULE = _rule(
+    "pnpm-global-bin",
+    "",
+    MatchKind.PREFIX,
+    DecisionOwner.KEEP,
+    RebuildCost.HIGH,
+    "pnpm global executable shims",
+    root_kind="global_bin",
+)
+
+_PNPM_HOME_RULE = _rule(
+    "pnpm-home",
+    "",
+    MatchKind.PREFIX,
+    DecisionOwner.KEEP,
+    RebuildCost.HIGH,
+    "PNPM_HOME executables, configuration and persistent package-manager data",
+    root_kind="home",
+)
+
 PNPM_RULES: tuple[ApplicationCleanupRule, ...] = (
-    _rule(
-        "pnpm-dlx-cache",
-        "dlx",
-        MatchKind.PREFIX,
-        DecisionOwner.TOOL,
-        RebuildCost.MEDIUM,
-        "pnpm dlx temporary executable environments",
-        root_kind="cache",
-        idle_days=_DLX_IDLE_DAYS,
-        min_reclaim_bytes=8 * _MIB,
-        requires_process_closed=True,
-        allow_whole_tree=True,
-    ),
-    _rule(
-        "pnpm-metadata-cache",
-        "metadata-v*",
-        MatchKind.GLOB,
-        DecisionOwner.TOOL,
-        RebuildCost.LOW,
-        "pnpm registry metadata cache",
-        root_kind="cache",
-        idle_days=14,
-        min_reclaim_bytes=_MIB,
-        requires_process_closed=True,
-    ),
-    _rule(
-        "pnpm-cache-unclassified",
-        "",
-        MatchKind.PREFIX,
-        DecisionOwner.KEEP,
-        RebuildCost.HIGH,
-        "Unclassified pnpm cache-root state",
-        root_kind="cache",
-    ),
-    _rule(
-        "pnpm-update-state",
-        "pnpm-state.json",
-        MatchKind.EXACT,
-        DecisionOwner.TOOL,
-        RebuildCost.NONE,
-        "pnpm update-check state",
-        root_kind="state",
-        idle_days=7,
-        min_reclaim_bytes=_MIB,
-        requires_process_closed=True,
-        size_sensitive_idle=False,
-    ),
-    _rule(
-        "pnpm-state-unclassified",
-        "",
-        MatchKind.PREFIX,
-        DecisionOwner.KEEP,
-        RebuildCost.HIGH,
-        "Unclassified pnpm state directory",
-        root_kind="state",
-    ),
-    _rule(
-        "pnpm-store",
-        "",
-        MatchKind.PREFIX,
-        DecisionOwner.KEEP,
-        RebuildCost.HIGH,
-        "pnpm store; maintain with pnpm store prune instead of raw deletion",
-        root_kind="store",
-    ),
-    _rule(
-        "pnpm-global-install",
-        "",
-        MatchKind.PREFIX,
-        DecisionOwner.KEEP,
-        RebuildCost.HIGH,
-        "pnpm globally installed packages",
-        root_kind="global",
-    ),
-    _rule(
-        "pnpm-global-bin",
-        "",
-        MatchKind.PREFIX,
-        DecisionOwner.KEEP,
-        RebuildCost.HIGH,
-        "pnpm global executable shims",
-        root_kind="global_bin",
-    ),
-    _rule(
-        "pnpm-home",
-        "",
-        MatchKind.PREFIX,
-        DecisionOwner.KEEP,
-        RebuildCost.HIGH,
-        "PNPM_HOME executables, configuration and persistent package-manager data",
-        root_kind="home",
-    ),
+    _PNPM_DLX_RULE,
+    _PNPM_METADATA_RULE,
+    _PNPM_CACHE_UNCLASSIFIED_RULE,
+    _PNPM_UPDATE_STATE_RULE,
+    _PNPM_STATE_UNCLASSIFIED_RULE,
+    _PNPM_STORE_RULE,
+    _PNPM_GLOBAL_RULE,
+    _PNPM_GLOBAL_BIN_RULE,
+    _PNPM_HOME_RULE,
 )
 
 _PNPM_LOCK_RULE = ApplicationCleanupRule(
@@ -183,6 +200,9 @@ _PNPM_LOCK_RULE = ApplicationCleanupRule(
     label="pnpm lock/workspace metadata",
 )
 _PNPM_METADATA_FILENAMES = frozenset({"pnpm-lock.yaml", "pnpm-workspace.yaml"})
+_CURRENT_METADATA_DIRS = frozenset(
+    {"metadata", "metadata-full", "metadata-full-filtered"}
+)
 
 
 def pnpm_roots(environment: Mapping[str, str] | None = None) -> PnpmRootSet:
@@ -288,6 +308,13 @@ def match_pnpm_rule(
 ) -> ApplicationCleanupRule | None:
     normalized = _impl._normalize(path)
     roots = pnpm_roots(environment)
+
+    if any(
+        _is_metadata_cache_path(normalized, cache)
+        for cache in roots.cache_roots
+    ):
+        return _PNPM_METADATA_RULE
+
     groups = {
         "PNPM_CACHE": roots.cache_roots,
         "PNPM_STATE": roots.state_roots,
@@ -298,6 +325,8 @@ def match_pnpm_rule(
     }
     matches: list[tuple[int, int, ApplicationCleanupRule]] = []
     for index, rule in enumerate(PNPM_RULES):
+        if rule is _PNPM_METADATA_RULE:
+            continue
         for root in groups.get(rule.root_key, ()):
             normalized_root = _impl._normalize(root)
             for expanded in _impl._expand_braces(rule.relative_pattern):
@@ -313,7 +342,9 @@ def match_pnpm_rule(
                 matches.append((len(candidate), owner_weight * 1000 - index, rule))
     if matches:
         return max(matches, key=lambda item: (item[0], item[1]))[2]
-    if PureWindowsPath(str(path)).name.casefold() in _PNPM_METADATA_FILENAMES:
+
+    filename = PureWindowsPath(str(path)).name.casefold()
+    if filename in _PNPM_METADATA_FILENAMES:
         return _PNPM_LOCK_RULE
     return None
 
@@ -321,30 +352,21 @@ def match_pnpm_rule(
 def pnpm_audited_tool_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
-    roots = pnpm_roots(environment)
-    dlx_rule = next(
-        rule for rule in PNPM_RULES if rule.rule_id == "pnpm-dlx-cache"
-    )
-    metadata_rule = next(
-        rule for rule in PNPM_RULES if rule.rule_id == "pnpm-metadata-cache"
-    )
-    found: list[tuple[PureWindowsPath, ApplicationCleanupRule]] = []
-    seen: set[str] = set()
-    for cache in roots.cache_roots:
-        _append_tool_root(found, seen, cache / "dlx", dlx_rule)
-        for child in _metadata_cache_dirs(cache):
-            _append_tool_root(found, seen, child, metadata_rule)
-    return tuple(found)
+    """Return raw whole-tree TOOL roots.
+
+    Current pnpm has none. Store/DLX/metadata lifecycle stays vendor/user-owned,
+    while the deterministic update-check object is one exact file, not a tree.
+    """
+
+    del environment
+    return ()
 
 
 def whole_tree_pnpm_rule(
     path: str | os.PathLike[str],
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationCleanupRule | None:
-    target = _impl._normalize(path)
-    for root, rule in pnpm_audited_tool_roots(environment):
-        if target == _impl._normalize(root):
-            return rule
+    del path, environment
     return None
 
 
@@ -360,6 +382,7 @@ def evaluate_pnpm_path(
     rule = match_pnpm_rule(path, environment)
     if rule is None:
         return None
+
     current = _impl._as_utc(now or datetime.now(UTC))
     assert current is not None
     observed = _impl._as_utc(last_used)
@@ -368,6 +391,7 @@ def evaluate_pnpm_path(
         if observed is None
         else max(0.0, (current - observed).total_seconds() / 86_400)
     )
+
     if rule.owner is DecisionOwner.KEEP:
         return ApplicationPolicyDecision(
             rule,
@@ -377,21 +401,27 @@ def evaluate_pnpm_path(
             None,
             0,
         )
-    threshold = effective_idle_days(rule, logical_size)
+
+    threshold = rule.idle_days
+    score = _impl._benefit_score(logical_size, idle, threshold, rule.rebuild_cost)
+    if rule.owner is DecisionOwner.USER:
+        return ApplicationPolicyDecision(
+            rule,
+            PolicyAction.USER_DECISION,
+            observed,
+            idle,
+            threshold,
+            score,
+        )
+
     running = process_running
     if running is None and rule.requires_process_closed:
         running = pnpm_process_running()
-    score = _impl._benefit_score(logical_size, idle, threshold, rule.rebuild_cost)
-    if rule.requires_process_closed and running:
-        action = PolicyAction.TOOL_KEEP_IN_USE
-    elif logical_size < rule.min_reclaim_bytes:
-        action = PolicyAction.TOOL_KEEP_LOW_BENEFIT
-    elif idle is None or threshold is None:
-        action = PolicyAction.TOOL_KEEP_UNKNOWN_USAGE
-    elif idle < threshold:
-        action = PolicyAction.TOOL_KEEP_RECENT
-    else:
-        action = PolicyAction.TOOL_DELETE
+    action = (
+        PolicyAction.TOOL_KEEP_IN_USE
+        if rule.requires_process_closed and running
+        else PolicyAction.TOOL_DELETE
+    )
     return ApplicationPolicyDecision(rule, action, observed, idle, threshold, score)
 
 
@@ -471,6 +501,33 @@ def clear_pnpm_process_cache() -> None:
     _active_pnpm_store_path.cache_clear()
 
 
+def _is_metadata_cache_path(
+    normalized_path: str,
+    cache_root: PureWindowsPath,
+) -> bool:
+    normalized_root = _impl._normalize(cache_root)
+    prefix = normalized_root.rstrip("\\") + "\\"
+    if not normalized_path.startswith(prefix):
+        return False
+    relative = normalized_path[len(prefix) :]
+    parts = relative.split("\\")
+    if not parts or not parts[0]:
+        return False
+
+    first = parts[0]
+    if first.startswith("metadata-v") and len(first) > len("metadata-v"):
+        return True
+    if len(parts) < 2:
+        return False
+    version = first
+    return (
+        len(version) > 1
+        and version.startswith("v")
+        and version[1:].isdigit()
+        and parts[1] in _CURRENT_METADATA_DIRS
+    )
+
+
 def _first_config_path(
     environment: Mapping[str, str],
     effective: Mapping[str, str],
@@ -500,28 +557,6 @@ def _unique_paths(paths: list[PureWindowsPath]) -> tuple[PureWindowsPath, ...]:
             seen.add(key)
             found.append(path)
     return tuple(found)
-
-
-def _metadata_cache_dirs(cache_root: PureWindowsPath) -> tuple[PureWindowsPath, ...]:
-    try:
-        children = tuple(Path(str(cache_root)).glob("metadata-v*"))
-    except OSError:
-        return ()
-    return tuple(
-        PureWindowsPath(str(child)) for child in children if child.is_dir()
-    )
-
-
-def _append_tool_root(
-    found: list[tuple[PureWindowsPath, ApplicationCleanupRule]],
-    seen: set[str],
-    path: PureWindowsPath,
-    rule: ApplicationCleanupRule,
-) -> None:
-    key = _impl._normalize(path)
-    if key not in seen:
-        seen.add(key)
-        found.append((path, rule))
 
 
 def _path_is_directory(path: PureWindowsPath) -> bool:
