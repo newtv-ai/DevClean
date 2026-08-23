@@ -36,6 +36,7 @@ class GoRootSet:
     module_cache_roots: tuple[PureWindowsPath, ...]
     install_bin_roots: tuple[PureWindowsPath, ...]
     config_paths: tuple[PureWindowsPath, ...]
+    build_cache_program: str
 
 
 def _rule(
@@ -128,6 +129,10 @@ def go_roots(environment: Mapping[str, str] | None = None) -> GoRootSet:
     if build_cache is not None and str(build_cache).casefold() == "off":
         build_cache = None
 
+    build_cache_program = (
+        _first_nonempty(env.get("gocacheprog"), discovered.get("GOCACHEPROG")) or ""
+    ).strip()
+
     gopath = _first_nonempty(
         env.get("devclean_go_path"),
         env.get("gopath"),
@@ -169,6 +174,7 @@ def go_roots(environment: Mapping[str, str] | None = None) -> GoRootSet:
         module_cache_roots=_tuple_if_path(module_cache),
         install_bin_roots=_tuple_if_path(gobin),
         config_paths=_tuple_if_path(goenv),
+        build_cache_program=build_cache_program,
     )
 
 
@@ -287,6 +293,7 @@ def _effective_go_env() -> dict[str, str]:
                 "env",
                 "-json",
                 "GOCACHE",
+                "GOCACHEPROG",
                 "GOMODCACHE",
                 "GOENV",
                 "GOPATH",

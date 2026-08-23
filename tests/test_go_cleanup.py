@@ -59,6 +59,7 @@ def test_go_default_windows_storage_roots_are_discovered(tmp_path: Path) -> None
     assert roots.module_cache_roots == (PureWindowsPath(str(module_cache)),)
     assert roots.install_bin_roots == (PureWindowsPath(str(install_bin)),)
     assert roots.config_paths == (PureWindowsPath(str(goenv)),)
+    assert roots.build_cache_program == ""
 
     scan = application_scan_roots(env)
     assert PureWindowsPath(str(build_cache)) in scan
@@ -72,11 +73,13 @@ def test_go_environment_overrides_replace_default_cache_roots(tmp_path: Path) ->
     custom_module = tmp_path / "cache-drive" / "go-mod"
     env["GOCACHE"] = str(custom_build)
     env["GOMODCACHE"] = str(custom_module)
+    env["GOCACHEPROG"] = "cache-helper --mode=remote"
 
     roots = go_roots(env)
 
     assert roots.build_cache_roots == (PureWindowsPath(str(custom_build)),)
     assert roots.module_cache_roots == (PureWindowsPath(str(custom_module)),)
+    assert roots.build_cache_program == "cache-helper --mode=remote"
     assert PureWindowsPath(str(default_build)) not in roots.build_cache_roots
     assert PureWindowsPath(str(default_module)) not in roots.module_cache_roots
 
