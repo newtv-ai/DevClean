@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 import devclean.ui.product_vendor_app as product
-from devclean.core.user_rules import default_rules
+from devclean.core.user_rules import UserRules, default_rules
 from devclean.scanner import CancellationToken
 
 
@@ -61,8 +62,7 @@ def test_product_worker_wires_source_proven_npm_paths_into_scan_exclusions(
         (),
     )
 
-    effective = captured["rules"]
-    assert hasattr(effective, "scan")
+    effective = cast(UserRules, captured["rules"])
     assert str(npm_child) in effective.scan.excluded_paths
 
 
@@ -87,6 +87,5 @@ def test_product_worker_falls_back_to_full_scan_when_npm_proof_fails(
         (),
     )
 
-    effective = captured["rules"]
-    assert hasattr(effective, "scan")
+    effective = cast(UserRules, captured["rules"])
     assert effective.scan.excluded_paths == rules.scan.excluded_paths
