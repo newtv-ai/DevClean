@@ -7,3 +7,8 @@
 from devclean.core import codex_log_cleanup as _codex_log_cleanup  # noqa: F401
 from devclean.core import claude_native_cleanup as _claude_native_cleanup  # noqa: F401
 from devclean.core import claude_plugin_cache_cleanup as _claude_plugin_cache_cleanup  # noqa: F401
+
+# Cursor's updater extension deliberately comes after the Claude plugin extension:
+# that extension has loaded the application facade, and Cursor can then patch the
+# facade's callable snapshots plus dynamic whole-tree discovery in one place.
+from devclean.core import cursor_updater_cleanup as _cursor_updater_cleanup  # noqa: F401
