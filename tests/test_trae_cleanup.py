@@ -262,14 +262,18 @@ def test_catalog_upgrades_trae_cache_without_deleting_data_root(tmp_path: Path) 
     data_root = by_path[os.path.normcase(str(root))]
     cache_root = by_path[os.path.normcase(str(cache))]
     user_root = by_path.get(os.path.normcase(str(user)))
+    log_root = by_path[os.path.normcase(str(logs))]
+    crash_root = by_path[os.path.normcase(str(crash))]
 
     assert data_root.policy is CleanupPolicy.REPORT_ONLY
     assert not data_root.delete_root_itself
     assert cache_root.policy is CleanupPolicy.VENDOR_MANAGED
     assert cache_root.delete_root_itself
     assert user_root is None or not user_root.delete_root_itself
-    assert os.path.normcase(str(logs)) not in by_path
-    assert os.path.normcase(str(crash)) not in by_path
+    assert log_root.policy is CleanupPolicy.REPORT_ONLY
+    assert not log_root.delete_root_itself
+    assert crash_root.policy is CleanupPolicy.REPORT_ONLY
+    assert not crash_root.delete_root_itself
 
 
 def test_trae_inventory_counts_workspace_global_history_and_backups(tmp_path: Path) -> None:
