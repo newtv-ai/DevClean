@@ -103,19 +103,23 @@ def test_rebuildable_but_tiny_catalog_is_not_worth_churning() -> None:
     assert decision.action is PolicyAction.TOOL_KEEP_LOW_BENEFIT
 
 
-def test_process_guard_overrides_age_and_reclaim_value() -> None:
-    decision = evaluate_application_path(
-        r"C:\Users\alice\.codex\logs_2.sqlite",
-        logical_size=4 * 1024**3,
-        last_used=_NOW - timedelta(days=90),
-        now=_NOW,
-        process_running=True,
-        environment=_ENV,
-    )
+def test_codex_runtime_log_database_family_is_protected() -> None:
+    for name in ("logs_2.sqlite", "logs_2.sqlite-wal", "logs_2.sqlite-shm"):
+        path = rf"C:\Users\alice\.codex\{name}"
+        decision = evaluate_application_path(
+            path,
+            logical_size=4 * 1024**3,
+            last_used=_NOW - timedelta(days=90),
+            now=_NOW,
+            process_running=False,
+            environment=_ENV,
+        )
 
-    assert decision is not None
-    assert decision.action is PolicyAction.TOOL_KEEP_IN_USE
-    assert decision.requires_process_closed
+        assert decision is not None, name
+        assert decision.rule.rule_id == "codex-log-db", name
+        assert decision.rule.owner is DecisionOwner.KEEP, name
+        assert decision.action is PolicyAction.KEEP_PROTECTED, name
+        assert not process_guard_allows(path, _ENV), name
 
 
 def test_codex_session_history_is_user_owned_and_reviewable() -> None:
