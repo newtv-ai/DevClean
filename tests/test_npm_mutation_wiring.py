@@ -42,6 +42,7 @@ def _inventory(
         content_cache=NpmCacheArea(root / "_cacache", True, 120, 2),
         npx_cache=NpmCacheArea(
             root / "_npx",
+            True,
             sum(entry.logical_bytes for entry in entries),
             len(entries),
         ),
@@ -103,6 +104,7 @@ def test_content_cache_vendor_actions_guard_exact_content_root_before_mutation(
 
     monkeypatch.setattr(npm, "_run_npm", run)
 
+    command: tuple[str, ...]
     if operation == "verify":
         npm.verify_npm_content_cache(reviewed)
         command = ("cache", "verify")
