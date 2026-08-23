@@ -7,7 +7,11 @@ from typing import Any
 import pytest
 
 import devclean.core.pnpm_maintenance as pnpm_maintenance
-from devclean.core.pnpm_maintenance import inventory_pnpm_storage, prune_pnpm_store
+from devclean.core.pnpm_maintenance import (
+    PnpmToolIdentity,
+    inventory_pnpm_storage,
+    prune_pnpm_store,
+)
 
 
 def _environment(tmp_path: Path, store: Path) -> dict[str, str]:
@@ -23,6 +27,24 @@ def _environment(tmp_path: Path, store: Path) -> dict[str, str]:
         "PNPM_CONFIG_DLX_CACHE_MAX_AGE": "1",
         "DEVCLEAN_PNPM_EXE": "pnpm-test",
     }
+
+
+def _tool_identity(file_id: str = "pnpm-tool") -> PnpmToolIdentity:
+    return PnpmToolIdentity(
+        path=Path("pnpm-test"),
+        volume_serial=1,
+        file_id=file_id,
+        file_id_kind="test",
+    )
+
+
+def _stub_stable_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    identity = _tool_identity()
+    monkeypatch.setattr(
+        pnpm_maintenance,
+        "_resolve_pnpm_tool",
+        lambda _environment: identity,
+    )
 
 
 def _config_or_none(
@@ -92,6 +114,7 @@ def test_prune_sandboxes_secondary_vendor_mutation_scopes(
     env = _environment(tmp_path, store)
     calls: list[tuple[list[str], dict[str, str]]] = []
 
+    _stub_stable_tool(monkeypatch)
     monkeypatch.setattr(pnpm_maintenance, "pnpm_process_running", lambda: False)
 
     def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -172,6 +195,7 @@ def test_prune_fails_closed_when_pnpm_rejects_sandbox_config(
     store = tmp_path / "store"
     store.mkdir()
     env = _environment(tmp_path, store)
+    _stub_stable_tool(monkeypatch)
     monkeypatch.setattr(pnpm_maintenance, "pnpm_process_running", lambda: False)
     calls: list[list[str]] = []
 
@@ -202,6 +226,7 @@ def test_prune_fails_closed_when_pnpm_reports_a_different_store(
     store = tmp_path / "store"
     store.mkdir()
     env = _environment(tmp_path, store)
+    _stub_stable_tool(monkeypatch)
     monkeypatch.setattr(pnpm_maintenance, "pnpm_process_running", lambda: False)
     store_path_calls = 0
 
@@ -234,6 +259,7 @@ def test_prune_revalidates_store_identity_before_mutation(
     version = store / "v11"
     version.mkdir(parents=True)
     env = _environment(tmp_path, store)
+    _stub_stable_tool(monkeypatch)
     monkeypatch.setattr(pnpm_maintenance, "pnpm_process_running", lambda: False)
     identities = iter(((1, "first", "test"), (1, "changed", "test")))
     monkeypatch.setattr(pnpm_maintenance, "_store_identity", lambda _path: next(identities))
@@ -251,7 +277,41 @@ def test_prune_revalidates_store_identity_before_mutation(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    with pytest.raises(RuntimeError, match="身份在执行前发生变化"):
+    with pytest.raises(RuntimeError, match="store 身份在执行前发生变化"):
+        prune_pnpm_store(store, env)
+    assert not prune_called
+
+
+def test_prune_revalidates_cli_identity_before_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = tmp_path / "store"
+    version = store / "v11"
+    version.mkdir(parents=True)
+    env = _environment(tmp_path, store)
+    monkeypatch.setattr(pnpm_maintenance, "pnpm_process_running", lambda: False)
+    tool_identities = iter((_tool_identity("first"), _tool_identity("changed")))
+    monkeypatch.setattr(
+        pnpm_maintenance,
+        "_resolve_pnpm_tool",
+        lambda _environment: next(tool_identities),
+    )
+    prune_called = False
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal prune_called
+        config = _config_or_none(command, kwargs)
+        if config is not None:
+            return config
+        if command[-3:] == ["store", "path", "--silent"]:
+            return subprocess.CompletedProcess(command, 0, stdout=str(version), stderr="")
+        prune_called = True
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="CLI 身份在执行前发生变化"):
         prune_pnpm_store(store, env)
     assert not prune_called
 
@@ -263,6 +323,7 @@ def test_prune_refuses_store_mutation_while_pnpm_is_running(
     store = tmp_path / "store"
     store.mkdir()
     env = _environment(tmp_path, store)
+    _stub_stable_tool(monkeypatch)
     monkeypatch.setattr(pnpm_maintenance, "pnpm_process_running", lambda: True)
 
     with pytest.raises(RuntimeError, match="pnpm 正在运行"):
@@ -279,6 +340,7 @@ def test_prune_surfaces_vendor_failure_without_raw_fallback(
     payload = version / "keep.bin"
     payload.write_bytes(b"x" * 23)
     env = _environment(tmp_path, store)
+    _stub_stable_tool(monkeypatch)
     monkeypatch.setattr(pnpm_maintenance, "pnpm_process_running", lambda: False)
 
     def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
