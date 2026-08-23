@@ -172,6 +172,32 @@ def test_visual_studio_old_large_roslyn_cache_is_delegated(tmp_path: Path) -> No
     assert decision.action is PolicyAction.TOOL_DELETE
 
 
+def test_visual_studio_audited_cache_safety_is_not_revoked_by_heuristics(
+    tmp_path: Path,
+) -> None:
+    env, component_cache, _, _ = _layout(tmp_path)
+    roslyn = _roslyn_cache(env)
+    cases = (
+        (component_cache, 1, _NOW),
+        (component_cache, 1, None),
+        (roslyn, 1, _NOW),
+        (roslyn, 1, None),
+    )
+
+    for path, logical_size, last_used in cases:
+        decision = evaluate_application_path(
+            path,
+            logical_size=logical_size,
+            last_used=last_used,
+            now=_NOW,
+            process_running=False,
+            environment=env,
+        )
+        assert decision is not None
+        assert decision.rule.owner is DecisionOwner.TOOL
+        assert decision.action is PolicyAction.TOOL_DELETE
+
+
 def test_visual_studio_old_large_webtools_stays_protected(tmp_path: Path) -> None:
     env, _, _, _ = _layout(tmp_path)
     web_tools = _web_tools(env)
