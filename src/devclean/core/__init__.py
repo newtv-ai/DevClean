@@ -32,3 +32,6 @@ from devclean.core import vivaldi_cache_semantics as _vivaldi_cache_semantics  #
 # Opera's split roaming/local layouts need the same action semantics only for cache
 # classes already proven safe; System Cache and recovery/mixed state remain protected.
 from devclean.core import opera_cache_semantics as _opera_cache_semantics  # noqa: F401
+# Firefox distinguishes disposable ProfLD/cache subtrees from persistent ProfD,
+# crash-report and updater state; only the audited cache rules get this semantics.
+from devclean.core import firefox_cache_semantics as _firefox_cache_semantics  # noqa: F401
