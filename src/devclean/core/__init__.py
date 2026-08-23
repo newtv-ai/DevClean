@@ -21,3 +21,6 @@ from devclean.core import vscode_cache_semantics as _vscode_cache_semantics  # n
 # Chrome/Chromium uses the same rule: exact source-backed caches stay safe, while
 # profile data and persistent site storage keep their existing protected lanes.
 from devclean.core import chrome_cache_semantics as _chrome_cache_semantics  # noqa: F401
+# Edge clones Chromium's audited browser-cache boundaries but keeps Microsoft
+# updater state/logs separate; only those exact generated caches get this rule.
+from devclean.core import edge_cache_semantics as _edge_cache_semantics  # noqa: F401
