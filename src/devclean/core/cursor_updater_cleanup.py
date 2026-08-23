@@ -294,9 +294,11 @@ def install() -> None:
 
     # The shared facade is already loaded by the earlier Claude plugin extension,
     # so update the local callable snapshots it uses for matching, process guards
-    # and dynamic whole-tree root discovery.
-    _application.match_cursor_rule = match_cursor_rule
-    _application.cursor_process_running = cursor_update_process_running
+    # and dynamic whole-tree root discovery. These facade names are deliberately
+    # private implementation details, so patch through the module namespace
+    # instead of pretending they are public exports for the type checker.
+    vars(_application)["match_cursor_rule"] = match_cursor_rule
+    vars(_application)["cursor_process_running"] = cursor_update_process_running
 
     def audited_dynamic_tool_roots(
         environment: Mapping[str, str] | None = None,
