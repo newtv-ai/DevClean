@@ -30,6 +30,7 @@ from devclean.core.nuget_cleanup import match_nuget_rule
 from devclean.core.ollama_cleanup import match_ollama_rule
 from devclean.core.pip_cleanup import match_pip_rule
 from devclean.core.playwright_cleanup import match_playwright_rule
+from devclean.core.pnpm_cleanup import match_pnpm_rule
 from devclean.core.puppeteer_cleanup import match_puppeteer_rule
 from devclean.core.rule_schema import CleanupCategory, CleanupPolicy, SourceDomain
 from devclean.core.user_rules import (
@@ -277,6 +278,10 @@ def _report_only_root_metadata(
     pip_rule = match_pip_rule(root, environment)
     if pip_rule is not None and pip_rule.rule_id.startswith("pip-"):
         return CleanupCategory.PIP_CACHE, pip_rule.label
+
+    pnpm_rule = match_pnpm_rule(root, environment)
+    if pnpm_rule is not None and pnpm_rule.rule_id == "pnpm-store":
+        return CleanupCategory.PNPM_STORE, pnpm_rule.label
 
     return CleanupCategory.IDE_CACHE, "已审计的应用存储根目录"
 
