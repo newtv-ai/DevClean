@@ -24,3 +24,6 @@ from devclean.core import chrome_cache_semantics as _chrome_cache_semantics  # n
 # Edge clones Chromium's audited browser-cache boundaries but keeps Microsoft
 # updater state/logs separate; only those exact generated caches get this rule.
 from devclean.core import edge_cache_semantics as _edge_cache_semantics  # noqa: F401
+# Brave follows the same Chromium cache boundary while its Omaha updater working
+# tree and state remain protected by Brave-specific KEEP rules.
+from devclean.core import brave_cache_semantics as _brave_cache_semantics  # noqa: F401
