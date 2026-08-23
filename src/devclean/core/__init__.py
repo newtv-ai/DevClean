@@ -27,3 +27,8 @@ from devclean.core import edge_cache_semantics as _edge_cache_semantics  # noqa:
 # Brave follows the same Chromium cache boundary while its Omaha updater working
 # tree and state remain protected by Brave-specific KEEP rules.
 from devclean.core import brave_cache_semantics as _brave_cache_semantics  # noqa: F401
+# Vivaldi keeps Crashpad/profile state protected while exact Chromium caches stay safe.
+from devclean.core import vivaldi_cache_semantics as _vivaldi_cache_semantics  # noqa: F401
+# Opera's split roaming/local layouts need the same action semantics only for cache
+# classes already proven safe; System Cache and recovery/mixed state remain protected.
+from devclean.core import opera_cache_semantics as _opera_cache_semantics  # noqa: F401
