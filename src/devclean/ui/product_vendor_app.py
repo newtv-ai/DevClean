@@ -29,6 +29,7 @@ from uuid import uuid4
 
 from devclean.core.cleanup_catalog import KnownCleanupRoot
 from devclean.core.cleanup_journal import ActionState, CleanupMode
+from devclean.core.npm_maintenance import npm_generic_scan_skip_paths
 from devclean.core.postscan_cleanup import (
     CleanupExecutionResult,
     CleanupRefusal,
@@ -107,6 +108,7 @@ def _generic_vendor_skip_paths(
     known_roots: Sequence[KnownCleanupRoot],
     candidates: Sequence[VendorCleanupCandidate],
     drives: Sequence[Path],
+    source_proven_paths: Sequence[Path] = (),
 ) -> tuple[str, ...]:
     paths: list[str] = [
         str(candidate.path)
@@ -118,6 +120,9 @@ def _generic_vendor_skip_paths(
         for root in known_roots
         if root.category in _SKIP_GENERIC_CACHE_CATEGORIES
         and _path_reachable(root.path, drives)
+    )
+    paths.extend(
+        str(path) for path in source_proven_paths if _path_reachable(path, drives)
     )
     return tuple(dict.fromkeys(paths))
 
@@ -161,7 +166,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
         active_rules: UserRules,
         known_roots: tuple[KnownCleanupRoot, ...],
     ) -> None:
-        """Inventory actionable provider roots once, then prune known stores."""
+        """Inventory actionable provider roots once, then prune proven stores."""
 
         try:
             inventory = inventory_vendor_cleanup_candidates(
@@ -172,6 +177,11 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
         else:
             inventory_candidates = inventory.candidates
 
+        try:
+            npm_skip_paths = npm_generic_scan_skip_paths()
+        except (OSError, RuntimeError, TypeError, ValueError):
+            npm_skip_paths = ()
+
         drives = self._active_scan_drives
         visible = _surfaceable_vendor_candidates(inventory_candidates, drives)
         self._vendor_scan_candidates[token] = visible
@@ -180,6 +190,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
             known_roots,
             inventory_candidates,
             drives,
+            npm_skip_paths,
         )
         scan_rules = replace(
             active_rules.scan,
