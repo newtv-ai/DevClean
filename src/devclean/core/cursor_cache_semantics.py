@@ -12,7 +12,10 @@ separate class.
 
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
 from dataclasses import replace
+from datetime import datetime
 
 from devclean.core import application_cleanup as _application
 from devclean.core import cursor_cleanup as _cursor
@@ -45,10 +48,25 @@ def _is_disposable_cursor_cache(rule_id: str) -> bool:
     return any(rule_id.endswith(suffix) for suffix in _CACHE_RULE_SUFFIXES)
 
 
-def evaluate_cursor_path(*args: object, **kwargs: object) -> ApplicationPolicyDecision | None:
+def evaluate_cursor_path(
+    path: str | os.PathLike[str],
+    *,
+    logical_size: int,
+    last_used: datetime | None,
+    now: datetime | None = None,
+    process_running: bool | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> ApplicationPolicyDecision | None:
     """Keep ranking evidence, but never let age/size revoke audited cache safety."""
 
-    decision = _ORIGINAL_EVALUATE_CURSOR_PATH(*args, **kwargs)
+    decision = _ORIGINAL_EVALUATE_CURSOR_PATH(
+        path,
+        logical_size=logical_size,
+        last_used=last_used,
+        now=now,
+        process_running=process_running,
+        environment=environment,
+    )
     if decision is None:
         return None
     if decision.rule.owner is not DecisionOwner.TOOL:
