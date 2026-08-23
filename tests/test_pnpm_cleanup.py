@@ -284,18 +284,18 @@ def test_catalog_keeps_pnpm_cache_store_and_global_non_executable(
     by_path = {os.path.normcase(str(root.path)): root for root in discovered}
 
     for root in (cache, store, global_dir):
-        item = by_path[os.path.normcase(str(root))]
-        assert item.policy is CleanupPolicy.REPORT_ONLY
-        assert not item.delete_root_itself
+        root_item = by_path[os.path.normcase(str(root))]
+        assert root_item.policy is CleanupPolicy.REPORT_ONLY
+        assert not root_item.delete_root_itself
 
     # USER/KEEP paths may be represented only through their parent report root.
     # If catalog implementation chooses to surface a child, it still cannot
     # become an executable VENDOR_MANAGED root.
     for child in (dlx, metadata):
-        item = by_path.get(os.path.normcase(str(child)))
-        if item is not None:
-            assert item.policy is CleanupPolicy.REPORT_ONLY
-            assert not item.delete_root_itself
+        child_item = by_path.get(os.path.normcase(str(child)))
+        if child_item is not None:
+            assert child_item.policy is CleanupPolicy.REPORT_ONLY
+            assert not child_item.delete_root_itself
         assert whole_tree_application_rule(child, env) is None
 
 
