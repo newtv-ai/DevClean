@@ -184,6 +184,7 @@ def test_verify_runs_exact_vendor_gc_on_pinned_root(
         lambda expected, environment: reviewed,
     )
     monkeypatch.setattr(npm, "_require_process_idle", lambda: None)
+    monkeypatch.setattr(npm, "_require_no_protected_overlap", lambda *args: None)
     monkeypatch.setattr(npm, "inventory_npm_storage", lambda environment=None: after)
     monkeypatch.setattr(npm, "_require_same_boundaries", lambda old, new: None)
 
@@ -229,6 +230,7 @@ def test_clean_requires_reviewed_content_state_then_uses_vendor_force(
         lambda expected, environment: reviewed,
     )
     monkeypatch.setattr(npm, "_require_process_idle", lambda: None)
+    monkeypatch.setattr(npm, "_require_no_protected_overlap", lambda *args: None)
     monkeypatch.setattr(npm, "inventory_npm_storage", lambda environment=None: after)
     monkeypatch.setattr(npm, "_require_same_boundaries", lambda old, new: None)
 
@@ -294,6 +296,7 @@ def test_exact_npx_remove_requires_two_matching_vendor_dry_runs(
         lambda expected, environment: reviewed,
     )
     monkeypatch.setattr(npm, "_require_process_idle", lambda: None)
+    monkeypatch.setattr(npm, "_require_no_protected_overlap", lambda *args: None)
     monkeypatch.setattr(npm, "inventory_npm_storage", lambda environment=None: after)
     monkeypatch.setattr(npm, "_require_same_boundaries", lambda old, new: None)
 
