@@ -16,11 +16,7 @@ from devclean.core.application_cleanup import (
     process_guard_allows,
     whole_tree_application_rule,
 )
-from devclean.core.cleanup_catalog import (
-    CleanupCategory,
-    CleanupPolicy,
-    discover_known_cleanup_roots,
-)
+from devclean.core.cleanup_catalog import CleanupPolicy, discover_known_cleanup_roots
 from devclean.core.user_rules import default_rules
 from devclean.core.visual_studio_cleanup import visual_studio_roots
 
@@ -140,7 +136,7 @@ def test_servicehub_logs_have_no_deterministic_whole_tree_authority(
     assert whole_tree_application_rule(logs.parent, env) is None
 
 
-def test_servicehub_logs_are_catalogued_report_only_for_user_review(
+def test_servicehub_logs_remain_visible_but_non_executable_in_catalog(
     tmp_path: Path,
 ) -> None:
     env, logs = _layout(tmp_path)
@@ -149,9 +145,9 @@ def test_servicehub_logs_are_catalogued_report_only_for_user_review(
     by_path = {os.path.normcase(str(item.path)): item for item in discovered}
     item = by_path[os.path.normcase(str(logs))]
 
-    assert item.category is CleanupCategory.SYSTEM_LOGS
     assert item.policy is CleanupPolicy.REPORT_ONLY
     assert not item.delete_root_itself
+    assert item.application_rule is None
 
 
 def test_servicehub_logs_fail_closed_without_temp() -> None:
