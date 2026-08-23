@@ -4,7 +4,7 @@ npm's configured cache, global installation prefix, log directory and config
 files may all be redirected independently. Current npm exposes supported cache
 maintenance commands, so package/npx/TUF cache internals are protected from
 generic raw deletion and handled only by exact vendor operations. Diagnostic
-logs retain the existing narrow source-backed generic cleanup lane.
+logs are known troubleshooting data whose retention is user-dependent.
 """
 
 from __future__ import annotations
@@ -29,7 +29,6 @@ from devclean.core._application_cleanup_impl import (
     effective_idle_days,
 )
 
-_MIB = 1024**2
 _NPM_EXTERNAL_LOG_PATTERN = (
     "{????-??-??T??_??_??_???Z-debug-?.log,"
     "????-??-??T??_??_??_???Z-debug.log}"
@@ -57,6 +56,7 @@ def _rule(
     min_reclaim_bytes: int = 0,
     requires_process_closed: bool = False,
     size_sensitive_idle: bool = True,
+    user_age_buckets: tuple[int, ...] = (),
     allow_whole_tree: bool = False,
 ) -> ApplicationCleanupRule:
     return ApplicationCleanupRule(
@@ -72,31 +72,9 @@ def _rule(
         min_reclaim_bytes=min_reclaim_bytes,
         requires_process_closed=requires_process_closed,
         size_sensitive_idle=size_sensitive_idle,
+        user_age_buckets=user_age_buckets,
         allow_whole_tree=allow_whole_tree,
         label=label,
-    )
-
-
-def _tool_cache_dir(
-    rule_id: str,
-    relative: str,
-    label: str,
-    *,
-    idle_days: float,
-    min_reclaim_bytes: int,
-    rebuild_cost: RebuildCost,
-) -> ApplicationCleanupRule:
-    return _rule(
-        rule_id,
-        relative,
-        MatchKind.PREFIX,
-        DecisionOwner.TOOL,
-        rebuild_cost,
-        label,
-        idle_days=idle_days,
-        min_reclaim_bytes=min_reclaim_bytes,
-        requires_process_closed=True,
-        allow_whole_tree=True,
     )
 
 
@@ -113,6 +91,27 @@ def _protected_cache_dir(
         DecisionOwner.KEEP,
         rebuild_cost,
         label,
+    )
+
+
+def _user_log_dir(
+    rule_id: str,
+    relative: str,
+    label: str,
+    *,
+    root_kind: str = "cache",
+) -> ApplicationCleanupRule:
+    return _rule(
+        rule_id,
+        relative,
+        MatchKind.PREFIX,
+        DecisionOwner.USER,
+        RebuildCost.NONE,
+        label,
+        root_kind=root_kind,
+        requires_process_closed=True,
+        user_age_buckets=(7, 30, 90),
+        allow_whole_tree=False,
     )
 
 
@@ -135,13 +134,10 @@ NPM_RULES: tuple[ApplicationCleanupRule, ...] = (
         "npm Sigstore TUF cache; vendor-managed as part of configured cache",
         RebuildCost.LOW,
     ),
-    _tool_cache_dir(
+    _user_log_dir(
         "npm-default-logs",
         "_logs",
-        "npm diagnostic logs",
-        idle_days=7,
-        min_reclaim_bytes=_MIB,
-        rebuild_cost=RebuildCost.NONE,
+        "npm diagnostic logs; user decides whether troubleshooting history is needed",
     ),
     _rule(
         "npm-cache-unclassified",
@@ -164,13 +160,12 @@ NPM_RULES: tuple[ApplicationCleanupRule, ...] = (
         "npm-external-debug-logs",
         _NPM_EXTERNAL_LOG_PATTERN,
         MatchKind.GLOB,
-        DecisionOwner.TOOL,
+        DecisionOwner.USER,
         RebuildCost.NONE,
-        "npm diagnostic log in a configured logs-dir",
+        "npm diagnostic log in a configured logs-dir; user decides retention",
         root_kind="logs",
-        idle_days=7,
-        min_reclaim_bytes=256 * 1024,
         requires_process_closed=True,
+        user_age_buckets=(7, 30, 90),
         allow_whole_tree=False,
     ),
     _rule(
@@ -224,13 +219,12 @@ _NPM_LEGACY_DEBUG_RULE = ApplicationCleanupRule(
     root_key="ANYWHERE",
     relative_pattern="npm-debug.log",
     match_kind=MatchKind.EXACT,
-    owner=DecisionOwner.TOOL,
+    owner=DecisionOwner.USER,
     last_use=LastUseStrategy.FILE_MTIME,
     rebuild_cost=RebuildCost.NONE,
-    idle_days=7,
-    min_reclaim_bytes=256 * 1024,
     requires_process_closed=True,
-    label="legacy npm debug log",
+    user_age_buckets=(7, 30, 90),
+    label="legacy npm debug-log-looking file; user decides retention",
 )
 
 
@@ -345,38 +339,17 @@ def match_npm_rule(
 def npm_audited_tool_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
-    """Return only exact generic-cleanup roots, currently npm diagnostic logs."""
+    """npm raw generic cleanup intentionally exposes no whole-tree TOOL root."""
 
-    roots = npm_roots(environment)
-    found: list[tuple[PureWindowsPath, ApplicationCleanupRule]] = []
-    seen: set[str] = set()
-    for rule in NPM_RULES:
-        if (
-            rule.owner is not DecisionOwner.TOOL
-            or not rule.allow_whole_tree
-            or rule.root_key != "NPM_CACHE"
-        ):
-            continue
-        if any(token in rule.relative_pattern for token in ("*", "?", "[", "{")):
-            continue
-        for root in roots.cache_roots:
-            path = root / rule.relative_pattern
-            key = _impl._normalize(path)
-            if key in seen:
-                continue
-            seen.add(key)
-            found.append((path, rule))
-    return tuple(found)
+    del environment
+    return ()
 
 
 def whole_tree_npm_rule(
     path: str | os.PathLike[str],
     environment: Mapping[str, str] | None = None,
 ) -> ApplicationCleanupRule | None:
-    target = _impl._normalize(path)
-    for root, rule in npm_audited_tool_roots(environment):
-        if target == _impl._normalize(root):
-            return rule
+    del path, environment
     return None
 
 
@@ -409,6 +382,16 @@ def evaluate_npm_path(
             idle,
             None,
             0,
+        )
+    if rule.owner is DecisionOwner.USER:
+        return ApplicationPolicyDecision(
+            rule,
+            PolicyAction.USER_DECISION,
+            observed,
+            idle,
+            None,
+            _impl._benefit_score(logical_size, idle, None, rule.rebuild_cost),
+            _impl._age_bucket(idle, rule.user_age_buckets),
         )
 
     threshold = effective_idle_days(rule, logical_size)
