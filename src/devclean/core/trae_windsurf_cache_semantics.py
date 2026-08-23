@@ -169,7 +169,10 @@ def install() -> None:
     trae_replacements = {
         "trae-logs": _user_log_rule(
             trae_by_id["trae-logs"],
-            label="Trae diagnostic logs; user decides whether troubleshooting history is still needed",
+            label=(
+                "Trae diagnostic logs; user decides whether troubleshooting "
+                "history is still needed"
+            ),
         ),
         "trae-crashpad-reports": _protected_crashpad_rule(
             trae_by_id["trae-crashpad-reports"],
