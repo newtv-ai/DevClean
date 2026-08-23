@@ -340,5 +340,5 @@ def test_scope_guard_fails_closed_when_npm_major_cannot_be_proven(
 
     monkeypatch.setattr(npm, "_run_npm", fake_run)
 
-    with pytest.raises(RuntimeError, match="npm --version|npm major"):
+    with pytest.raises(RuntimeError, match=r"npm --version|npm major"):
         npm._require_no_protected_overlap(inventory, inventory.content_cache.path, {})
