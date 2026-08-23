@@ -121,7 +121,7 @@ protected or separately managed.
 Official Microsoft references audited/rechecked through 2026-08-23:
 
 - https://learn.microsoft.com/en-us/visualstudio/extensibility/managed-extensibility-framework-in-the-editor?view=visualstudio
-- https://learn.microsoft.com/en-us/visualstudio/install/troubleshoot-network-related-errors-in-visual-studio?view=visualstudio
+- https://learn.microsoft.com/en-us/answers/questions/2115313/im-running-windows-11-24h2-and-using-visual-studio
 - https://learn.microsoft.com/en-us/answers/questions/483037/can-i-safely-delete-appdatalocalmicrosoftvisualstu
 - https://learn.microsoft.com/en-us/answers/questions/1221136/visual-studio-2022-clear-local-caches
 - https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.settings.applicationdatafolder?view=visualstudiosdk-2022
