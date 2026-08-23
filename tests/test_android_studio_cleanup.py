@@ -78,7 +78,7 @@ def test_android_studio_mixed_system_root_only_delegates_exact_platform_caches(
         ),
         system / "log" / "idea.log": (
             "android-studio-product-logs",
-            DecisionOwner.TOOL,
+            DecisionOwner.KEEP,
         ),
         system / "LocalHistory" / "storageData": (
             "android-studio-local-history",
@@ -113,49 +113,38 @@ def test_android_studio_mixed_system_root_only_delegates_exact_platform_caches(
         assert rule.owner is owner
 
 
-def test_android_studio_tool_policy_keeps_recent_small_and_in_use_indexes(
+def test_android_studio_audited_cache_safety_is_not_revoked_by_heuristics(
     tmp_path: Path,
 ) -> None:
     env, _, system = _layout(tmp_path)
-    index = system / "index"
+    cases = (
+        (system / "index", 1, _NOW - timedelta(minutes=1)),
+        (system / "tmp", 1, None),
+        (system / "vcs-log", 1, _NOW),
+    )
+    for path, size, last_used in cases:
+        decision = evaluate_application_path(
+            path,
+            logical_size=size,
+            last_used=last_used,
+            now=_NOW,
+            process_running=False,
+            environment=env,
+        )
+        assert decision is not None
+        assert decision.rule.owner is DecisionOwner.TOOL
+        assert decision.action is PolicyAction.TOOL_DELETE
 
-    recent = evaluate_application_path(
-        index,
-        logical_size=512 * _MIB,
-        last_used=_NOW - timedelta(days=5),
-        now=_NOW,
-        process_running=False,
-        environment=env,
-    )
-    stale = evaluate_application_path(
-        index,
-        logical_size=512 * _MIB,
-        last_used=_NOW - timedelta(days=45),
-        now=_NOW,
-        process_running=False,
-        environment=env,
-    )
-    small = evaluate_application_path(
-        index,
-        logical_size=64 * _MIB,
-        last_used=_NOW - timedelta(days=365),
-        now=_NOW,
-        process_running=False,
-        environment=env,
-    )
     running = evaluate_application_path(
-        index,
+        system / "index",
         logical_size=512 * _MIB,
         last_used=_NOW - timedelta(days=365),
         now=_NOW,
         process_running=True,
         environment=env,
     )
-
-    assert recent is not None and recent.action is PolicyAction.TOOL_KEEP_RECENT
-    assert stale is not None and stale.action is PolicyAction.TOOL_DELETE
-    assert small is not None and small.action is PolicyAction.TOOL_KEEP_LOW_BENEFIT
-    assert running is not None and running.action is PolicyAction.TOOL_KEEP_IN_USE
+    assert running is not None
+    assert running.action is PolicyAction.TOOL_KEEP_IN_USE
 
 
 def test_android_studio_user_state_is_reviewable_while_keep_state_stays_protected(
@@ -167,6 +156,7 @@ def test_android_studio_user_state_is_reviewable_while_keep_state_stays_protecte
         system / "jcef_cache" / "Cookies": DecisionOwner.USER,
         system / "caches" / "names.dat": DecisionOwner.KEEP,
         system / "unknown" / "state.db": DecisionOwner.KEEP,
+        system / "log" / "idea.log": DecisionOwner.KEEP,
         config / "options" / "other.xml": DecisionOwner.KEEP,
         config / "plugins" / "plugin.jar": DecisionOwner.KEEP,
     }
@@ -189,6 +179,26 @@ def test_android_studio_user_state_is_reviewable_while_keep_state_stays_protecte
         assert decision.action is expected
 
 
+def test_android_studio_current_logs_never_gain_raw_delete_authority_from_age_or_size(
+    tmp_path: Path,
+) -> None:
+    env, _, system = _layout(tmp_path)
+    log = system / "log" / "idea.log"
+    decision = evaluate_application_path(
+        log,
+        logical_size=16 * 1024**3,
+        last_used=_NOW - timedelta(days=3650),
+        now=_NOW,
+        process_running=False,
+        environment=env,
+    )
+    assert decision is not None
+    assert decision.rule.rule_id == "android-studio-product-logs"
+    assert decision.rule.owner is DecisionOwner.KEEP
+    assert decision.action is PolicyAction.KEEP_PROTECTED
+    assert whole_tree_application_rule(system / "log", env) is None
+
+
 def test_android_studio_whole_tree_authority_is_exact_and_catalogued(
     tmp_path: Path,
 ) -> None:
@@ -205,7 +215,7 @@ def test_android_studio_whole_tree_authority_is_exact_and_catalogued(
     assert whole_tree_application_rule(index, env) is not None
     assert whole_tree_application_rule(temp, env) is not None
     assert whole_tree_application_rule(vcs_log, env) is not None
-    assert whole_tree_application_rule(logs, env) is not None
+    assert whole_tree_application_rule(logs, env) is None
     assert whole_tree_application_rule(system, env) is None
     assert whole_tree_application_rule(local_history, env) is None
     assert whole_tree_application_rule(plugins, env) is None
@@ -215,7 +225,6 @@ def test_android_studio_whole_tree_authority_is_exact_and_catalogued(
 
     system_item = by_path[os.path.normcase(str(system))]
     index_item = by_path[os.path.normcase(str(index))]
-    log_item = by_path[os.path.normcase(str(logs))]
 
     assert system_item.policy is CleanupPolicy.REPORT_ONLY
     assert not system_item.delete_root_itself
@@ -223,8 +232,7 @@ def test_android_studio_whole_tree_authority_is_exact_and_catalogued(
     assert index_item.policy is CleanupPolicy.VENDOR_MANAGED
     assert index_item.delete_root_itself
     assert index_item.application_rule is not None
-    assert log_item.category is CleanupCategory.SYSTEM_LOGS
-    assert log_item.policy is CleanupPolicy.VENDOR_MANAGED
+    assert os.path.normcase(str(logs)) not in by_path
 
 
 def test_android_studio_studio_properties_redirects_are_source_backed(
@@ -253,9 +261,14 @@ def test_android_studio_studio_properties_redirects_are_source_backed(
     assert PureWindowsPath(str(custom / "plugins")) in roots.plugin_roots
     assert PureWindowsPath(str(custom / "logs")) in roots.log_roots
 
-    rule = match_application_rule(custom / "system" / "index" / "data", env)
-    assert rule is not None
-    assert rule.rule_id == "android-studio-index-cache"
+    cache_rule = match_application_rule(custom / "system" / "index" / "data", env)
+    log_rule = match_application_rule(custom / "logs" / "idea.log", env)
+    assert cache_rule is not None
+    assert cache_rule.rule_id == "android-studio-index-cache"
+    assert cache_rule.owner is DecisionOwner.TOOL
+    assert log_rule is not None
+    assert log_rule.rule_id == "android-studio-product-logs"
+    assert log_rule.owner is DecisionOwner.KEEP
 
 
 def test_android_studio_process_guard_is_independent_from_jetbrains_and_toolbox(
