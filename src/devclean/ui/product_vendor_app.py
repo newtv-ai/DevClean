@@ -180,7 +180,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
         try:
             npm_skip_paths = npm_generic_scan_skip_paths()
         except (OSError, RuntimeError, TypeError, ValueError):
-            npm_skip_paths: tuple[Path, ...] = ()
+            npm_skip_paths = ()
 
         drives = self._active_scan_drives
         visible = _surfaceable_vendor_candidates(inventory_candidates, drives)
