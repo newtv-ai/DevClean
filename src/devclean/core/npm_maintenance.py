@@ -443,7 +443,7 @@ def _require_no_protected_overlap(
             raise RuntimeError(f"npm 未返回 {label} 路径; 已安全停止")
         protected.append((label, path))
 
-    optional_paths = (
+    optional_paths: tuple[tuple[str, str], ...] = (
         ("cafile", "CA file"),
         ("init-module", "init module"),
         ("init.module", "legacy init module"),
