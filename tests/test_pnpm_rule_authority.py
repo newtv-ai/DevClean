@@ -20,7 +20,7 @@ def _environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PNPM_CONFIG_CACHE_DIR", r"H:\pnpm-cache")
 
 
-def test_ai_cannot_delete_pnpm_store_globals_home_or_project_metadata(
+def test_ai_cannot_delete_pnpm_owned_or_user_review_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -31,6 +31,9 @@ def test_ai_cannot_delete_pnpm_store_globals_home_or_project_metadata(
         r"F:\pnpm-global\5\node_modules\typescript\lib\tsc.js",
         r"G:\pnpm-bin\pnpm.cmd",
         r"D:\pnpm-home\pnpm.exe",
+        r"H:\pnpm-cache\dlx\hash\pkg\index.js",
+        r"H:\pnpm-cache\v11\metadata\registry.npmjs.org\react.json",
+        r"H:\pnpm-cache\metadata-v1.3\registry.npmjs.org\react.json",
         r"C:\Users\person\src\app\pnpm-lock.yaml",
         r"C:\Users\person\src\app\pnpm-workspace.yaml",
     )
@@ -45,27 +48,22 @@ def test_ai_cannot_delete_pnpm_store_globals_home_or_project_metadata(
     assert updated.ai_rule_count == before
 
 
-def test_user_delete_of_pnpm_store_file_does_not_become_generic_rule(
+@pytest.mark.parametrize(
+    "path",
+    (
+        r"E:\pnpm-store\v10\files\aa\blob",
+        r"H:\pnpm-cache\dlx\hash\pkg\index.js",
+        r"H:\pnpm-cache\v11\metadata\registry.npmjs.org\react.json",
+    ),
+)
+def test_user_delete_of_pnpm_owned_lane_does_not_become_generic_rule(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    path: str,
 ) -> None:
     _environment(tmp_path, monkeypatch)
-    store_file = r"E:\pnpm-store\v10\files\aa\blob"
     updated = add_user_verdicts(
         load_rules(),
-        [(store_file, RuleDecision.DELETE, "用户想手工释放 pnpm store 空间")],
+        [(path, RuleDecision.DELETE, "用户选择 pnpm 专用清理")],
     )
-    assert updated.decision_for(store_file) is None
-
-
-def test_ai_can_still_learn_pnpm_dlx_cache_decision(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _environment(tmp_path, monkeypatch)
-    cache_file = r"H:\pnpm-cache\dlx\hash\pkg\index.js"
-    updated = add_ai_verdicts(
-        load_rules(),
-        [(cache_file, RuleDecision.DELETE, "regenerable pnpm dlx cache")],
-    )
-    assert updated.decision_for(cache_file) is RuleDecision.DELETE
+    assert updated.decision_for(path) is None

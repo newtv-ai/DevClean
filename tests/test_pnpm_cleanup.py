@@ -20,7 +20,7 @@ from devclean.core.pnpm_cleanup import pnpm_roots
 from devclean.core.triage import DirectoryScope, directory_cleanup_scope
 from devclean.core.user_rules import default_rules
 
-_NOW = datetime(2026, 8, 16, tzinfo=UTC)
+_NOW = datetime(2026, 8, 23, tzinfo=UTC)
 _MIB = 1024**2
 
 
@@ -70,59 +70,124 @@ def test_pnpm_explicit_dirs_and_pnpm_home_are_first_class() -> None:
     assert PureWindowsPath(r"G:\pnpm-global") in scan
 
 
-def test_pnpm_dlx_cache_uses_source_backed_one_day_default() -> None:
+@pytest.mark.parametrize(
+    ("last_used", "logical_size"),
+    (
+        (_NOW, 1),
+        (_NOW - timedelta(days=365), 500 * _MIB),
+        (None, 500 * _MIB),
+    ),
+)
+def test_pnpm_dlx_cache_is_user_review_not_raw_expiry(
+    last_used: datetime | None,
+    logical_size: int,
+) -> None:
     path = r"C:\Users\alice\AppData\Local\pnpm-cache\dlx\hash\pkg\package.json"
-    recent = evaluate_application_path(
+    decision = evaluate_application_path(
         path,
-        logical_size=100 * _MIB,
-        last_used=_NOW - timedelta(hours=12),
+        logical_size=logical_size,
+        last_used=last_used,
         now=_NOW,
         process_running=False,
         environment=_env(),
     )
-    old = evaluate_application_path(
+
+    assert decision is not None
+    assert decision.rule.rule_id == "pnpm-dlx-cache"
+    assert decision.rule.owner is DecisionOwner.USER
+    assert decision.rule.requires_process_closed
+    assert not decision.rule.allow_whole_tree
+    assert decision.action is PolicyAction.USER_DECISION
+
+
+@pytest.mark.parametrize(
+    "relative",
+    (
+        r"v11\metadata\registry.npmjs.org\react.json",
+        r"v11\metadata-full\registry.npmjs.org\react.json",
+        r"v11\metadata-full-filtered\registry.npmjs.org\react.json",
+        r"metadata-v1.3\registry.npmjs.org\react.json",
+    ),
+)
+def test_pnpm_metadata_mirrors_are_user_review(relative: str) -> None:
+    path = rf"C:\Users\alice\AppData\Local\pnpm-cache\{relative}"
+    decision = evaluate_application_path(
         path,
-        logical_size=100 * _MIB,
-        last_used=_NOW - timedelta(days=3),
+        logical_size=20 * _MIB,
+        last_used=_NOW - timedelta(days=365),
         now=_NOW,
         process_running=False,
         environment=_env(),
     )
-    assert recent is not None
-    assert recent.rule.rule_id == "pnpm-dlx-cache"
-    assert recent.rule.owner is DecisionOwner.TOOL
-    assert recent.action is PolicyAction.TOOL_KEEP_RECENT
-    assert old is not None
-    assert old.action is PolicyAction.TOOL_DELETE
+
+    assert decision is not None
+    assert decision.rule.rule_id == "pnpm-metadata-cache"
+    assert decision.rule.owner is DecisionOwner.USER
+    assert decision.rule.requires_process_closed
+    assert decision.action is PolicyAction.USER_DECISION
 
 
-def test_pnpm_metadata_cache_is_tool_owned() -> None:
+def test_pnpm_metadata_match_does_not_claim_similar_unknown_state() -> None:
     path = (
         r"C:\Users\alice\AppData\Local\pnpm-cache"
-        r"\metadata-v1.3\registry.npmjs.org\react.json"
+        r"\v11\metadata-backup\private.json"
     )
     decision = evaluate_application_path(
         path,
         logical_size=20 * _MIB,
-        last_used=_NOW - timedelta(days=30),
+        last_used=_NOW - timedelta(days=365),
         now=_NOW,
         process_running=False,
         environment=_env(),
     )
+
     assert decision is not None
-    assert decision.rule.rule_id == "pnpm-metadata-cache"
+    assert decision.rule.rule_id == "pnpm-cache-unclassified"
+    assert decision.rule.owner is DecisionOwner.KEEP
+    assert decision.action is PolicyAction.KEEP_PROTECTED
+
+
+@pytest.mark.parametrize(
+    ("logical_size", "last_used"),
+    (
+        (1, _NOW),
+        (1, _NOW - timedelta(days=365)),
+        (1, None),
+    ),
+)
+def test_pnpm_update_state_is_deterministic_exact_tool_state(
+    logical_size: int,
+    last_used: datetime | None,
+) -> None:
+    path = r"C:\Users\alice\AppData\Local\pnpm-state\pnpm-state.json"
+    decision = evaluate_application_path(
+        path,
+        logical_size=logical_size,
+        last_used=last_used,
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+
+    assert decision is not None
+    assert decision.rule.rule_id == "pnpm-update-state"
     assert decision.rule.owner is DecisionOwner.TOOL
     assert decision.action is PolicyAction.TOOL_DELETE
 
 
-def test_pnpm_update_state_is_regenerable_but_low_value() -> None:
-    rule = match_application_rule(
-        r"C:\Users\alice\AppData\Local\pnpm-state\pnpm-state.json",
-        _env(),
+def test_pnpm_update_state_is_blocked_while_pnpm_is_running() -> None:
+    path = r"C:\Users\alice\AppData\Local\pnpm-state\pnpm-state.json"
+    decision = evaluate_application_path(
+        path,
+        logical_size=1,
+        last_used=None,
+        now=_NOW,
+        process_running=True,
+        environment=_env(),
     )
-    assert rule is not None
-    assert rule.rule_id == "pnpm-update-state"
-    assert rule.owner is DecisionOwner.TOOL
+
+    assert decision is not None
+    assert decision.action is PolicyAction.TOOL_KEEP_IN_USE
 
 
 def test_pnpm_store_home_and_global_installs_are_protected() -> None:
@@ -136,7 +201,9 @@ def test_pnpm_store_home_and_global_installs_are_protected() -> None:
     paths = {
         r"F:\pnpm-store\v10\files\aa\blob": "pnpm-store",
         r"F:\pnpm-store\v10\links\react\index.json": "pnpm-store",
-        r"G:\pnpm-global\5\node_modules\typescript\lib\tsc.js": "pnpm-global-install",
+        r"G:\pnpm-global\5\node_modules\typescript\lib\tsc.js": (
+            "pnpm-global-install"
+        ),
         r"H:\pnpm-bin\pnpm.cmd": "pnpm-global-bin",
         r"E:\pnpm-home\pnpm.exe": "pnpm-home",
     }
@@ -168,23 +235,25 @@ def test_pnpm_lock_and_workspace_files_are_always_protected() -> None:
         assert not process_guard_allows(path, _env())
 
 
-def test_pnpm_store_never_receives_generic_whole_tree_authority() -> None:
-    env = {**_env(), "PNPM_CONFIG_STORE_DIR": r"F:\pnpm-store"}
-    assert whole_tree_application_rule(r"F:\pnpm-store", env) is None
-    assert whole_tree_application_rule(r"F:\pnpm-store\v10", env) is None
-    assert whole_tree_application_rule(r"F:\pnpm-store\v10\links", env) is None
+def test_pnpm_has_no_raw_whole_tree_tool_roots() -> None:
+    env = {
+        **_env(),
+        "PNPM_CONFIG_CACHE_DIR": r"D:\pnpm-cache",
+        "PNPM_CONFIG_STORE_DIR": r"F:\pnpm-store",
+    }
+    paths = (
+        r"D:\pnpm-cache",
+        r"D:\pnpm-cache\dlx",
+        r"D:\pnpm-cache\v11\metadata",
+        r"D:\pnpm-cache\metadata-v1.3",
+        r"F:\pnpm-store",
+        r"F:\pnpm-store\v10",
+    )
+    for path in paths:
+        assert whole_tree_application_rule(path, env) is None
 
 
-def test_pnpm_dlx_whole_tree_authority_is_exact_cache_child_only() -> None:
-    env = {**_env(), "PNPM_CONFIG_CACHE_DIR": r"D:\pnpm-cache"}
-    rule = whole_tree_application_rule(r"D:\pnpm-cache\dlx", env)
-    assert rule is not None
-    assert rule.rule_id == "pnpm-dlx-cache"
-    assert rule.owner is DecisionOwner.TOOL
-    assert whole_tree_application_rule(r"D:\pnpm-cache", env) is None
-
-
-def test_catalog_discovers_metadata_dlx_but_protects_store_and_global(
+def test_catalog_keeps_pnpm_cache_store_and_global_non_executable(
     tmp_path: Path,
 ) -> None:
     home = tmp_path / "pnpm-home"
@@ -194,7 +263,7 @@ def test_catalog_discovers_metadata_dlx_but_protects_store_and_global(
     global_dir = tmp_path / "pnpm-global"
     global_bin = tmp_path / "pnpm-bin"
     dlx = cache / "dlx"
-    metadata = cache / "metadata-v1.3"
+    metadata = cache / "v11" / "metadata"
     for path in (home, state, store, global_dir, global_bin, dlx, metadata):
         path.mkdir(parents=True)
     env = {
@@ -213,22 +282,21 @@ def test_catalog_discovers_metadata_dlx_but_protects_store_and_global(
     rules = default_rules()
     discovered = discover_known_cleanup_roots(rules.scan, env)
     by_path = {os.path.normcase(str(root.path)): root for root in discovered}
-    cache_root = by_path[os.path.normcase(str(cache))]
-    store_root = by_path[os.path.normcase(str(store))]
-    global_root = by_path[os.path.normcase(str(global_dir))]
-    dlx_root = by_path[os.path.normcase(str(dlx))]
-    metadata_root = by_path[os.path.normcase(str(metadata))]
 
-    assert cache_root.policy is CleanupPolicy.REPORT_ONLY
-    assert not cache_root.delete_root_itself
-    assert store_root.policy is CleanupPolicy.REPORT_ONLY
-    assert not store_root.delete_root_itself
-    assert global_root.policy is CleanupPolicy.REPORT_ONLY
-    assert not global_root.delete_root_itself
-    assert dlx_root.policy is CleanupPolicy.VENDOR_MANAGED
-    assert dlx_root.delete_root_itself
-    assert metadata_root.policy is CleanupPolicy.VENDOR_MANAGED
-    assert metadata_root.delete_root_itself
+    for root in (cache, store, global_dir):
+        root_item = by_path[os.path.normcase(str(root))]
+        assert root_item.policy is CleanupPolicy.REPORT_ONLY
+        assert not root_item.delete_root_itself
+
+    # USER/KEEP paths may be represented only through their parent report root.
+    # If catalog implementation chooses to surface a child, it still cannot
+    # become an executable VENDOR_MANAGED root.
+    for child in (dlx, metadata):
+        child_item = by_path.get(os.path.normcase(str(child)))
+        if child_item is not None:
+            assert child_item.policy is CleanupPolicy.REPORT_ONLY
+            assert not child_item.delete_root_itself
+        assert whole_tree_application_rule(child, env) is None
 
 
 def test_pnpm_global_node_modules_are_not_project_cleanup_output(tmp_path: Path) -> None:
@@ -267,7 +335,7 @@ def test_project_node_modules_remains_regenerable() -> None:
     assert scope is DirectoryScope.REGENERABLE_TOOL_OUTPUT
 
 
-def test_pnpm_cache_is_blocked_when_process_is_running(
+def test_pnpm_user_cache_mutation_is_blocked_when_process_is_running(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -276,5 +344,9 @@ def test_pnpm_cache_is_blocked_when_process_is_running(
     )
     assert not process_guard_allows(
         r"C:\Users\alice\AppData\Local\pnpm-cache\dlx\hash\pkg\index.js",
+        _env(),
+    )
+    assert not process_guard_allows(
+        r"C:\Users\alice\AppData\Local\pnpm-cache\v11\metadata\react.json",
         _env(),
     )
