@@ -14,7 +14,8 @@ store internals directly.
 However, current pnpm also performs DLX expiry and orphaned global-install
 cleanup from the same `store prune` command. The command can therefore remain a
 deterministic DevClean action only after those secondary mutation scopes are
-explicitly isolated from real user data.
+explicitly isolated from real user data and the exact pnpm executable is bound
+to a stable filesystem identity.
 
 The detailed current-source reconciliation is recorded in
 `docs/pnpm-cache-state-prune-reaudit.md`.
@@ -56,29 +57,32 @@ Before any mutation DevClean now:
    one of the current audited store roots;
 3. requires that store to be a normal local-fixed directory with stable
    volume/file identity and rejects reparse/cloud boundaries;
-4. refuses while pnpm is active;
-5. creates a private temporary sandbox;
-6. removes inherited pnpm overrides for the secondary cleanup roots, then pins:
+4. resolves one exact pnpm executable, requires a normal local-fixed
+   non-reparse/non-cloud file, and captures its stable volume/file identity;
+5. refuses while pnpm is active;
+6. creates a private temporary sandbox;
+7. removes inherited pnpm overrides for the secondary cleanup roots, then pins:
    - `PNPM_CONFIG_CACHE_DIR=<sandbox>/cache`;
    - `PNPM_CONFIG_GLOBAL_DIR=<sandbox>/global`;
    - `PNPM_CONFIG_DLX_CACHE_MAX_AGE=Infinity`;
-7. asks the exact selected pnpm binary to report all three effective values and
-   fails closed unless they equal the pins;
-8. invokes pnpm with the exact selected `--store-dir` and asks
+8. asks that exact pnpm binary to report all three effective values and fails
+   closed unless they equal the pins;
+9. invokes the same exact binary with the selected `--store-dir` and asks
    `pnpm store path --silent` to confirm the store;
-9. immediately before mutation rechecks pnpm process state, stable store
-   identity, and vendor-reported store path;
-10. runs only `pnpm --store-dir <root> store prune` with the same verified pinned
-    environment;
-11. requires the store-root identity to remain unchanged afterward and reports
-    logical before/after evidence;
-12. reports vendor errors and never falls back to deleting store files directly.
+10. immediately before mutation rechecks pnpm process state, pnpm executable
+    identity, stable store identity, and vendor-reported store path;
+11. runs only `pnpm --store-dir <root> store prune` with the same verified pinned
+    environment and exact executable path;
+12. requires both executable and store-root identities to remain unchanged
+    afterward and reports logical before/after evidence;
+13. reports vendor errors and never falls back to deleting store files directly.
 
-Current pnpm parses uppercase `PNPM_CONFIG_*` configuration from the environment,
-`dlx-cache-max-age` is a Number setting, and the current DLX cleaner explicitly
-returns without mutation when the effective value is `Infinity`. Pinning
-`cache-dir` and `global-dir` into the private sandbox additionally prevents the
-same command from touching the user's real DLX or global-install roots.
+Current pnpm parses lowercase/uppercase `pnpm_config_*`/`PNPM_CONFIG_*`
+configuration from the environment, `dlx-cache-max-age` is a Number setting,
+and the current DLX cleaner explicitly returns without mutation when the
+effective value is `Infinity`. Pinning `cache-dir` and `global-dir` into the
+private sandbox additionally prevents the same command from touching the user's
+real DLX or global-install roots.
 
 The raw pnpm store remains protected by generic application cleanup rules. Only
 the source-bounded vendor garbage collector has store mutation authority.
