@@ -158,22 +158,13 @@ def _installer_version(directory: Path) -> tuple[int, ...] | None:
     return max(versions, default=None)
 
 
-def _inventory_key(environment: Mapping[str, str] | None) -> tuple[tuple[str, int], ...]:
-    key: list[tuple[str, int]] = []
-    for root in _temp_roots(environment):
-        try:
-            mtime_ns = root.stat().st_mtime_ns
-        except OSError:
-            mtime_ns = -1
-        key.append((str(root), mtime_ns))
-    return tuple(key)
-
-
-@lru_cache(maxsize=16)
-def _inventory_from_key(key: tuple[tuple[str, int], ...]) -> _StagingInventory:
+def _inventory(environment: Mapping[str, str] | None) -> _StagingInventory:
+    # Do not cache this inventory. Scan-time classification may race with an
+    # updater that is still writing the newest recovery installer, and the
+    # execution-time whole-tree policy must be able to observe that change and
+    # revoke a previously-safe candidate before mutation.
     entries: list[_StagingEntry] = []
-    for raw_root, _mtime_ns in key:
-        root = Path(raw_root)
+    for root in _temp_roots(environment):
         try:
             children = tuple(root.iterdir())
         except OSError:
@@ -197,7 +188,7 @@ def _inventory_from_key(key: tuple[tuple[str, int], ...]) -> _StagingInventory:
 
     grouped: dict[tuple[str, str], list[_StagingEntry]] = defaultdict(list)
     for entry in entries:
-        parent = _impl._normalize(PureWindowsPath(entry.path).parent)
+        parent = _impl._normalize(entry.path.parent)
         grouped[(parent, entry.family)].append(entry)
 
     tool: list[PureWindowsPath] = []
@@ -219,10 +210,6 @@ def _inventory_from_key(key: tuple[tuple[str, int], ...]) -> _StagingInventory:
     tool.sort(key=lambda path: str(path).casefold())
     recovery.sort(key=lambda path: str(path).casefold())
     return _StagingInventory(tuple(tool), tuple(recovery))
-
-
-def _inventory(environment: Mapping[str, str] | None) -> _StagingInventory:
-    return _inventory_from_key(_inventory_key(environment))
 
 
 def _top_staging_directory(
