@@ -9,6 +9,7 @@ import pytest
 import devclean.ui.product_vendor_app as product
 from devclean.core.user_rules import UserRules, default_rules
 from devclean.scanner import CancellationToken
+from devclean.ui.product_app import ProductDevCleanWindow as BaseProductDevCleanWindow
 
 
 def _window(tmp_path: Path) -> product.ProductDevCleanWindow:
@@ -34,7 +35,7 @@ def _capture_base_worker(
         del self, token, roots, cancel, known_roots
         captured["rules"] = active_rules
 
-    monkeypatch.setattr(product._BaseProductDevCleanWindow, "_scan_worker", fake_base_worker)
+    monkeypatch.setattr(BaseProductDevCleanWindow, "_scan_worker", fake_base_worker)
     monkeypatch.setattr(
         product,
         "inventory_vendor_cleanup_candidates",
