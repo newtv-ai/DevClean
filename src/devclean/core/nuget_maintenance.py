@@ -1,15 +1,15 @@
-"""Read-only NuGet local inventory plus vendor-supported clear operations.
+"""Read-only NuGet local inventory plus identity-bound vendor clear operations.
 
-The local decision boundary is deliberately narrower than ``dotnet nuget locals
-all --clear``. HTTP, temporary, and plugin caches are vendor-defined cache
-resources, so DevClean can identify them without AI. The global-packages folder
-is different: PackageReference projects consume packages directly from it, so
-clearing it is a user decision even though NuGet provides a supported command.
+NuGet's individual ``locals <kind> --clear`` commands own the mutation semantics
+for their exact local-resource roots. DevClean keeps the existing lane split:
+HTTP, temporary, and plugin caches are deterministic vendor-maintained storage,
+while ``global-packages`` remains user-review dependency storage.
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -23,6 +23,8 @@ from devclean.core.nuget_cleanup import (
     nuget_process_running,
     nuget_roots,
 )
+from devclean.platform.windows.filesystem import read_file_metadata
+from devclean.platform.windows.volumes import is_local_fixed_path
 
 _MIB = 1024**2
 
@@ -39,6 +41,17 @@ class NuGetMaintenanceLane(StrEnum):
 
     DETERMINISTIC_CANDIDATE = "DETERMINISTIC_CANDIDATE"
     USER_REVIEW = "USER_REVIEW"
+
+
+@dataclass(frozen=True, slots=True)
+class NuGetPathIdentity:
+    path: Path
+    volume_serial: int
+    file_id: str
+    file_id_kind: str
+    is_directory: bool
+    creation_time_ns: int | None = None
+    last_write_time_ns: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +93,7 @@ class NuGetClearResult:
     before_bytes: int
     after_bytes: int
     stdout: str
+    command: tuple[str, ...] = ()
 
     @property
     def reclaimed_bytes(self) -> int:
@@ -140,57 +154,196 @@ def clear_nuget_local(
     path: Path,
     environment: Mapping[str, str] | None = None,
 ) -> NuGetClearResult:
-    """Delegate one exact audited local-resource clear to the .NET CLI."""
+    """Clear one exact audited local resource through one identity-bound .NET CLI."""
 
     clear_nuget_process_cache()
     expected = _roots_for_kind(kind, environment)
     target = _impl._normalize(path)
-    if not any(target == _impl._normalize(root) for root in expected):
+    if not target or not any(target == _impl._normalize(root) for root in expected):
         raise ValueError(f"不是已审计的 NuGet {kind.value} 路径: {path}")
     if not path.is_dir():
         raise FileNotFoundError(f"NuGet {kind.value} 不存在: {path}")
-    if nuget_process_running():
-        raise RuntimeError("NuGet/.NET restore 或构建进程正在运行; 请等待完成后再清理")
 
-    before = _directory_bytes(path)
-    env = dict(os.environ)
-    if environment is not None:
-        env.update(environment)
-    env[_override_for_kind(kind)] = str(path)
-    command = [
-        dotnet_executable(environment),
+    _require_process_idle()
+    reviewed_root = _path_identity(
+        path,
+        expect_directory=True,
+        label=f"NuGet {kind.value}",
+    )
+
+    env = _merged_environment(environment)
+    env[_override_for_kind(kind)] = str(reviewed_root.path)
+    reviewed_dotnet = _resolved_dotnet_identity(environment, env)
+    _confirm_vendor_root(kind, reviewed_dotnet.path, reviewed_root.path, env)
+
+    # Revalidate every mutable boundary immediately before the vendor mutation.
+    _require_process_idle()
+    _require_same_path_identity(reviewed_dotnet, ".NET CLI")
+    _require_same_path_identity(reviewed_root, f"NuGet {kind.value}")
+    _confirm_vendor_root(kind, reviewed_dotnet.path, reviewed_root.path, env)
+
+    before = _directory_bytes(reviewed_root.path)
+    command = (
+        str(reviewed_dotnet.path),
         "nuget",
         "locals",
         kind.value,
         "--clear",
         "--force-english-output",
-    ]
-    try:
-        result = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=600,
-            env=env,
-        )
-    except (OSError, subprocess.SubprocessError) as error:
-        raise RuntimeError(f"无法执行 dotnet nuget locals: {error}") from error
+    )
+    result = _run_dotnet(command, env, timeout=600)
+    output = _combined_output(result.stdout, result.stderr)
     if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()
         raise RuntimeError(
             f"dotnet nuget locals {kind.value} --clear 失败 "
-            f"(退出码 {result.returncode}): {detail}"
+            f"(退出码 {result.returncode}): {output or 'no output'}"
         )
 
-    after = _directory_bytes(path)
+    _require_same_path_identity(reviewed_dotnet, ".NET CLI")
+    # Current NuGet LocalResourceUtils.DeleteDirectoryTree removes the selected
+    # root itself. A successful exit with the root still present is therefore not
+    # a proved complete clear; never finish it with a raw filesystem fallback.
+    if os.path.lexists(reviewed_root.path):
+        raise RuntimeError(
+            f"NuGet {kind.value} 官方清理成功返回但目标根目录仍存在; 已停止且不会直接删除"
+        )
+
     return NuGetClearResult(
         kind=kind,
-        path=path,
+        path=reviewed_root.path,
         before_bytes=before,
-        after_bytes=after,
+        after_bytes=0,
         stdout=result.stdout.strip(),
+        command=command,
     )
+
+
+def _confirm_vendor_root(
+    kind: NuGetLocalKind,
+    executable: Path,
+    expected: Path,
+    environment: dict[str, str],
+) -> None:
+    reported = _listed_local_path(kind, executable, environment)
+    if reported is None or _impl._normalize(reported) != _impl._normalize(expected):
+        raise RuntimeError(
+            f"dotnet nuget locals 未确认所选 {kind.value} 路径; 已安全停止"
+        )
+
+
+def _listed_local_path(
+    kind: NuGetLocalKind,
+    executable: Path,
+    environment: dict[str, str],
+) -> Path | None:
+    command = (
+        str(executable),
+        "nuget",
+        "locals",
+        kind.value,
+        "--list",
+        "--force-english-output",
+    )
+    result = _run_dotnet(command, environment, timeout=60)
+    if result.returncode != 0:
+        detail = _combined_output(result.stdout, result.stderr)
+        raise RuntimeError(
+            f"dotnet nuget locals {kind.value} --list 失败 "
+            f"(退出码 {result.returncode}): {detail or 'no output'}"
+        )
+
+    found: list[Path] = []
+    for raw in result.stdout.splitlines():
+        line = raw.strip()
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        if key.strip().casefold() != kind.value.casefold():
+            continue
+        candidate_text = value.strip().strip('"').strip("'")
+        candidate = PureWindowsPath(candidate_text)
+        if candidate.is_absolute():
+            found.append(Path(str(candidate)))
+    if len(found) != 1:
+        return None
+    return found[0]
+
+
+def _resolved_dotnet_identity(
+    environment: Mapping[str, str] | None,
+    merged_environment: Mapping[str, str],
+) -> NuGetPathIdentity:
+    raw = dotnet_executable(environment)
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        resolved = shutil.which(
+            raw,
+            path=_environment_value(merged_environment, "PATH"),
+        )
+        if resolved is None:
+            raise FileNotFoundError(f"未找到 .NET CLI: {raw}")
+        candidate = Path(resolved)
+    return _path_identity(candidate, expect_directory=False, label=".NET CLI")
+
+
+def _path_identity(
+    path: Path,
+    *,
+    expect_directory: bool,
+    label: str,
+) -> NuGetPathIdentity:
+    candidate = Path(os.path.abspath(path.expanduser()))
+    if candidate.is_symlink() or candidate.is_junction():
+        raise RuntimeError(f"{label} 不能是 symlink/junction/reparse")
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError as error:
+        raise RuntimeError(f"无法解析 {label}: {error}") from error
+    if os.path.normcase(os.path.abspath(candidate)) != os.path.normcase(
+        os.path.abspath(resolved)
+    ):
+        raise RuntimeError(f"{label} 路径包含重定向/reparse")
+    if not is_local_fixed_path(resolved):
+        raise RuntimeError(f"{label} 不在本地固定磁盘")
+    try:
+        metadata = read_file_metadata(resolved)
+    except OSError as error:
+        raise RuntimeError(f"无法读取 {label} 文件系统身份: {error}") from error
+    if metadata.is_directory != expect_directory:
+        raise RuntimeError(f"{label} 类型与预期不一致")
+    if metadata.is_reparse_point or metadata.is_cloud_placeholder:
+        raise RuntimeError(f"{label} 是 reparse/cloud placeholder; 不授予维护权限")
+    if (
+        metadata.volume_serial is None
+        or metadata.file_id is None
+        or metadata.file_id_kind is None
+    ):
+        raise RuntimeError(f"{label} 缺少稳定文件系统身份")
+    return NuGetPathIdentity(
+        path=resolved,
+        volume_serial=metadata.volume_serial,
+        file_id=metadata.file_id,
+        file_id_kind=metadata.file_id_kind,
+        is_directory=metadata.is_directory,
+        creation_time_ns=None if expect_directory else metadata.creation_time_ns,
+        last_write_time_ns=None if expect_directory else metadata.last_write_time_ns,
+    )
+
+
+def _require_same_path_identity(reviewed: NuGetPathIdentity, label: str) -> None:
+    current = _path_identity(
+        reviewed.path,
+        expect_directory=reviewed.is_directory,
+        label=label,
+    )
+    if current != reviewed:
+        raise RuntimeError(f"{label} 身份发生变化; 请重新扫描")
+
+
+def _require_process_idle() -> None:
+    clear_nuget_process_cache()
+    if nuget_process_running():
+        raise RuntimeError("NuGet/.NET restore 或构建进程正在运行; 请等待完成后再清理")
 
 
 def _recommended(kind: NuGetLocalKind, logical_bytes: int) -> bool:
@@ -237,6 +390,42 @@ def _override_for_kind(kind: NuGetLocalKind) -> str:
     }[kind]
 
 
+def _run_dotnet(
+    command: tuple[str, ...],
+    environment: dict[str, str],
+    *,
+    timeout: int,
+) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            list(command),
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            env=environment,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise RuntimeError(f"无法执行 dotnet nuget locals: {error}") from error
+
+
+def _merged_environment(environment: Mapping[str, str] | None) -> dict[str, str]:
+    env = dict(os.environ)
+    if environment is not None:
+        env.update(environment)
+    return env
+
+
+def _environment_value(environment: Mapping[str, str], key: str) -> str | None:
+    folded = key.casefold()
+    for name, value in environment.items():
+        if name.casefold() == folded and value:
+            return value
+    return None
+
+
 def _directory_bytes(root: Path) -> int:
     total = 0
     try:
@@ -252,11 +441,18 @@ def _directory_bytes(root: Path) -> int:
     return total
 
 
+def _combined_output(stdout: str | None, stderr: str | None) -> str:
+    return "\n".join(
+        chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip()
+    )
+
+
 __all__ = [
     "NuGetClearResult",
     "NuGetLocalEntry",
     "NuGetLocalKind",
     "NuGetMaintenanceLane",
+    "NuGetPathIdentity",
     "NuGetStorageInventory",
     "clear_nuget_local",
     "inventory_nuget_storage",

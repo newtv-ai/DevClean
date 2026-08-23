@@ -36,7 +36,6 @@ from devclean.core import (
     pnpm_maintenance,
     uv_maintenance,
 )
-from devclean.core.nuget_cleanup import dotnet_executable
 
 _SEAL = object()
 _CAPABILITY_KEY = secrets.token_bytes(32)
@@ -353,20 +352,12 @@ def execute_vendor_cleanup(
             candidate.path,
             environment,
         )
-        command = (
-            dotnet_executable(environment),
-            "nuget",
-            "locals",
-            nuget_kind.value,
-            "--clear",
-            "--force-english-output",
-        )
         return _execution_result(
             candidate,
             nuget_result.path,
             nuget_result.before_bytes,
             nuget_result.after_bytes,
-            command,
+            nuget_result.command,
             nuget_result.stdout,
         )
     if candidate.kind is VendorCleanupKind.CONDA_TARBALL_INDEX_CLEAN:
