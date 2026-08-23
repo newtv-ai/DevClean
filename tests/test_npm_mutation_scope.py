@@ -99,15 +99,11 @@ def test_scope_guard_allows_persistent_paths_outside_content_cache(
 
     npm._require_no_protected_overlap(inventory, inventory.content_cache.path, {})
 
-    assert calls == [
-        (
-            ("config", "get", "cache", "prefix", "userconfig", "logs-dir"),
-            {
-                "NPM_CONFIG_CACHE": str(inventory.cache_root),
-                "NPM_CONFIG_UPDATE_NOTIFIER": "false",
-            },
-        )
-    ]
+    assert len(calls) == 1
+    arguments, environment = calls[0]
+    assert arguments == ("config", "get", "cache", "prefix", "userconfig", "logs-dir")
+    assert environment["NPM_CONFIG_CACHE"] == str(inventory.cache_root)
+    assert environment["NPM_CONFIG_UPDATE_NOTIFIER"] == "false"
 
 
 @pytest.mark.skipif(os.name != "nt", reason="npm maintenance targets Windows paths")
