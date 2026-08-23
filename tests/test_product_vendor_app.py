@@ -60,7 +60,7 @@ def test_selective_vendor_inventory_does_not_walk_unrequested_providers(
     assert inventory.candidates[0].path == pip_cache
 
 
-def test_product_safe_list_rejects_partial_gc_root_sizes(
+def test_product_safe_list_rejects_provider_root_sizes_that_are_not_exact_reclaim(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -97,15 +97,11 @@ def test_product_safe_list_rejects_partial_gc_root_sizes(
         (Path(tmp_path.anchor),),
     )
 
-    assert [candidate.kind for candidate in visible] == [
-        VendorCleanupKind.PIP_CACHE_PURGE
-    ]
-    assert sum(candidate.observed_bytes for candidate in visible) == 5 * _MIB
+    assert visible == ()
 
 
-def test_known_partial_gc_cache_roots_are_pruned_from_generic_file_scan(
+def test_known_unquantified_provider_roots_are_pruned_from_generic_file_scan(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pip_cache = tmp_path / "pip"
     uv_cache = tmp_path / "uv"
@@ -115,18 +111,13 @@ def test_known_partial_gc_cache_roots_are_pruned_from_generic_file_scan(
     for path in (pip_cache, uv_cache, pnpm_store, conda_cache, unrelated):
         path.mkdir()
 
-    monkeypatch.setattr(
-        pip_maintenance,
-        "inventory_pip_storage",
-        lambda _environment=None: PipStorageInventory(
-            (PipCacheEntry(pip_cache, 5 * _MIB, True, False, True),)
-        ),
-    )
-    inventory = inventory_vendor_cleanup_candidates(
-        {},
-        kinds=frozenset({VendorCleanupKind.PIP_CACHE_PURGE}),
-    )
     roots = (
+        KnownCleanupRoot(
+            pip_cache,
+            CleanupCategory.PIP_CACHE,
+            CleanupPolicy.REPORT_ONLY,
+            "pip",
+        ),
         KnownCleanupRoot(
             uv_cache,
             CleanupCategory.UV_CACHE,
@@ -156,7 +147,7 @@ def test_known_partial_gc_cache_roots_are_pruned_from_generic_file_scan(
     skipped = set(
         _generic_vendor_skip_paths(
             roots,
-            inventory.candidates,
+            (),
             (Path(tmp_path.anchor),),
         )
     )
