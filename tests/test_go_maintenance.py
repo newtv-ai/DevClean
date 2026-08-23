@@ -336,7 +336,12 @@ def test_go_cleanup_revalidates_cli_identity_before_mutation(
     real_identity = go_maintenance._path_identity
     monkeypatch.setattr(go_maintenance, "_resolve_go_tool", lambda _environment: reviewed_tool)
 
-    def identity(path: Path, *, expect_directory: bool, label: str):
+    def identity(
+        path: Path,
+        *,
+        expect_directory: bool,
+        label: str,
+    ) -> go_maintenance.GoPathIdentity:
         if Path(path) == reviewed_tool.path:
             return changed_tool
         return real_identity(path, expect_directory=expect_directory, label=label)
@@ -368,7 +373,12 @@ def test_go_cleanup_revalidates_cache_identity_before_mutation(
     real_identity = go_maintenance._path_identity
     calls_for_cache = 0
 
-    def identity(path: Path, *, expect_directory: bool, label: str):
+    def identity(
+        path: Path,
+        *,
+        expect_directory: bool,
+        label: str,
+    ) -> go_maintenance.GoPathIdentity:
         nonlocal calls_for_cache
         current = real_identity(path, expect_directory=expect_directory, label=label)
         if Path(path) == build_cache:
