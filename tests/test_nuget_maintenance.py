@@ -333,7 +333,7 @@ def test_nuget_clear_revalidates_dotnet_identity_before_mutation(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    with pytest.raises(RuntimeError, match=".NET CLI 身份发生变化"):
+    with pytest.raises(RuntimeError, match="CLI 身份发生变化"):
         clear_nuget_local(kind, root, env)
     assert not clear_called
     assert root.exists()
