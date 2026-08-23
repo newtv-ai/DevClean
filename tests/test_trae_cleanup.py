@@ -11,6 +11,7 @@ from devclean.core.application_cleanup import (
     PolicyAction,
     application_scan_roots,
     evaluate_application_path,
+    match_application_rule,
     process_guard_allows,
     whole_tree_application_rule,
 )
@@ -80,6 +81,83 @@ def test_trae_known_electron_cache_is_tool_owned_and_process_guarded() -> None:
     assert running.action is PolicyAction.TOOL_KEEP_IN_USE
 
 
+def test_trae_audited_cache_safety_is_not_revoked_by_heuristics() -> None:
+    cases = (
+        (r"C:\Users\alice\AppData\Roaming\Trae\Cache\data_0", 1, _NOW),
+        (r"C:\Users\alice\AppData\Roaming\Trae\CachedData\entry", 1, None),
+        (r"C:\Users\alice\AppData\Roaming\Trae\GPUCache\data_0", 1, _NOW),
+        (
+            r"C:\Users\alice\AppData\Roaming\Trae\CachedExtensionVSIXs\ext.vsix",
+            1,
+            _NOW,
+        ),
+    )
+    for path, size, last_used in cases:
+        decision = evaluate_application_path(
+            path,
+            logical_size=size,
+            last_used=last_used,
+            now=_NOW,
+            process_running=False,
+            environment=_env(),
+        )
+        assert decision is not None
+        assert decision.rule.owner is DecisionOwner.TOOL
+        assert decision.action is PolicyAction.TOOL_DELETE
+
+
+def test_trae_logs_are_user_review_and_crashpad_is_protected() -> None:
+    log = r"C:\Users\alice\AppData\Roaming\Trae CN\logs\20260816\window.log"
+    reports = r"C:\Users\alice\AppData\Roaming\Trae\Crashpad\reports\crash.dmp"
+    pending = r"C:\Users\alice\AppData\Roaming\Trae\Crashpad\pending\crash.dmp"
+
+    log_rule = match_application_rule(log, _env())
+    assert log_rule is not None
+    assert log_rule.rule_id == "trae-logs"
+    assert log_rule.owner is DecisionOwner.USER
+    assert log_rule.requires_process_closed
+
+    log_decision = evaluate_application_path(
+        log,
+        logical_size=8 * 1024**3,
+        last_used=_NOW - timedelta(days=3650),
+        now=_NOW,
+        process_running=False,
+        environment=_env(),
+    )
+    assert log_decision is not None
+    assert log_decision.action is PolicyAction.USER_DECISION
+
+    for path, rule_id in (
+        (reports, "trae-crashpad-reports"),
+        (pending, "trae-crashpad-pending"),
+    ):
+        rule = match_application_rule(path, _env())
+        assert rule is not None
+        assert rule.rule_id == rule_id
+        assert rule.owner is DecisionOwner.KEEP
+        decision = evaluate_application_path(
+            path,
+            logical_size=8 * 1024**3,
+            last_used=_NOW - timedelta(days=3650),
+            now=_NOW,
+            process_running=False,
+            environment=_env(),
+        )
+        assert decision is not None
+        assert decision.action is PolicyAction.KEEP_PROTECTED
+
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Trae CN\logs", _env()
+    ) is None
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Trae\Crashpad\reports", _env()
+    ) is None
+    assert whole_tree_application_rule(
+        r"C:\Users\alice\AppData\Roaming\Trae\Crashpad\pending", _env()
+    ) is None
+
+
 def test_trae_user_state_is_reviewable_and_unknown_state_is_protected() -> None:
     paths = (
         (
@@ -135,9 +213,11 @@ def test_trae_dynamic_whole_tree_cache_root_is_exact_only() -> None:
     assert rule.owner is DecisionOwner.TOOL
     assert whole_tree_application_rule(r"D:\TraeState", env) is None
     assert whole_tree_application_rule(r"D:\TraeState\User", env) is None
+    assert whole_tree_application_rule(r"D:\TraeState\logs", env) is None
+    assert whole_tree_application_rule(r"D:\TraeState\Crashpad\reports", env) is None
 
 
-def test_trae_process_guard_allows_user_choice_and_blocks_running_cache(
+def test_trae_process_guard_allows_user_choice_and_blocks_live_mutation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = (
@@ -151,7 +231,11 @@ def test_trae_process_guard_allows_user_choice_and_blocks_running_cache(
         lambda: True,
     )
     cache = r"C:\Users\alice\AppData\Roaming\Trae\Cache\data_0"
+    logs = r"C:\Users\alice\AppData\Roaming\Trae CN\logs\today.log"
+    crash = r"C:\Users\alice\AppData\Roaming\Trae\Crashpad\reports\crash.dmp"
     assert not process_guard_allows(cache, _env())
+    assert not process_guard_allows(logs, _env())
+    assert not process_guard_allows(crash, _env())
 
 
 def test_catalog_upgrades_trae_cache_without_deleting_data_root(tmp_path: Path) -> None:
@@ -160,8 +244,12 @@ def test_catalog_upgrades_trae_cache_without_deleting_data_root(tmp_path: Path) 
     root = appdata / "Trae"
     cache = root / "Cache"
     user = root / "User"
+    logs = root / "logs"
+    crash = root / "Crashpad" / "reports"
     cache.mkdir(parents=True)
     user.mkdir(parents=True)
+    logs.mkdir(parents=True)
+    crash.mkdir(parents=True)
     env = {
         "USERPROFILE": str(home),
         "APPDATA": str(appdata),
@@ -174,12 +262,20 @@ def test_catalog_upgrades_trae_cache_without_deleting_data_root(tmp_path: Path) 
     data_root = by_path[os.path.normcase(str(root))]
     cache_root = by_path[os.path.normcase(str(cache))]
     user_root = by_path.get(os.path.normcase(str(user)))
+    log_root = by_path[os.path.normcase(str(logs))]
+    crash_root = by_path.get(os.path.normcase(str(crash)))
 
     assert data_root.policy is CleanupPolicy.REPORT_ONLY
     assert not data_root.delete_root_itself
     assert cache_root.policy is CleanupPolicy.VENDOR_MANAGED
     assert cache_root.delete_root_itself
     assert user_root is None or not user_root.delete_root_itself
+    assert log_root.policy is CleanupPolicy.REPORT_ONLY
+    assert not log_root.delete_root_itself
+    assert crash_root is None or (
+        crash_root.policy is CleanupPolicy.REPORT_ONLY
+        and not crash_root.delete_root_itself
+    )
 
 
 def test_trae_inventory_counts_workspace_global_history_and_backups(tmp_path: Path) -> None:

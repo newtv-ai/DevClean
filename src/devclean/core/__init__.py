@@ -40,3 +40,8 @@ from devclean.core import firefox_cache_semantics as _firefox_cache_semantics  #
 from devclean.core import (  # noqa: F401
     jetbrains_android_studio_cache_semantics as _jb_as_cache_semantics,
 )
+# Trae/Windsurf keep exact generated caches deterministic, but diagnostics are
+# separated into user-retention logs and Crashpad-owned protected report state.
+from devclean.core import (  # noqa: F401
+    trae_windsurf_cache_semantics as _trae_windsurf_cache_semantics,
+)
