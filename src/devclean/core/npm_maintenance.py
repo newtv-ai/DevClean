@@ -189,6 +189,8 @@ def verify_npm_content_cache(
 
     current = _validated_current_inventory(reviewed, environment)
     _require_process_idle()
+    _require_no_protected_overlap(current, current.content_cache.path, environment)
+    _require_process_idle()
     before = current.content_cache.logical_bytes
     before_keys = len(current.content_keys)
     result = _run_npm(
@@ -224,6 +226,8 @@ def clean_npm_content_cache(
         or current.content_cache.file_count != reviewed.content_cache.file_count
     ):
         raise RuntimeError("npm package cache 自审核后已变化; 请重新统计并确认后再清空")
+    _require_process_idle()
+    _require_no_protected_overlap(current, current.content_cache.path, environment)
     _require_process_idle()
     before = current.content_cache.logical_bytes
     removed_keys = len(current.content_keys)
@@ -286,6 +290,9 @@ def remove_npm_npx_entry(
     if fresh_path is None or _normalize(fresh_path) != _normalize(entry.path):
         raise RuntimeError("npm npx fresh dry-run 范围已变化; 请重新检查")
 
+    _require_process_idle()
+    _require_no_protected_overlap(fresh, entry.path, environment)
+    _require_process_idle()
     before = entry.logical_bytes
     result = _run_npm(
         fresh.npm_tool,
@@ -358,6 +365,104 @@ def _discover_cache_root(tool: NpmPathIdentity, environment: Mapping[str, str]) 
             raise RuntimeError(f"npm 返回的 cache 路径不是绝对路径: {raw}")
         return Path(os.path.abspath(native))
     return Path(str(candidate))
+
+
+def _require_no_protected_overlap(
+    inventory: NpmStorageInventory,
+    mutation_root: Path,
+    environment: Mapping[str, str] | None,
+) -> None:
+    """Fail closed if npm redirects persistent/user data into this mutation root."""
+
+    pinned_env = _npm_environment(inventory.cache_root, environment)
+    result = _run_npm(
+        inventory.npm_tool,
+        ("config", "get", "cache", "prefix", "userconfig", "logs-dir"),
+        pinned_env,
+        timeout=30,
+    )
+    _require_success(result, "npm config get mutation boundaries")
+    values = _parse_config_values(result.stdout)
+    required = {"cache", "prefix", "userconfig", "logs-dir"}
+    if set(values) != required:
+        raise RuntimeError("npm 未完整返回 cache/prefix/userconfig/logs-dir; 已安全停止")
+
+    confirmed_cache = _config_path(values["cache"], "npm cache", allow_null=False)
+    if confirmed_cache is None or _normalize(confirmed_cache) != _normalize(
+        inventory.cache_root
+    ):
+        raise RuntimeError("npm mutation 前未再次确认固定的 cache 根目录; 已安全停止")
+
+    protected: list[tuple[str, Path]] = [
+        ("default logs", inventory.cache_root / "_logs"),
+    ]
+    for key, label in (("prefix", "global prefix"), ("userconfig", "user config")):
+        path = _config_path(values[key], f"npm {label}", allow_null=False)
+        if path is None:
+            raise RuntimeError(f"npm 未返回 {label} 路径; 已安全停止")
+        protected.append((label, path))
+
+    logs_dir = _config_path(values["logs-dir"], "npm logs-dir", allow_null=True)
+    if logs_dir is not None:
+        protected.append(("logs-dir", logs_dir))
+
+    for label, protected_path in protected:
+        if _path_is_inside(mutation_root, protected_path):
+            raise RuntimeError(
+                f"npm {label} 位于本次 vendor mutation 范围内: {protected_path}; 已安全停止"
+            )
+
+
+def _parse_config_values(stdout: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    allowed = {"cache", "prefix", "userconfig", "logs-dir"}
+    for line in stdout.splitlines():
+        key, separator, raw = line.partition("=")
+        if not separator:
+            continue
+        normalized = key.strip().casefold()
+        if normalized not in allowed or normalized in values:
+            continue
+        values[normalized] = raw.strip()
+    return values
+
+
+def _config_path(value: str, label: str, *, allow_null: bool) -> Path | None:
+    raw = value.strip().strip('"').strip("'")
+    if raw.casefold() in {"", "null", "undefined", "none"}:
+        if allow_null:
+            return None
+        raise RuntimeError(f"{label} 路径为空; 已安全停止")
+    candidate = PureWindowsPath(raw)
+    if candidate.is_absolute():
+        return Path(str(candidate))
+    native = Path(raw).expanduser()
+    if native.is_absolute():
+        return Path(os.path.abspath(native))
+    raise RuntimeError(f"{label} 路径不是绝对路径: {raw}")
+
+
+def _path_is_inside(root: Path, candidate: Path) -> bool:
+    roots = _path_forms(root)
+    candidates = _path_forms(candidate)
+    for root_value in roots:
+        prefix = root_value if root_value.endswith(os.sep) else root_value + os.sep
+        for candidate_value in candidates:
+            if candidate_value == root_value or candidate_value.startswith(prefix):
+                return True
+    return False
+
+
+def _path_forms(path: Path) -> tuple[str, ...]:
+    forms = [_normalize(path)]
+    try:
+        resolved = path.expanduser().resolve(strict=False)
+    except OSError:
+        return tuple(forms)
+    normalized = _normalize(resolved)
+    if normalized not in forms:
+        forms.append(normalized)
+    return tuple(forms)
 
 
 def _list_content_keys(
