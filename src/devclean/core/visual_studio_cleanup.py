@@ -1,10 +1,9 @@
 r"""Audited Visual Studio IDE cache, servicing, and log semantics for Windows.
 
 Exact source-backed regenerable roots receive TOOL ownership. Mixed WebTools and
-per-user setup package state remain protected. Microsoft troubleshooting guidance
-explicitly instructs deleting ``%TEMP%\servicehub\logs`` before reproducing an
-out-of-process issue, which provides an exact supported cleanup boundary for
-ServiceHub diagnostic logs.
+per-user setup package state remain protected. ServiceHub logs are known
+troubleshooting data whose retention depends on whether the user still needs the
+diagnostic evidence, so they are a USER-review lane rather than a cache lane.
 """
 
 from __future__ import annotations
@@ -101,14 +100,13 @@ _VISUAL_STUDIO_SERVICEHUB_LOG_RULE = ApplicationCleanupRule(
     root_key="VISUAL_STUDIO_SERVICEHUB_LOGS",
     relative_pattern="",
     match_kind=MatchKind.PREFIX,
-    owner=DecisionOwner.TOOL,
+    owner=DecisionOwner.USER,
     last_use=LastUseStrategy.DIRECTORY_MTIME,
     rebuild_cost=RebuildCost.NONE,
-    idle_days=14,
-    min_reclaim_bytes=16 * _MIB,
     requires_process_closed=True,
-    allow_whole_tree=True,
-    label="Visual Studio ServiceHub diagnostic logs",
+    user_age_buckets=(7, 30, 90),
+    allow_whole_tree=False,
+    label="Visual Studio ServiceHub diagnostic logs; user decides retention",
 )
 
 VISUAL_STUDIO_RULES: tuple[ApplicationCleanupRule, ...] = (
@@ -179,6 +177,18 @@ def visual_studio_scan_roots(
     )
 
 
+def _root_rule_groups(
+    roots: VisualStudioRootSet,
+) -> tuple[tuple[tuple[PureWindowsPath, ...], ApplicationCleanupRule], ...]:
+    return (
+        (roots.component_model_cache_roots, _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE),
+        (roots.roslyn_cache_roots, _VISUAL_STUDIO_ROSLYN_CACHE_RULE),
+        (roots.web_tools_roots, _VISUAL_STUDIO_WEBTOOLS_RULE),
+        (roots.local_package_roots, _VISUAL_STUDIO_LOCAL_PACKAGES_RULE),
+        (roots.servicehub_log_roots, _VISUAL_STUDIO_SERVICEHUB_LOG_RULE),
+    )
+
+
 def match_visual_studio_rule(
     path: str | os.PathLike[str],
     environment: Mapping[str, str] | None = None,
@@ -186,13 +196,7 @@ def match_visual_studio_rule(
     normalized = _impl._normalize(path)
     roots = visual_studio_roots(environment)
     matches: list[tuple[int, ApplicationCleanupRule]] = []
-    for candidates, rule in (
-        (roots.component_model_cache_roots, _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE),
-        (roots.roslyn_cache_roots, _VISUAL_STUDIO_ROSLYN_CACHE_RULE),
-        (roots.web_tools_roots, _VISUAL_STUDIO_WEBTOOLS_RULE),
-        (roots.local_package_roots, _VISUAL_STUDIO_LOCAL_PACKAGES_RULE),
-        (roots.servicehub_log_roots, _VISUAL_STUDIO_SERVICEHUB_LOG_RULE),
-    ):
+    for candidates, rule in _root_rule_groups(roots):
         for root in candidates:
             normalized_root = _impl._normalize(root)
             if _impl._matches(normalized, normalized_root, MatchKind.PREFIX):
@@ -232,21 +236,25 @@ def evaluate_visual_studio_path(
             None,
             0,
         )
+    if rule.owner is DecisionOwner.USER:
+        return ApplicationPolicyDecision(
+            rule,
+            PolicyAction.USER_DECISION,
+            observed,
+            idle,
+            None,
+            _impl._benefit_score(logical_size, idle, None, rule.rebuild_cost),
+            _impl._age_bucket(idle, rule.user_age_buckets),
+        )
 
     threshold = effective_idle_days(rule, logical_size)
     running = process_running
-    if running is None:
+    if running is None and rule.requires_process_closed:
         running = visual_studio_process_running()
     score = _impl._benefit_score(logical_size, idle, threshold, rule.rebuild_cost)
 
-    if running:
+    if rule.requires_process_closed and running:
         action = PolicyAction.TOOL_KEEP_IN_USE
-    elif logical_size < rule.min_reclaim_bytes:
-        action = PolicyAction.TOOL_KEEP_LOW_BENEFIT
-    elif idle is None or threshold is None:
-        action = PolicyAction.TOOL_KEEP_UNKNOWN_USAGE
-    elif idle < threshold:
-        action = PolicyAction.TOOL_KEEP_RECENT
     else:
         action = PolicyAction.TOOL_DELETE
     return ApplicationPolicyDecision(rule, action, observed, idle, threshold, score)
@@ -256,20 +264,12 @@ def visual_studio_audited_tool_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[tuple[PureWindowsPath, ApplicationCleanupRule], ...]:
     roots = visual_studio_roots(environment)
-    return (
-        *tuple(
-            (root, _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE)
-            for root in roots.component_model_cache_roots
-        ),
-        *tuple(
-            (root, _VISUAL_STUDIO_ROSLYN_CACHE_RULE)
-            for root in roots.roslyn_cache_roots
-        ),
-        *tuple(
-            (root, _VISUAL_STUDIO_SERVICEHUB_LOG_RULE)
-            for root in roots.servicehub_log_roots
-        ),
-    )
+    found: list[tuple[PureWindowsPath, ApplicationCleanupRule]] = []
+    for candidates, rule in _root_rule_groups(roots):
+        if rule.owner is not DecisionOwner.TOOL or not rule.allow_whole_tree:
+            continue
+        found.extend((root, rule) for root in candidates)
+    return tuple(found)
 
 
 def whole_tree_visual_studio_rule(
@@ -278,11 +278,9 @@ def whole_tree_visual_studio_rule(
 ) -> ApplicationCleanupRule | None:
     normalized = _impl._normalize(path)
     roots = visual_studio_roots(environment)
-    for candidates, rule in (
-        (roots.component_model_cache_roots, _VISUAL_STUDIO_COMPONENT_MODEL_CACHE_RULE),
-        (roots.roslyn_cache_roots, _VISUAL_STUDIO_ROSLYN_CACHE_RULE),
-        (roots.servicehub_log_roots, _VISUAL_STUDIO_SERVICEHUB_LOG_RULE),
-    ):
+    for candidates, rule in _root_rule_groups(roots):
+        if rule.owner is not DecisionOwner.TOOL or not rule.allow_whole_tree:
+            continue
         for root in candidates:
             if normalized == _impl._normalize(root):
                 return rule
