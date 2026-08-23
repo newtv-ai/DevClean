@@ -92,8 +92,8 @@ class NuGetClearResult:
     path: Path
     before_bytes: int
     after_bytes: int
-    command: tuple[str, ...]
     stdout: str
+    command: tuple[str, ...] = ()
 
     @property
     def reclaimed_bytes(self) -> int:
@@ -213,8 +213,8 @@ def clear_nuget_local(
         path=reviewed_root.path,
         before_bytes=before,
         after_bytes=0,
-        command=command,
         stdout=result.stdout.strip(),
+        command=command,
     )
 
 
