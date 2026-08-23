@@ -68,3 +68,31 @@ def test_ai_cannot_reintroduce_raw_npm_cache_delete_authority(
     )
     assert updated.decision_for(cache_file) is None
     assert updated.ai_rule_count == before
+
+
+def test_ai_and_generic_user_rules_cannot_bypass_npm_diagnostic_user_lane(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _environment(tmp_path, monkeypatch)
+    paths = (
+        r"E:\npm-cache\_logs\2026-08-01T00_00_00_000Z-debug-0.log",
+        r"C:\Users\person\src\app\npm-debug.log",
+    )
+    baseline = load_rules()
+    before = baseline.ai_rule_count
+
+    ai_updated = add_ai_verdicts(
+        baseline,
+        [(path, RuleDecision.DELETE, "diagnostic log looks old") for path in paths],
+    )
+    assert ai_updated.ai_rule_count == before
+    for path in paths:
+        assert ai_updated.decision_for(path) is None
+
+    user_updated = add_user_verdicts(
+        baseline,
+        [(path, RuleDecision.DELETE, "remove this diagnostic log") for path in paths],
+    )
+    for path in paths:
+        assert user_updated.decision_for(path) is None
