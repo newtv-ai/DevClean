@@ -2,16 +2,17 @@
 
 Current ``pnpm store prune`` does more than store GC: it also expires DLX cache
 entries and removes orphaned global install directories. DevClean therefore pins
-those secondary pnpm roots to an isolated temporary sandbox and verifies that
-the selected pnpm binary accepts the pinned configuration before invoking the
-vendor prune. The only user-side mutation scope left to the command is the exact
-reviewed store root.
+those secondary pnpm roots to an isolated temporary sandbox, binds one exact
+pnpm executable identity, and verifies the pinned configuration before invoking
+the vendor prune. The only user-side mutation scope left to the command is the
+exact reviewed store root.
 """
 
 from __future__ import annotations
 
 import math
 import os
+import shutil
 import subprocess
 import tempfile
 from collections.abc import Mapping
@@ -36,6 +37,14 @@ _PINNED_CONFIG_KEYS = frozenset(
         "pnpm_config_dlx_cache_max_age",
     }
 )
+
+
+@dataclass(frozen=True, slots=True)
+class PnpmToolIdentity:
+    path: Path
+    volume_serial: int
+    file_id: str
+    file_id_kind: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,8 +129,9 @@ def prune_pnpm_store(
         raise FileNotFoundError(f"pnpm store 不存在: {root}")
 
     reviewed_identity = _store_identity(root)
+    reviewed_tool = _resolve_pnpm_tool(environment)
     _require_process_idle()
-    executable = _pnpm_executable(environment)
+    executable = str(reviewed_tool.path)
     scope = (executable, "--store-dir", str(root))
 
     with tempfile.TemporaryDirectory(prefix="devclean-pnpm-prune-") as temporary:
@@ -134,6 +144,8 @@ def prune_pnpm_store(
         # and cannot broaden to the real cache/global roots because the same
         # verified pinned environment is reused unchanged.
         _require_process_idle()
+        if _resolve_pnpm_tool(environment) != reviewed_tool:
+            raise RuntimeError("pnpm CLI 身份在执行前发生变化; 请重新检查")
         if _store_identity(root) != reviewed_identity:
             raise RuntimeError("pnpm store 身份在执行前发生变化; 请重新检查")
         _confirm_store_path(scope, pinned, target)
@@ -148,6 +160,8 @@ def prune_pnpm_store(
                 f"(退出码 {result.returncode}): {output or 'no output'}"
             )
 
+        if _resolve_pnpm_tool(environment) != reviewed_tool:
+            raise RuntimeError("pnpm CLI 身份在 prune 后发生变化; 不报告成功")
         if _store_identity(root) != reviewed_identity:
             raise RuntimeError("pnpm store 根目录身份在 prune 后发生变化; 不报告成功")
         after = _directory_bytes(root)
@@ -244,6 +258,57 @@ def _confirm_store_path(
         raise RuntimeError("pnpm 未确认所选 store 路径; 已安全停止")
 
 
+def _resolve_pnpm_tool(
+    environment: Mapping[str, str] | None,
+) -> PnpmToolIdentity:
+    source = os.environ if environment is None else environment
+    folded = {
+        str(key).casefold(): str(value)
+        for key, value in source.items()
+        if value
+    }
+    raw = folded.get("devclean_pnpm_exe") or (
+        "pnpm.cmd" if os.name == "nt" else "pnpm"
+    )
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        resolved = shutil.which(raw, path=folded.get("path"))
+        if resolved is None:
+            raise FileNotFoundError("未找到 pnpm CLI")
+        candidate = Path(resolved)
+    return _tool_identity(candidate)
+
+
+def _tool_identity(path: Path) -> PnpmToolIdentity:
+    candidate = Path(os.path.abspath(path.expanduser()))
+    if candidate.is_symlink() or candidate.is_junction():
+        raise RuntimeError("pnpm CLI 不能是 symlink/junction/reparse")
+    resolved = candidate.resolve(strict=True)
+    if os.path.normcase(os.path.abspath(candidate)) != os.path.normcase(
+        os.path.abspath(resolved)
+    ):
+        raise RuntimeError("pnpm CLI 路径包含重定向/reparse")
+    if not is_local_fixed_path(resolved):
+        raise RuntimeError("pnpm CLI 不在本地固定磁盘")
+    metadata = read_file_metadata(resolved)
+    if metadata.is_directory:
+        raise RuntimeError("pnpm CLI 路径不是文件")
+    if metadata.is_reparse_point or metadata.is_cloud_placeholder:
+        raise RuntimeError("pnpm CLI 是 reparse/cloud placeholder; 不授予维护权限")
+    if (
+        metadata.volume_serial is None
+        or metadata.file_id is None
+        or metadata.file_id_kind is None
+    ):
+        raise RuntimeError("pnpm CLI 缺少稳定文件身份")
+    return PnpmToolIdentity(
+        path=resolved,
+        volume_serial=metadata.volume_serial,
+        file_id=metadata.file_id,
+        file_id_kind=metadata.file_id_kind,
+    )
+
+
 def _store_identity(root: Path) -> tuple[int, str, str]:
     if not is_local_fixed_path(root):
         raise RuntimeError("pnpm store 不是普通本地固定磁盘路径; 已安全停止")
@@ -268,14 +333,6 @@ def _require_process_idle() -> None:
     clear_pnpm_process_cache()
     if pnpm_process_running():
         raise RuntimeError("pnpm 正在运行; 请等待当前 pnpm 操作完成后再清理 store")
-
-
-def _pnpm_executable(environment: Mapping[str, str] | None) -> str:
-    env = _casefold_env(environment)
-    configured = env.get("devclean_pnpm_exe")
-    if configured:
-        return configured
-    return "pnpm.cmd" if os.name == "nt" else "pnpm"
 
 
 def _run_pnpm(
@@ -346,15 +403,11 @@ def _combined_output(stdout: str | None, stderr: str | None) -> str:
     )
 
 
-def _casefold_env(environment: Mapping[str, str] | None) -> dict[str, str]:
-    source = os.environ if environment is None else environment
-    return {key.casefold(): value for key, value in source.items() if value}
-
-
 __all__ = [
     "PnpmPruneResult",
     "PnpmStorageInventory",
     "PnpmStoreEntry",
+    "PnpmToolIdentity",
     "inventory_pnpm_storage",
     "prune_pnpm_store",
 ]
