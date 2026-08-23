@@ -5,7 +5,8 @@ DevClean inventories only actions that can report a truthful pre-clean reclaim
 amount, prunes those roots from generic traversal, and surfaces them in the same
 safe-cleanup list as filesystem rules.
 
-Partial garbage collectors stay out of the byte-counted safe list until their
+Partial garbage collectors and vendor actions whose provider-root occupancy is
+not the exact mutation amount stay out of the byte-counted safe list until their
 junk can be quantified without mutation. Their already-audited cache/store roots
 are also pruned from generic per-file traversal: scanning every package inside a
 known provider cache cannot make that provider action more precise.
@@ -49,11 +50,11 @@ from devclean.ui import app
 from devclean.ui.product_app import ProductDevCleanWindow as _BaseProductDevCleanWindow
 
 # These operations clear the audited provider resource represented by the row,
-# so observed bytes are a truthful pre-clean reclaim figure. Partial-GC actions
-# are deliberately absent: a non-empty provider root does not prove junk bytes.
+# so observed bytes are a truthful pre-clean reclaim figure. Provider-root
+# occupancy that includes retained or unknown neighboring state is deliberately
+# absent even when the underlying vendor cleanup action itself is deterministic.
 _QUANTIFIED_VENDOR_KINDS = frozenset(
     {
-        VendorCleanupKind.PIP_CACHE_PURGE,
         VendorCleanupKind.GO_BUILD_CACHE_CLEAN,
         VendorCleanupKind.NUGET_HTTP_CACHE_CLEAR,
         VendorCleanupKind.NUGET_TEMP_CLEAR,
@@ -61,10 +62,12 @@ _QUANTIFIED_VENDOR_KINDS = frozenset(
     }
 )
 # These roots have already-audited provider semantics but their current action
-# only removes a subset. Do not pay the cost of classifying every child as if it
-# were an unknown file while exact pre-clean GC accounting is still being added.
+# cannot be represented by the whole provider-root size. Do not pay the cost of
+# classifying every child as if it were an unknown file while exact pre-clean
+# accounting or an explicitly unquantified product row is still being added.
 _SKIP_GENERIC_CACHE_CATEGORIES = frozenset(
     {
+        CleanupCategory.PIP_CACHE,
         CleanupCategory.UV_CACHE,
         CleanupCategory.PNPM_STORE,
         CleanupCategory.CONDA_CACHE,
