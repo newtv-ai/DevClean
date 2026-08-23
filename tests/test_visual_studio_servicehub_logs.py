@@ -4,6 +4,8 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PureWindowsPath
 
+import pytest
+
 from devclean.core.application_cleanup import (
     DecisionOwner,
     PolicyAction,
@@ -11,6 +13,7 @@ from devclean.core.application_cleanup import (
     audited_dynamic_tool_roots,
     evaluate_application_path,
     match_application_rule,
+    process_guard_allows,
     whole_tree_application_rule,
 )
 from devclean.core.cleanup_catalog import (
@@ -45,51 +48,52 @@ def test_servicehub_logs_are_discovered_without_localappdata(tmp_path: Path) -> 
     assert PureWindowsPath(str(logs)) in application_scan_roots(env)
 
 
-def test_servicehub_logs_use_exact_tool_rule(tmp_path: Path) -> None:
+def test_servicehub_logs_use_exact_user_review_rule(tmp_path: Path) -> None:
     env, logs = _layout(tmp_path)
 
     rule = match_application_rule(logs / "ServiceHub.Host.log", env)
 
     assert rule is not None
     assert rule.rule_id == "visual-studio-servicehub-logs"
-    assert rule.owner is DecisionOwner.TOOL
+    assert rule.owner is DecisionOwner.USER
+    assert rule.requires_process_closed
+    assert not rule.allow_whole_tree
     assert match_application_rule(logs.parent / "state.json", env) is None
     assert match_application_rule(logs.parent / "logs-old" / "old.log", env) is None
 
 
-def test_old_large_servicehub_logs_are_delegated(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("logical_size", "last_used"),
+    (
+        (1, _NOW),
+        (64 * 1024**2, _NOW - timedelta(days=45)),
+        (64 * 1024**2, None),
+    ),
+)
+def test_servicehub_age_size_and_unknown_usage_never_create_tool_authority(
+    tmp_path: Path,
+    logical_size: int,
+    last_used: datetime | None,
+) -> None:
     env, logs = _layout(tmp_path)
 
     decision = evaluate_application_path(
         logs,
-        logical_size=64 * 1024**2,
-        last_used=_NOW - timedelta(days=45),
+        logical_size=logical_size,
+        last_used=last_used,
         now=_NOW,
         process_running=False,
         environment=env,
     )
 
     assert decision is not None
-    assert decision.action is PolicyAction.TOOL_DELETE
+    assert decision.rule.owner is DecisionOwner.USER
+    assert decision.action is PolicyAction.USER_DECISION
 
 
-def test_recent_servicehub_logs_stay_for_diagnostics(tmp_path: Path) -> None:
-    env, logs = _layout(tmp_path)
-
-    decision = evaluate_application_path(
-        logs,
-        logical_size=64 * 1024**2,
-        last_used=_NOW - timedelta(days=2),
-        now=_NOW,
-        process_running=False,
-        environment=env,
-    )
-
-    assert decision is not None
-    assert decision.action is PolicyAction.TOOL_KEEP_RECENT
-
-
-def test_servicehub_logs_stay_while_visual_studio_is_in_use(tmp_path: Path) -> None:
+def test_servicehub_process_state_is_execution_guard_not_review_classification(
+    tmp_path: Path,
+) -> None:
     env, logs = _layout(tmp_path)
 
     decision = evaluate_application_path(
@@ -102,22 +106,41 @@ def test_servicehub_logs_stay_while_visual_studio_is_in_use(tmp_path: Path) -> N
     )
 
     assert decision is not None
-    assert decision.action is PolicyAction.TOOL_KEEP_IN_USE
+    assert decision.action is PolicyAction.USER_DECISION
 
 
-def test_servicehub_logs_have_exact_whole_tree_authority(tmp_path: Path) -> None:
+def test_servicehub_user_approved_mutation_requires_visual_studio_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env, logs = _layout(tmp_path)
+
+    monkeypatch.setattr(
+        "devclean.core.application_cleanup.visual_studio_process_running",
+        lambda: True,
+    )
+    assert not process_guard_allows(logs, env)
+
+    monkeypatch.setattr(
+        "devclean.core.application_cleanup.visual_studio_process_running",
+        lambda: False,
+    )
+    assert process_guard_allows(logs, env)
+
+
+def test_servicehub_logs_have_no_deterministic_whole_tree_authority(
+    tmp_path: Path,
+) -> None:
     env, logs = _layout(tmp_path)
 
     dynamic = dict(audited_dynamic_tool_roots(env))
 
-    assert PureWindowsPath(str(logs)) in dynamic
-    rule = whole_tree_application_rule(logs, env)
-    assert rule is not None
-    assert rule.rule_id == "visual-studio-servicehub-logs"
+    assert PureWindowsPath(str(logs)) not in dynamic
+    assert whole_tree_application_rule(logs, env) is None
     assert whole_tree_application_rule(logs.parent, env) is None
 
 
-def test_servicehub_logs_are_catalogued_as_vendor_managed_system_logs(
+def test_servicehub_logs_are_catalogued_report_only_for_user_review(
     tmp_path: Path,
 ) -> None:
     env, logs = _layout(tmp_path)
@@ -127,10 +150,8 @@ def test_servicehub_logs_are_catalogued_as_vendor_managed_system_logs(
     item = by_path[os.path.normcase(str(logs))]
 
     assert item.category is CleanupCategory.SYSTEM_LOGS
-    assert item.policy is CleanupPolicy.VENDOR_MANAGED
-    assert item.delete_root_itself
-    assert item.application_rule is not None
-    assert item.application_rule.rule_id == "visual-studio-servicehub-logs"
+    assert item.policy is CleanupPolicy.REPORT_ONLY
+    assert not item.delete_root_itself
 
 
 def test_servicehub_logs_fail_closed_without_temp() -> None:
