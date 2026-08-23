@@ -12,3 +12,6 @@ from devclean.core import claude_plugin_cache_cleanup as _claude_plugin_cache_cl
 # that extension has loaded the application facade, and Cursor can then patch the
 # facade's callable snapshots plus dynamic whole-tree discovery in one place.
 from devclean.core import cursor_updater_cleanup as _cursor_updater_cleanup  # noqa: F401
+# Cache semantics wrap the updater-aware Cursor evaluator: known generated caches
+# stay safe regardless of age/size, while the stronger updater process guard remains.
+from devclean.core import cursor_cache_semantics as _cursor_cache_semantics  # noqa: F401
