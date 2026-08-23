@@ -205,15 +205,28 @@ def test_pip_purge_fails_closed_when_no_command_confirms_target(
     env, default_cache, _ = _layout(tmp_path)
     _bind_fake_pip(tmp_path, monkeypatch)
     monkeypatch.setattr(pip_maintenance, "pip_process_running", lambda: False)
+    wrong_cache = (tmp_path / "other-cache").resolve()
 
     def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        probe = _probe_or_none(
-            command,
-            kwargs,
-            cache_path=tmp_path / "other-cache",
+        process_env = kwargs["env"]
+        assert isinstance(process_env, dict)
+        assert os.path.normcase(process_env["PIP_CACHE_DIR"]) == os.path.normcase(
+            str(default_cache.resolve())
         )
-        assert probe is not None
-        return probe
+        if command[-1:] == ["--version"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout="pip 26.0 from C:\\Python\\Lib\\site-packages\\pip (python 3.13)\n",
+                stderr="",
+            )
+        assert command[-2:] == ["cache", "dir"]
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=f"{wrong_cache}\n",
+            stderr="",
+        )
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
