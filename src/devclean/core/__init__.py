@@ -15,3 +15,6 @@ from devclean.core import cursor_updater_cleanup as _cursor_updater_cleanup  # n
 # Cache semantics wrap the updater-aware Cursor evaluator: known generated caches
 # stay safe regardless of age/size, while the stronger updater process guard remains.
 from devclean.core import cursor_cache_semantics as _cursor_cache_semantics  # noqa: F401
+# VS Code already exposes exact audited cache roots through the shared facade;
+# this wrapper keeps file-level triage consistent with the same safety boundary.
+from devclean.core import vscode_cache_semantics as _vscode_cache_semantics  # noqa: F401
