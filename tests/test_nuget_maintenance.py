@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -25,6 +28,8 @@ def _layout(tmp_path: Path) -> tuple[dict[str, str], dict[NuGetLocalKind, Path]]
     }
     for root in roots.values():
         root.mkdir(parents=True)
+    dotnet = tmp_path / "dotnet-test.exe"
+    dotnet.write_bytes(b"fake-dotnet")
     env = {
         "USERPROFILE": str(tmp_path / "home"),
         "LOCALAPPDATA": str(tmp_path / "Local"),
@@ -34,9 +39,43 @@ def _layout(tmp_path: Path) -> tuple[dict[str, str], dict[NuGetLocalKind, Path]]
         "NUGET_HTTP_CACHE_PATH": str(roots[NuGetLocalKind.HTTP_CACHE]),
         "NUGET_SCRATCH": str(roots[NuGetLocalKind.TEMP]),
         "NUGET_PLUGINS_CACHE_PATH": str(roots[NuGetLocalKind.PLUGINS_CACHE]),
-        "DEVCLEAN_DOTNET_EXE": "dotnet-test",
+        "DEVCLEAN_DOTNET_EXE": str(dotnet),
     }
     return env, roots
+
+
+def _override_for(kind: NuGetLocalKind) -> str:
+    return {
+        NuGetLocalKind.GLOBAL_PACKAGES: "NUGET_PACKAGES",
+        NuGetLocalKind.HTTP_CACHE: "NUGET_HTTP_CACHE_PATH",
+        NuGetLocalKind.TEMP: "NUGET_SCRATCH",
+        NuGetLocalKind.PLUGINS_CACHE: "NUGET_PLUGINS_CACHE_PATH",
+    }[kind]
+
+
+def _vendor_list_or_none(
+    command: list[str],
+    kwargs: dict[str, Any],
+    *,
+    kind: NuGetLocalKind,
+    root: Path,
+    reported_root: Path | None = None,
+) -> subprocess.CompletedProcess[str] | None:
+    process_env = kwargs["env"]
+    assert isinstance(process_env, dict)
+    assert os.path.normcase(process_env[_override_for(kind)]) == os.path.normcase(
+        str(root.resolve())
+    )
+    if command[-2:] != ["--list", "--force-english-output"]:
+        return None
+    assert command[1:4] == ["nuget", "locals", kind.value]
+    shown = (reported_root or root).resolve()
+    return subprocess.CompletedProcess(
+        command,
+        0,
+        stdout=f"{kind.value}: {shown}\n",
+        stderr="",
+    )
 
 
 def test_nuget_inventory_is_read_only_and_sums_all_locals(tmp_path: Path) -> None:
@@ -98,61 +137,73 @@ def test_nuget_inventory_recommends_only_worthwhile_deterministic_cache(
 
 
 @pytest.mark.parametrize(
-    ("kind", "override"),
+    "kind",
     [
-        (NuGetLocalKind.GLOBAL_PACKAGES, "NUGET_PACKAGES"),
-        (NuGetLocalKind.HTTP_CACHE, "NUGET_HTTP_CACHE_PATH"),
-        (NuGetLocalKind.TEMP, "NUGET_SCRATCH"),
-        (NuGetLocalKind.PLUGINS_CACHE, "NUGET_PLUGINS_CACHE_PATH"),
+        NuGetLocalKind.GLOBAL_PACKAGES,
+        NuGetLocalKind.HTTP_CACHE,
+        NuGetLocalKind.TEMP,
+        NuGetLocalKind.PLUGINS_CACHE,
     ],
 )
-def test_nuget_clear_uses_vendor_command_and_exact_root_override(
+def test_nuget_clear_confirms_exact_vendor_root_then_removes_the_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     kind: NuGetLocalKind,
-    override: str,
 ) -> None:
     env, roots = _layout(tmp_path)
     root = roots[kind]
     payload = root / "payload.bin"
     payload.write_bytes(b"x" * 31)
     monkeypatch.setattr(nuget_maintenance, "nuget_process_running", lambda: False)
+    calls: list[list[str]] = []
 
-    def fake_run(
-        command: list[str],
-        *,
-        check: bool,
-        capture_output: bool,
-        text: bool,
-        timeout: int,
-        env: dict[str, str],
-    ) -> subprocess.CompletedProcess[str]:
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        probe = _vendor_list_or_none(command, kwargs, kind=kind, root=root)
+        if probe is not None:
+            assert kwargs["timeout"] == 60
+            return probe
         assert command == [
-            "dotnet-test",
+            str(Path(env["DEVCLEAN_DOTNET_EXE"]).resolve()),
             "nuget",
             "locals",
             kind.value,
             "--clear",
             "--force-english-output",
         ]
-        assert check is False
-        assert capture_output is True
-        assert text is True
-        assert timeout == 600
-        assert os.path.normcase(env[override]) == os.path.normcase(str(root))
-        payload.unlink()
+        assert kwargs["timeout"] == 600
+        shutil.rmtree(root)
         return subprocess.CompletedProcess(command, 0, stdout="cleared", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     result = clear_nuget_local(kind, root, env)
 
+    expected_list = [
+        str(Path(env["DEVCLEAN_DOTNET_EXE"]).resolve()),
+        "nuget",
+        "locals",
+        kind.value,
+        "--list",
+        "--force-english-output",
+    ]
+    expected_clear = [
+        str(Path(env["DEVCLEAN_DOTNET_EXE"]).resolve()),
+        "nuget",
+        "locals",
+        kind.value,
+        "--clear",
+        "--force-english-output",
+    ]
+    assert calls == [expected_list, expected_list, expected_clear]
     assert result.kind is kind
-    assert result.path == root
+    assert result.path == root.resolve()
     assert result.before_bytes == 31
     assert result.after_bytes == 0
     assert result.reclaimed_bytes == 31
+    assert result.command == tuple(expected_clear)
     assert result.stdout == "cleared"
+    assert not root.exists()
 
 
 def test_nuget_clear_refuses_wrong_kind_or_unrecognized_root(tmp_path: Path) -> None:
@@ -180,16 +231,199 @@ def test_nuget_clear_refuses_while_restore_or_build_is_running(
         )
 
 
-def test_nuget_clear_surfaces_vendor_failure(
+def test_nuget_clear_rechecks_process_immediately_before_mutation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     env, roots = _layout(tmp_path)
+    kind = NuGetLocalKind.HTTP_CACHE
+    root = roots[kind]
+    states = iter((False, True))
+    monkeypatch.setattr(nuget_maintenance, "nuget_process_running", lambda: next(states))
+    clear_called = False
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal clear_called
+        probe = _vendor_list_or_none(command, kwargs, kind=kind, root=root)
+        if probe is not None:
+            return probe
+        clear_called = True
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="正在运行"):
+        clear_nuget_local(kind, root, env)
+    assert not clear_called
+    assert root.exists()
+
+
+def test_nuget_clear_fails_closed_when_vendor_lists_different_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env, roots = _layout(tmp_path)
+    kind = NuGetLocalKind.PLUGINS_CACHE
+    root = roots[kind]
+    wrong = tmp_path / "other-plugins"
+    wrong.mkdir()
+    monkeypatch.setattr(nuget_maintenance, "nuget_process_running", lambda: False)
+    clear_called = False
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal clear_called
+        probe = _vendor_list_or_none(
+            command,
+            kwargs,
+            kind=kind,
+            root=root,
+            reported_root=wrong,
+        )
+        if probe is not None:
+            return probe
+        clear_called = True
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="未确认所选"):
+        clear_nuget_local(kind, root, env)
+    assert not clear_called
+    assert root.exists()
+
+
+def test_nuget_clear_revalidates_dotnet_identity_before_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env, roots = _layout(tmp_path)
+    kind = NuGetLocalKind.TEMP
+    root = roots[kind]
+    monkeypatch.setattr(nuget_maintenance, "nuget_process_running", lambda: False)
+    real_identity = nuget_maintenance._path_identity
+    cli_calls = 0
+    clear_called = False
+
+    def identity(
+        path: Path,
+        *,
+        expect_directory: bool,
+        label: str,
+    ) -> nuget_maintenance.NuGetPathIdentity:
+        nonlocal cli_calls
+        current = real_identity(path, expect_directory=expect_directory, label=label)
+        if label == ".NET CLI":
+            cli_calls += 1
+            if cli_calls >= 2:
+                return replace(
+                    current,
+                    last_write_time_ns=(current.last_write_time_ns or 0) + 1,
+                )
+        return current
+
+    monkeypatch.setattr(nuget_maintenance, "_path_identity", identity)
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal clear_called
+        probe = _vendor_list_or_none(command, kwargs, kind=kind, root=root)
+        if probe is not None:
+            return probe
+        clear_called = True
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match=".NET CLI 身份发生变化"):
+        clear_nuget_local(kind, root, env)
+    assert not clear_called
+    assert root.exists()
+
+
+def test_nuget_clear_revalidates_root_identity_before_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env, roots = _layout(tmp_path)
+    kind = NuGetLocalKind.HTTP_CACHE
+    root = roots[kind]
+    monkeypatch.setattr(nuget_maintenance, "nuget_process_running", lambda: False)
+    real_identity = nuget_maintenance._path_identity
+    root_calls = 0
+    clear_called = False
+
+    def identity(
+        path: Path,
+        *,
+        expect_directory: bool,
+        label: str,
+    ) -> nuget_maintenance.NuGetPathIdentity:
+        nonlocal root_calls
+        current = real_identity(path, expect_directory=expect_directory, label=label)
+        if label == "NuGet http-cache":
+            root_calls += 1
+            if root_calls >= 2:
+                return replace(current, file_id=current.file_id + "-changed")
+        return current
+
+    monkeypatch.setattr(nuget_maintenance, "_path_identity", identity)
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        nonlocal clear_called
+        probe = _vendor_list_or_none(command, kwargs, kind=kind, root=root)
+        if probe is not None:
+            return probe
+        clear_called = True
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="NuGet http-cache 身份发生变化"):
+        clear_nuget_local(kind, root, env)
+    assert not clear_called
+    assert root.exists()
+
+
+def test_nuget_clear_requires_vendor_root_removal_postcondition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env, roots = _layout(tmp_path)
+    kind = NuGetLocalKind.HTTP_CACHE
+    root = roots[kind]
+    payload = root / "still-here.bin"
+    payload.write_bytes(b"keep")
     monkeypatch.setattr(nuget_maintenance, "nuget_process_running", lambda: False)
 
-    def fake_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        probe = _vendor_list_or_none(command, kwargs, kind=kind, root=root)
+        if probe is not None:
+            return probe
+        return subprocess.CompletedProcess(command, 0, stdout="cleared", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="目标根目录仍存在"):
+        clear_nuget_local(kind, root, env)
+    assert payload.exists()
+
+
+def test_nuget_clear_surfaces_vendor_failure_without_raw_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env, roots = _layout(tmp_path)
+    kind = NuGetLocalKind.PLUGINS_CACHE
+    root = roots[kind]
+    payload = root / "keep.bin"
+    payload.write_bytes(b"keep")
+    monkeypatch.setattr(nuget_maintenance, "nuget_process_running", lambda: False)
+
+    def fake_run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        probe = _vendor_list_or_none(command, kwargs, kind=kind, root=root)
+        if probe is not None:
+            return probe
         return subprocess.CompletedProcess(
-            ["dotnet-test"],
+            command,
             2,
             stdout="",
             stderr="cache locked",
@@ -198,8 +432,5 @@ def test_nuget_clear_surfaces_vendor_failure(
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     with pytest.raises(RuntimeError, match="cache locked"):
-        clear_nuget_local(
-            NuGetLocalKind.PLUGINS_CACHE,
-            roots[NuGetLocalKind.PLUGINS_CACHE],
-            env,
-        )
+        clear_nuget_local(kind, root, env)
+    assert payload.exists()
