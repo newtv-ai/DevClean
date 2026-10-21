@@ -50,6 +50,7 @@ from devclean.core.whole_tree_policy import (
     WholeTreePolicyRefusal,
     assess_application_whole_tree_policy,
 )
+from devclean.platform.windows.filesystem import FileSystemMetadata, read_file_metadata
 from devclean.platform.windows.volumes import fixed_volume_roots
 from devclean.scanner import (
     CancellationToken,
@@ -103,6 +104,37 @@ def _is_reachable(target: Path, roots: tuple[Path, ...]) -> bool:
         if normalized.startswith(root_normalized.rstrip(os.sep) + os.sep):
             return True
     return False
+
+
+def _identified_tree_summary(
+    path: Path,
+    cancel: CancellationToken,
+) -> tuple[TreeSummary, FileSystemMetadata]:
+    """Bind the displayed aggregate to the same ordinary directory before/after."""
+
+    def read_root() -> FileSystemMetadata:
+        metadata = read_file_metadata(path)
+        if (
+            not metadata.is_directory
+            or metadata.is_reparse_point
+            or metadata.is_cloud_placeholder
+            or metadata.volume_serial is None
+            or metadata.file_id is None
+            or metadata.file_id_kind != "file_id_128"
+            or metadata.creation_time_ns is None
+        ):
+            raise TreeSummaryIncomplete("whole-tree root lacks a stable ordinary identity")
+        return metadata
+
+    try:
+        before = read_root()
+        summary = summarize_tree(path, cancel)
+        after = read_root()
+    except OSError as error:
+        raise TreeSummaryIncomplete(str(error)) from error
+    if before.identity != after.identity or before.creation_time_ns != after.creation_time_ns:
+        raise TreeSummaryIncomplete("whole-tree root changed during summary")
+    return summary, after
 
 
 class ProductDevCleanWindow(ModernDevCleanWindow):
@@ -315,7 +347,7 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
                 if cancel.is_cancelled():
                     break
                 try:
-                    summary = summarize_tree(known.path, cancel)
+                    summary, metadata = _identified_tree_summary(known.path, cancel)
                 except TreeSummaryIncomplete:
                     continue
                 summarized_files += summary.files
@@ -343,7 +375,14 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
                     path=str(known.path),
                     kind=ScanRecordKind.DIRECTORY,
                     depth=0,
-                    last_write_time_ns=summary.latest_activity_time_ns,
+                    volume_serial=metadata.volume_serial,
+                    file_id=metadata.file_id,
+                    file_id_kind=metadata.file_id_kind,
+                    link_count=metadata.link_count,
+                    attributes=metadata.attributes,
+                    reparse_tag=metadata.reparse_tag,
+                    creation_time_ns=metadata.creation_time_ns,
+                    last_write_time_ns=metadata.last_write_time_ns,
                 )
                 session.observe_path(
                     record.path,
