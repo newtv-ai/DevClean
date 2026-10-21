@@ -99,8 +99,7 @@ def _surfaceable_vendor_candidates(
     return tuple(
         candidate
         for candidate in candidates
-        if candidate.kind in _QUANTIFIED_VENDOR_KINDS
-        and _path_reachable(candidate.path, drives)
+        if candidate.kind in _QUANTIFIED_VENDOR_KINDS and _path_reachable(candidate.path, drives)
     )
 
 
@@ -111,19 +110,14 @@ def _generic_vendor_skip_paths(
     source_proven_paths: Sequence[Path] = (),
 ) -> tuple[str, ...]:
     paths: list[str] = [
-        str(candidate.path)
-        for candidate in candidates
-        if _path_reachable(candidate.path, drives)
+        str(candidate.path) for candidate in candidates if _path_reachable(candidate.path, drives)
     ]
     paths.extend(
         str(root.path)
         for root in known_roots
-        if root.category in _SKIP_GENERIC_CACHE_CATEGORIES
-        and _path_reachable(root.path, drives)
+        if root.category in _SKIP_GENERIC_CACHE_CATEGORIES and _path_reachable(root.path, drives)
     )
-    paths.extend(
-        str(path) for path in source_proven_paths if _path_reachable(path, drives)
-    )
+    paths.extend(str(path) for path in source_proven_paths if _path_reachable(path, drives))
     return tuple(dict.fromkeys(paths))
 
 
@@ -141,7 +135,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
         self._deletable_tree.heading("size", text="可清理")
         cleanup = self._buttons.get("recycle")
         if cleanup is not None:
-            cleanup.configure(text="清理所选", command=lambda: self._delete(irreversible=False))
+            cleanup.configure(text="永久清理所选", command=lambda: self._delete(irreversible=True))
         # A cache cleaner that sends bytes to Recycle Bin does not free disk
         # space. The product therefore has one cleanup action; filesystem rows
         # use the existing permanent exact-object executor and provider rows use
@@ -169,9 +163,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
         """Inventory actionable provider roots once, then prune proven stores."""
 
         try:
-            inventory = inventory_vendor_cleanup_candidates(
-                kinds=_QUANTIFIED_VENDOR_KINDS
-            )
+            inventory = inventory_vendor_cleanup_candidates(kinds=_QUANTIFIED_VENDOR_KINDS)
         except (OSError, RuntimeError, TypeError, ValueError):
             inventory_candidates: tuple[VendorCleanupCandidate, ...] = ()
         else:
@@ -247,9 +239,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
             rows.append((size, row_id, app._format_bytes(size), label))
 
         rows.sort(key=lambda row: (-row[0], row[3].casefold()))
-        for index, (_sort_size, row_id, rendered_size, label) in enumerate(
-            rows[: app._ROWS_DRAWN]
-        ):
+        for index, (_sort_size, row_id, rendered_size, label) in enumerate(rows[: app._ROWS_DRAWN]):
             mark = self._TICKED if row_id in self._checked else self._UNTICKED
             tree.insert(
                 "",
@@ -337,9 +327,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
             self._deletable_total.set("0 B（0 项）")
 
         unsure_shown = (
-            f"，表中显示前 {app._ROWS_DRAWN:,} 项"
-            if len(self._unsure) > app._ROWS_DRAWN
-            else ""
+            f"，表中显示前 {app._ROWS_DRAWN:,} 项" if len(self._unsure) > app._ROWS_DRAWN else ""
         )
         self._unsure_total.set(
             f"{app._format_bytes(sum(self._size_of(item) for item in self._unsure))}"
@@ -352,6 +340,16 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
         vendor = self._selected_vendor_candidates()
         if not items and not vendor:
             messagebox.showinfo("DevClean", "没有勾选任何安全清理项。")
+            return
+        if not messagebox.askyesno(
+            "确认永久清理",
+            f"将永久清理所选的 {len(items) + len(vendor):,} 项。\n\n"
+            "普通文件和目录会直接删除，包管理器缓存会交给官方清理命令。\n"
+            "这些操作不进入回收站，DevClean 无法还原已删除的数据。\n\n"
+            "是否继续？",
+            default=messagebox.NO,
+            icon=messagebox.WARNING,
+        ):
             return
 
         self._busy = "deleting"
