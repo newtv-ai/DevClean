@@ -359,9 +359,8 @@ def purge_exact_directory_tree(
     root_path = _ordinary_absolute_path(root, "tree root")
     root_handle, root_final = _open_boundary(boundary)
     try:
-        # Confinement is the approved root, enforced on the opened handle below.
-        # The walk itself cannot widen it: it never descends a reparse point, so
-        # the only paths it can reach are real children of this directory.
+        # Authorize the selected root against the outer boundary, then confine
+        # every descendant operation to the selected root itself.
         handle = _open_exact_directory_for_mutation(root_path)
         try:
             _require_directory_snapshot(read_file_metadata_handle(handle), expected)
@@ -369,7 +368,7 @@ def purge_exact_directory_tree(
             _require_final_path(handle, root_path)
             state = _TreePurgeState()
             completed = _purge_tree_contents(
-                root_path, root_final, state, on_progress, is_cancelled
+                root_path, _final_path(handle), state, on_progress, is_cancelled
             )
             if completed:
                 _set_delete_disposition(handle, root_path)
@@ -564,35 +563,48 @@ def _purge_tree_contents(
     """
 
     pending: list[tuple[str, bool]] = [(root_path, False)]
-    while pending:
-        if is_cancelled is not None and is_cancelled():
-            return False
-        current, children_done = pending.pop()
-        if children_done:
-            if current != root_path:
-                _delete_empty_directory(current, boundary_final)
-                state.directories_removed += 1
-                if on_progress is not None:
-                    on_progress(state.snapshot())
-            continue
-        children = _list_purge_entries(current, boundary_final, already_pinned=current == root_path)
-        pending.append((current, True))
-        for child_path, kind, size in children:
-            if kind is _EntryKind.DIRECTORY:
-                pending.append((child_path, False))
+    pinned: dict[str, wintypes.HANDLE] = {}
+    try:
+        while pending:
+            if is_cancelled is not None and is_cancelled():
+                return False
+            current, children_done = pending.pop()
+            if children_done:
+                if current != root_path:
+                    handle = pinned.pop(current)
+                    try:
+                        _delete_empty_directory(current, boundary_final, pinned_handle=handle)
+                    finally:
+                        _close_handle(handle)
+                    state.directories_removed += 1
+                    if on_progress is not None:
+                        on_progress(state.snapshot())
                 continue
-            # A reparse point is removed as a link.  Descending into one is the
-            # single way a tree walk could escape its selected root, so the walk
-            # never does it -- not even for a link that appears to stay inside.
-            _delete_leaf(child_path, boundary_final)
-            if kind is _EntryKind.REPARSE_POINT:
-                state.links_removed += 1
-            else:
-                state.files_removed += 1
-                state.bytes_removed += size
-        if on_progress is not None:
-            on_progress(state.snapshot())
-    return True
+            if current != root_path:
+                # Keep every active ancestor pinned through child mutation and
+                # delete this directory using the same handle. Closing after
+                # enumeration would reopen the junction replacement window.
+                handle = _open_exact_directory_for_mutation(current)
+                pinned[current] = handle
+                _require_purge_directory(handle, current, boundary_final)
+            children = _list_purge_entries(current, boundary_final, already_pinned=True)
+            pending.append((current, True))
+            for child_path, kind, size in children:
+                if kind is _EntryKind.DIRECTORY:
+                    pending.append((child_path, False))
+                    continue
+                _delete_leaf(child_path, boundary_final)
+                if kind is _EntryKind.REPARSE_POINT:
+                    state.links_removed += 1
+                else:
+                    state.files_removed += 1
+                    state.bytes_removed += size
+            if on_progress is not None:
+                on_progress(state.snapshot())
+        return True
+    finally:
+        for handle in reversed(tuple(pinned.values())):
+            _close_handle(handle)
 
 
 class _EntryKind(Enum):
@@ -610,13 +622,8 @@ def _list_purge_entries(
     handle: wintypes.HANDLE | None = None
     if not already_pinned:
         handle = _open_exact_directory(directory)
-        metadata = read_file_metadata_handle(handle)
-        if not metadata.is_directory or metadata.is_reparse_point or metadata.is_cloud_placeholder:
-            _close_handle(handle)
-            raise ExactCleanupError("selected tree directory became a reparse/cloud boundary")
         try:
-            _require_handle_in_boundary(handle, boundary_final, allow_equal=False)
-            _require_final_path(handle, directory)
+            _require_purge_directory(handle, directory, boundary_final)
         except Exception:
             _close_handle(handle)
             raise
@@ -688,17 +695,27 @@ def _open_leaf_for_delete(path: str) -> wintypes.HANDLE:
     return cast(wintypes.HANDLE, handle)
 
 
-def _delete_empty_directory(path: str, boundary_final: str) -> None:
-    handle = _open_exact_directory_for_mutation(path)
+def _require_purge_directory(handle: wintypes.HANDLE, path: str, boundary_final: str) -> None:
+    metadata = read_file_metadata_handle(handle)
+    if not metadata.is_directory or metadata.is_reparse_point or metadata.is_cloud_placeholder:
+        raise ExactCleanupError("selected tree directory became a reparse/cloud boundary")
+    _require_handle_in_boundary(handle, boundary_final, allow_equal=False)
+    _require_final_path(handle, path)
+
+
+def _delete_empty_directory(
+    path: str,
+    boundary_final: str,
+    *,
+    pinned_handle: wintypes.HANDLE | None = None,
+) -> None:
+    handle = _open_exact_directory_for_mutation(path) if pinned_handle is None else pinned_handle
     try:
-        metadata = read_file_metadata_handle(handle)
-        if not metadata.is_directory or metadata.is_reparse_point or metadata.is_cloud_placeholder:
-            raise ExactCleanupError("selected tree directory changed before deletion")
-        _require_handle_in_boundary(handle, boundary_final, allow_equal=False)
-        _require_final_path(handle, path)
+        _require_purge_directory(handle, path, boundary_final)
         _set_delete_disposition(handle, path)
     finally:
-        _close_handle(handle)
+        if pinned_handle is None:
+            _close_handle(handle)
 
 
 def _open_boundary(boundary: ExactRootBoundary) -> tuple[wintypes.HANDLE, str]:
