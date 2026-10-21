@@ -17,7 +17,7 @@ def test_active_ancestors_stay_pinned_until_their_children_finish(
     monkeypatch: pytest.MonkeyPatch,
     fail_leaf: bool,
 ) -> None:
-    root = str(tmp_path / "selected")
+    root = os.path.normcase(str(tmp_path / "selected"))
     child = str(Path(root) / "child")
     grandchild = str(Path(child) / "nested")
     leaf = str(Path(grandchild) / "file.bin")
@@ -147,9 +147,12 @@ def test_windows_refuses_junction_inserted_before_nested_directory_open(
         return entries
 
     monkeypatch.setattr(cleanup, "_list_purge_entries", list_then_swap)
-    snapshot, boundary = _native_arguments(root)
+    # Exercise the traversal guard directly: the public API's outer directory
+    # pins can already prevent this rename before the junction is installed.
     with pytest.raises(cleanup.ExactCleanupError, match="reparse/cloud"):
-        cleanup.purge_exact_directory_tree(root, snapshot, boundary)
+        cleanup._purge_tree_contents(
+            str(root), os.path.normcase(str(root)), cleanup._TreePurgeState(), None, None
+        )
     assert (victim / "same.bin").read_bytes() == b"protected"
     # A failed purge must release all pins, allowing the test to remove the link.
     nested.rmdir()
@@ -159,10 +162,12 @@ def test_public_purge_rejects_a_leaf_resolved_to_a_protected_sibling(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = str(tmp_path / "selected")
+    root = os.path.normcase(str(tmp_path / "selected"))
     leaf = str(Path(root) / "entry.bin")
-    victim = str(tmp_path / "protected.bin")
-    monkeypatch.setattr(cleanup, "_open_boundary", lambda _boundary: ("outer", str(tmp_path)))
+    victim = os.path.normcase(str(tmp_path / "protected.bin"))
+    monkeypatch.setattr(
+        cleanup, "_open_boundary", lambda _boundary: ("outer", os.path.normcase(str(tmp_path)))
+    )
     monkeypatch.setattr(cleanup, "_open_exact_directory_for_mutation", lambda _path: root)
     monkeypatch.setattr(cleanup, "_open_leaf_for_delete", lambda _path: leaf)
     monkeypatch.setattr(cleanup, "_close_handle", lambda _handle: None)
