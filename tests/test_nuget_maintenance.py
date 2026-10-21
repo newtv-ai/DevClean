@@ -68,6 +68,15 @@ def _vendor_list_or_none(
     )
     if command[-2:] != ["--list", "--force-english-output"]:
         return None
+    if command[1:4] == ["nuget", "locals", "all"]:
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="\n".join(
+                f"{entry.value}: {process_env[_override_for(entry)]}" for entry in NuGetLocalKind
+            ),
+            stderr="",
+        )
     assert command[1:4] == ["nuget", "locals", kind.value]
     shown = (reported_root or root).resolve()
     return subprocess.CompletedProcess(
@@ -96,8 +105,7 @@ def test_nuget_inventory_is_read_only_and_sums_all_locals(tmp_path: Path) -> Non
 
 def test_nuget_cache_lanes_are_local_and_do_not_require_ai() -> None:
     assert (
-        nuget_maintenance_lane(NuGetLocalKind.GLOBAL_PACKAGES)
-        is NuGetMaintenanceLane.USER_REVIEW
+        nuget_maintenance_lane(NuGetLocalKind.GLOBAL_PACKAGES) is NuGetMaintenanceLane.USER_REVIEW
     )
     for kind in (
         NuGetLocalKind.HTTP_CACHE,
@@ -195,7 +203,8 @@ def test_nuget_clear_confirms_exact_vendor_root_then_removes_the_root(
         "--clear",
         "--force-english-output",
     ]
-    assert calls == [expected_list, expected_list, expected_clear]
+    expected_all = [*expected_list[:3], "all", *expected_list[4:]]
+    assert calls == [expected_list, expected_list, expected_all, expected_clear]
     assert result.kind is kind
     assert result.path == root.resolve()
     assert result.before_bytes == 31

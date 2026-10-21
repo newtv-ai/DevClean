@@ -68,9 +68,7 @@ class _NuGetMaintenanceDialog:
         ttk.Label(legend, text="确定可清理：厂商定义缓存，达到收益阈值时默认勾选").pack(
             side=tk.LEFT
         )
-        ttk.Label(legend, text="你来决定：删除安全，但是否还需要取决于你的项目").pack(
-            side=tk.RIGHT
-        )
+        ttk.Label(legend, text="你来决定：删除安全，但是否还需要取决于你的项目").pack(side=tk.RIGHT)
 
         self._rows = ttk.Frame(container)
         self._rows.pack(fill=tk.BOTH, expand=True)
@@ -219,23 +217,25 @@ class _NuGetMaintenanceDialog:
         visible = [entry for entry in inventory.locals if entry.exists]
         visible.sort(key=lambda entry: entry.logical_bytes, reverse=True)
         for row_index, entry in enumerate(visible):
-            lane_text = (
-                "确定可清理"
-                if entry.lane is NuGetMaintenanceLane.DETERMINISTIC_CANDIDATE
-                else "你来决定"
-            )
+            lane_text = {
+                NuGetMaintenanceLane.DETERMINISTIC_CANDIDATE: "确定可清理",
+                NuGetMaintenanceLane.USER_REVIEW: "你来决定",
+                NuGetMaintenanceLane.PROTECTED: "已保护",
+            }[entry.lane]
             choice = tk.BooleanVar(value=entry.recommended)
             self._choices[entry.kind] = choice
             title = (
-                f"{lane_text} · {_kind_label(entry.kind)} · "
-                f"{_format_bytes(entry.logical_bytes)}"
+                f"{lane_text} · {_kind_label(entry.kind)} · {_format_bytes(entry.logical_bytes)}"
             )
             row = ttk.LabelFrame(self._rows, text=title, padding=9)
             row.grid(row=row_index, column=0, sticky="ew", pady=(0, 7))
             self._rows.columnconfigure(0, weight=1)
-            ttk.Checkbutton(row, text="清理", variable=choice).grid(
-                row=0, column=0, rowspan=2, sticky="nw", padx=(0, 12)
-            )
+            ttk.Checkbutton(
+                row,
+                text="清理",
+                variable=choice,
+                state="disabled" if entry.lane is NuGetMaintenanceLane.PROTECTED else "normal",
+            ).grid(row=0, column=0, rowspan=2, sticky="nw", padx=(0, 12))
             ttk.Label(row, text=entry.reason, wraplength=760, justify=tk.LEFT).grid(
                 row=0, column=1, sticky="w"
             )
@@ -247,9 +247,7 @@ class _NuGetMaintenanceDialog:
         safe_count = sum(
             entry.lane is NuGetMaintenanceLane.DETERMINISTIC_CANDIDATE for entry in visible
         )
-        user_count = sum(
-            entry.lane is NuGetMaintenanceLane.USER_REVIEW for entry in visible
-        )
+        user_count = sum(entry.lane is NuGetMaintenanceLane.USER_REVIEW for entry in visible)
         total_text = _format_bytes(inventory.total_local_bytes)
         self._status.set(
             f"已定位 {len(visible)} 处 NuGet 存储，共 {total_text}；"
