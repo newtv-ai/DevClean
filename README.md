@@ -29,7 +29,7 @@ DevClean 是面向 Windows 11 x64 的磁盘扫描与垃圾清理工具。最终�
 
 ## 直接使用
 
-下载 [release/DevClean.exe](release/DevClean.exe) 后运行。程序首次启动会在 EXE
+下载 [DevClean.exe](https://github.com/newtv-ai/DevClean/raw/refs/heads/main/release/DevClean.exe) 后运行。程序首次启动会在 EXE
 旁创建 `DevClean-data`。规则、默认备份、AI 导入索引和有界删除日志都集中在
 这里，不写入 AppData；删除 EXE 和这个文件夹就会移除程序及其全部运行状态。
 如果下载的是含许可证文本的完整发布目录，直接删除整个目录即可。其中三份可编辑

@@ -65,6 +65,6 @@ jobs:
           name: DevClean-Windows-x64
           path: |
             artifacts/windows-exe/dist/DevClean.exe
-            artifacts/windows-exe/dist/licenses/*.txt
+            artifacts/windows-exe/dist/licenses/*
           if-no-files-found: error
           retention-days: 14
