@@ -8,6 +8,7 @@ while ``global-packages`` remains user-review dependency storage.
 
 from __future__ import annotations
 
+import ntpath
 import os
 import shutil
 import subprocess
@@ -18,6 +19,7 @@ from pathlib import Path, PureWindowsPath
 
 from devclean.core import _application_cleanup_impl as _impl
 from devclean.core.nuget_cleanup import (
+    NuGetRootSet,
     clear_nuget_process_cache,
     dotnet_executable,
     nuget_process_running,
@@ -41,6 +43,7 @@ class NuGetMaintenanceLane(StrEnum):
 
     DETERMINISTIC_CANDIDATE = "DETERMINISTIC_CANDIDATE"
     USER_REVIEW = "USER_REVIEW"
+    PROTECTED = "PROTECTED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +130,12 @@ def inventory_nuget_storage(
                 exists = False
             logical_bytes = _directory_bytes(path) if exists else 0
             lane = nuget_maintenance_lane(kind)
+            reason = _decision_reason(kind)
+            try:
+                _require_separate_resource(kind, path, roots)
+            except RuntimeError as error:
+                lane = NuGetMaintenanceLane.PROTECTED
+                reason = str(error)
             entries.append(
                 NuGetLocalEntry(
                     kind=kind,
@@ -134,8 +143,11 @@ def inventory_nuget_storage(
                     logical_bytes=logical_bytes,
                     exists=exists,
                     lane=lane,
-                    recommended=_recommended(kind, logical_bytes),
-                    reason=_decision_reason(kind),
+                    recommended=(
+                        lane is NuGetMaintenanceLane.DETERMINISTIC_CANDIDATE
+                        and _recommended(kind, logical_bytes)
+                    ),
+                    reason=reason,
                 )
             )
     return NuGetStorageInventory(tuple(entries))
@@ -163,6 +175,7 @@ def clear_nuget_local(
         raise ValueError(f"不是已审计的 NuGet {kind.value} 路径: {path}")
     if not path.is_dir():
         raise FileNotFoundError(f"NuGet {kind.value} 不存在: {path}")
+    _require_separate_resource(kind, path, nuget_roots(environment))
 
     _require_process_idle()
     reviewed_root = _path_identity(
@@ -183,6 +196,12 @@ def clear_nuget_local(
     _confirm_vendor_root(kind, reviewed_dotnet.path, reviewed_root.path, env)
 
     before = _directory_bytes(reviewed_root.path)
+    # Re-read all resources through the bound CLI: a valid cache root alone
+    # does not prove that clearing it preserves dependencies or other caches.
+    _require_live_mutation_scope(kind, reviewed_dotnet.path, reviewed_root.path, env)
+    _require_same_path_identity(reviewed_dotnet, ".NET CLI")
+    _require_same_path_identity(reviewed_root, f"NuGet {kind.value}")
+    _require_process_idle()
     command = (
         str(reviewed_dotnet.path),
         "nuget",
@@ -218,6 +237,88 @@ def clear_nuget_local(
     )
 
 
+def _resource_paths(roots: NuGetRootSet) -> dict[NuGetLocalKind, tuple[PureWindowsPath, ...]]:
+    return {
+        NuGetLocalKind.GLOBAL_PACKAGES: roots.global_packages_roots,
+        NuGetLocalKind.HTTP_CACHE: roots.http_cache_roots,
+        NuGetLocalKind.TEMP: roots.temp_roots,
+        NuGetLocalKind.PLUGINS_CACHE: roots.plugins_cache_roots,
+    }
+
+
+def _path_forms(path: Path | PureWindowsPath) -> tuple[str, ...]:
+    try:
+        resolved = Path(str(path)).resolve(strict=False)
+    except (OSError, RuntimeError) as error:
+        raise RuntimeError(f"NuGet 路径边界无法解析: {path}") from error
+    return tuple(
+        dict.fromkeys(ntpath.normcase(ntpath.normpath(str(value))) for value in (path, resolved))
+    )
+
+
+def _paths_overlap(left: Path | PureWindowsPath, right: Path | PureWindowsPath) -> bool:
+    for first in _path_forms(left):
+        for second in _path_forms(right):
+            try:
+                if ntpath.commonpath((first, second)) in {first, second}:
+                    return True
+            except ValueError:
+                continue
+    return False
+
+
+def _require_separate_resource(
+    kind: NuGetLocalKind,
+    path: Path,
+    roots: NuGetRootSet,
+) -> None:
+    protected = list(roots.config_paths)
+    for other_kind, paths in _resource_paths(roots).items():
+        if other_kind is not kind:
+            protected.extend(paths)
+    if any(_paths_overlap(path, other) for other in protected):
+        raise RuntimeError("NuGet 清理范围与其他资源或配置路径重叠; 已保护且禁止清理")
+
+
+def _require_live_mutation_scope(
+    kind: NuGetLocalKind,
+    executable: Path,
+    expected: Path,
+    environment: dict[str, str],
+) -> None:
+    command = (str(executable), "nuget", "locals", "all", "--list", "--force-english-output")
+    result = _run_dotnet(command, environment, timeout=60)
+    if result.returncode != 0:
+        raise RuntimeError("NuGet 无法确认全部资源边界; 已停止清理")
+    paths: dict[NuGetLocalKind, PureWindowsPath] = {}
+    for line in result.stdout.splitlines():
+        key, separator, value = line.strip().partition(":")
+        if not separator or key not in {entry.value for entry in NuGetLocalKind}:
+            continue
+        resource_kind = NuGetLocalKind(key)
+        path = PureWindowsPath(value.strip().strip('"').strip("'"))
+        if resource_kind in paths or not path.is_absolute():
+            raise RuntimeError("NuGet 资源边界不唯一或不是绝对路径; 已停止清理")
+        paths[resource_kind] = path
+    if set(paths) != set(NuGetLocalKind) or _impl._normalize(paths[kind]) != _impl._normalize(
+        expected
+    ):
+        raise RuntimeError("NuGet 资源边界不完整或所选路径改变; 已停止清理")
+    configured = nuget_roots(environment)
+    _require_separate_resource(kind, expected, configured)
+    _require_separate_resource(
+        kind,
+        expected,
+        NuGetRootSet(
+            global_packages_roots=(paths[NuGetLocalKind.GLOBAL_PACKAGES],),
+            http_cache_roots=(paths[NuGetLocalKind.HTTP_CACHE],),
+            temp_roots=(paths[NuGetLocalKind.TEMP],),
+            plugins_cache_roots=(paths[NuGetLocalKind.PLUGINS_CACHE],),
+            config_paths=configured.config_paths,
+        ),
+    )
+
+
 def _confirm_vendor_root(
     kind: NuGetLocalKind,
     executable: Path,
@@ -226,9 +327,7 @@ def _confirm_vendor_root(
 ) -> None:
     reported = _listed_local_path(kind, executable, environment)
     if reported is None or _impl._normalize(reported) != _impl._normalize(expected):
-        raise RuntimeError(
-            f"dotnet nuget locals 未确认所选 {kind.value} 路径; 已安全停止"
-        )
+        raise RuntimeError(f"dotnet nuget locals 未确认所选 {kind.value} 路径; 已安全停止")
 
 
 def _listed_local_path(
@@ -299,9 +398,7 @@ def _path_identity(
         resolved = candidate.resolve(strict=True)
     except OSError as error:
         raise RuntimeError(f"无法解析 {label}: {error}") from error
-    if os.path.normcase(os.path.abspath(candidate)) != os.path.normcase(
-        os.path.abspath(resolved)
-    ):
+    if os.path.normcase(os.path.abspath(candidate)) != os.path.normcase(os.path.abspath(resolved)):
         raise RuntimeError(f"{label} 路径包含重定向/reparse")
     if not is_local_fixed_path(resolved):
         raise RuntimeError(f"{label} 不在本地固定磁盘")
@@ -313,11 +410,7 @@ def _path_identity(
         raise RuntimeError(f"{label} 类型与预期不一致")
     if metadata.is_reparse_point or metadata.is_cloud_placeholder:
         raise RuntimeError(f"{label} 是 reparse/cloud placeholder; 不授予维护权限")
-    if (
-        metadata.volume_serial is None
-        or metadata.file_id is None
-        or metadata.file_id_kind is None
-    ):
+    if metadata.volume_serial is None or metadata.file_id is None or metadata.file_id_kind is None:
         raise RuntimeError(f"{label} 缺少稳定文件系统身份")
     return NuGetPathIdentity(
         path=resolved,
@@ -442,9 +535,7 @@ def _directory_bytes(root: Path) -> int:
 
 
 def _combined_output(stdout: str | None, stderr: str | None) -> str:
-    return "\n".join(
-        chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip()
-    )
+    return "\n".join(chunk.strip() for chunk in (stdout, stderr) if chunk and chunk.strip())
 
 
 __all__ = [

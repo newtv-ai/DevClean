@@ -11,6 +11,7 @@ policy model instead of adding one-off filename rules.
 
 from __future__ import annotations
 
+import csv
 import fnmatch
 import json
 import os
@@ -673,8 +674,15 @@ def application_process_running(app_id: str) -> bool:
     except (OSError, subprocess.SubprocessError):
         # Unknown process state must not widen deletion authority.
         return True
-    output = result.stdout.casefold()
-    return '"codex.exe"' in output or '"chatgpt.exe"' in output
+    if result.returncode != 0:
+        return True
+    try:
+        rows = list(csv.reader(result.stdout.splitlines(), strict=True))
+    except csv.Error:
+        return True
+    if not rows or any(len(row) != 5 or not row[1].isdigit() for row in rows):
+        return True
+    return any(row[0].casefold() in {"codex.exe", "chatgpt.exe"} for row in rows)
 
 
 def clear_process_cache() -> None:
