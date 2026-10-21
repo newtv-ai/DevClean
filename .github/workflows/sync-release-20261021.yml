@@ -1,0 +1,68 @@
+name: Sync verified Windows release (2026-10-21)
+
+on:
+  push:
+    branches: [release/sync-20261021]
+    paths: [.github/workflows/sync-release-20261021.yml]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the destination main
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: main
+      - name: Download the successful immutable main build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "bb1700908118a503f44c14d03449a0fc9938eafc"
+          result="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/39540236448" --jq '.head_sha + " " + .conclusion')"
+          test "$result" = "f2dbfd32bb192d9843c634c0d985ac222a95346e success"
+          gh run download 39540236448 --repo "$GITHUB_REPOSITORY" --name DevClean-Windows-x64 --dir "$RUNNER_TEMP/devclean-verified-release"
+      - name: Verify and synchronize the release payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import os
+          source = Path(os.environ["RUNNER_TEMP"]) / "devclean-verified-release"
+          expected = {
+              "DevClean.exe",
+              "licenses/CPython-LICENSE.txt",
+              "licenses/DevClean-GPL-3.0.txt",
+              "licenses/PyInstaller-COPYING.txt",
+          }
+          actual = {p.relative_to(source).as_posix() for p in source.rglob("*") if p.is_file()}
+          assert actual == expected, actual
+          executable = (source / "DevClean.exe").read_bytes()
+          assert len(executable) == 14581923
+          assert hashlib.sha256(executable).hexdigest() == "4b520c997695d3f7684ea9a03d1207e1b331d03c71233e8bf68d34b05f1f17dc"
+          destination = Path("release")
+          # This Tk notice was extracted from the verified EXE and compared
+          # after normalizing text line endings; it already matches main.
+          tk_notice = (destination / "licenses/Tk-license.terms").read_text(encoding="utf-8").encode("utf-8")
+          assert hashlib.sha256(tk_notice).hexdigest() == "2cde822b93ca16ae535c954b7dfe658b4ad10df2a193628d1b358f1765e8b198"
+          (destination / "DevClean.exe").write_bytes(executable)
+          for name in sorted(expected - {"DevClean.exe"}):
+              (destination / name).write_text((source / name).read_text(encoding="utf-8"), encoding="utf-8")
+          print("Verified EXE SHA-256: " + hashlib.sha256(executable).hexdigest())
+          PY
+          git add -- release/DevClean.exe release/licenses/CPython-LICENSE.txt release/licenses/DevClean-GPL-3.0.txt release/licenses/PyInstaller-COPYING.txt
+          if git diff --cached --quiet; then
+            echo "Release payload already synchronized"
+            exit 0
+          fi
+          git diff --cached --stat
+          git -c 'user.name=github-actions[bot]' -c 'user.email=41898282+github-actions[bot]@users.noreply.github.com' commit -m "Sync verified Windows release from f2dbfd3"
+          git push origin HEAD:main
