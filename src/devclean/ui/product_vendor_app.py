@@ -27,6 +27,7 @@ from tkinter import messagebox, ttk
 from typing import cast
 from uuid import uuid4
 
+from devclean.core.application_cleanup import scan_root_snapshot
 from devclean.core.cleanup_catalog import KnownCleanupRoot
 from devclean.core.cleanup_journal import ActionState, CleanupMode
 from devclean.core.npm_maintenance import npm_generic_scan_skip_paths
@@ -224,28 +225,28 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
             return
 
         tree.delete(*tree.get_children())
-        rows: list[tuple[int, str, str, str]] = []
+        # (size, row id, action, location, reason)
+        rows: list[tuple[int, str, str, str, str]] = []
         for item in items:
-            size = self._size_of(item)
-            label = (
-                f"[整个目录] {item.path}"
-                if item.target_kind is CleanupTargetKind.DIRECTORY
-                else item.path
+            action = app._row_action(
+                item.target_kind is CleanupTargetKind.DIRECTORY,
+                pending=False,
             )
-            rows.append((size, item.path, app._format_bytes(size), label))
+            reason = self._row_reason(item.path, item.reason)
+            rows.append((self._size_of(item), item.path, action, item.path, reason))
         for row_id, candidate in self._vendor_candidates.items():
-            size = candidate.observed_bytes
-            label = f"[官方清理] {candidate.label} · {candidate.path}"
-            rows.append((size, row_id, app._format_bytes(size), label))
+            location = f"{candidate.label} · {candidate.path}"
+            reason = self._row_reason(row_id, candidate.reason)
+            rows.append((candidate.observed_bytes, row_id, "运行官方清理命令", location, reason))
 
         rows.sort(key=lambda row: (-row[0], row[3].casefold()))
-        for index, (_sort_size, row_id, rendered_size, label) in enumerate(rows[: app._ROWS_DRAWN]):
+        for index, (size, row_id, action, location, reason) in enumerate(rows[: app._ROWS_DRAWN]):
             mark = self._TICKED if row_id in self._checked else self._UNTICKED
             tree.insert(
                 "",
                 tk.END,
                 iid=row_id,
-                values=(mark, rendered_size, label),
+                values=(mark, app._format_bytes(size), action, location, reason),
                 tags=("odd",) if index % 2 else (),
             )
 
@@ -368,6 +369,8 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
             daemon=True,
         ).start()
 
+    # One discovery snapshot per cleanup run (see app.DevCleanWindow._delete_worker).
+    @scan_root_snapshot()
     def _product_delete_worker(
         self,
         token: str,
@@ -375,22 +378,23 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
         vendor: tuple[VendorCleanupCandidate, ...],
     ) -> None:
         results: list[CleanupExecutionResult] = []
-        reasons: dict[str, int] = {}
+        failures: list[tuple[str, str]] = []
         filesystem_candidates: list[ScanCleanupCandidate] = []
 
         for item in items:
             try:
                 filesystem_candidates.append(self._candidate(item))
             except (CleanupRefusal, OSError, TypeError, ValueError) as error:
-                reason = app._reason_of(error)
-                reasons[reason] = reasons.get(reason, 0) + 1
+                failures.append((item.path, app._reason_of(error)))
 
         if filesystem_candidates:
             try:
                 plan = prepare_cleanup_plan(tuple(filesystem_candidates))
             except Exception as error:
                 reason = app._reason_of(error)
-                reasons[reason] = reasons.get(reason, 0) + len(filesystem_candidates)
+                failures.extend(
+                    (str(candidate.path), reason) for candidate in filesystem_candidates
+                )
             else:
                 for batch in plan.batches:
                     try:
@@ -405,14 +409,15 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
                         )
                     except Exception as error:
                         reason = app._reason_of(error)
-                        reasons[reason] = reasons.get(reason, 0) + len(batch.actions)
+                        failures.extend(
+                            (str(action.candidate.path), reason) for action in batch.actions
+                        )
 
         for candidate in vendor:
             try:
                 vendor_result = execute_vendor_cleanup(candidate)
             except (OSError, RuntimeError, TypeError, ValueError) as error:
-                reason = app._reason_of(error)
-                reasons[reason] = reasons.get(reason, 0) + 1
+                failures.append((_vendor_row_id(candidate), app._reason_of(error)))
                 continue
             results.append(
                 CleanupExecutionResult(
@@ -422,12 +427,12 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
                 )
             )
 
-        self._events.put(("delete_done", (token, tuple(results), reasons)))
+        self._events.put(("delete_done", (token, tuple(results), tuple(failures))))
 
     def _report_deletion(
         self,
         results: tuple[CleanupExecutionResult, ...],
-        reasons: dict[str, int],
+        failures: tuple[tuple[str, str], ...],
     ) -> None:
         successful_vendor_ids = {
             action_id
@@ -435,7 +440,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
             for action_id, state in result.action_states
             if state is ActionState.PURGED
         }
-        super()._report_deletion(results, reasons)
+        super()._report_deletion(results, failures)
         removed_rows = {
             row_id
             for row_id, candidate in self._vendor_candidates.items()

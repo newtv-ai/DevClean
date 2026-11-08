@@ -83,6 +83,7 @@ DOCKER_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def docker_roots(environment: Mapping[str, str] | None = None) -> DockerRootSet:
     env = _casefold_env(environment)
     userprofile = env.get("userprofile")

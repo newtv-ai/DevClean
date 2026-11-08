@@ -23,7 +23,11 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 from uuid import uuid4
 
-from devclean.core.application_cleanup import DecisionOwner
+from devclean.core.application_cleanup import (
+    DecisionOwner,
+    clear_process_cache,
+    scan_root_snapshot,
+)
 from devclean.core.cleanup_catalog import (
     CleanupPolicy,
     KnownCleanupRoot,
@@ -72,6 +76,9 @@ from devclean.ui.modern_app import ModernDevCleanWindow
 
 class _HybridTriageSession(TriageSession):
     """Triage session that can accept an aggregate for a known directory."""
+
+    # Files skipped because classifying them raised; they are never offered.
+    unclassified_files: int = 0
 
     def record_directory_summary(self, path: str, summary: TreeSummary) -> None:
         key = os.path.normcase(os.path.normpath(path))
@@ -270,6 +277,8 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
         self._unsure.clear()
         self._checked.clear()
         self._ai_unsure_reasons.clear()
+        self._cleanup_failures.clear()
+        self._review_approvals.clear()
         self._ai_packages.clear()
         self._ai_group_members.clear()
         self._deletable_tree.delete(*self._deletable_tree.get_children())
@@ -282,6 +291,9 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
         self._status.set("正在准备扫描…")
         self._scan_rules = self._rules
 
+        # Every scan starts from fresh process state and tool discovery; nothing
+        # cached by an earlier scan in this session is reused.
+        clear_process_cache()
         self._known_roots = discover_known_cleanup_roots(self._scan_rules.scan)
         roots = app.scan_targets(self._known_roots, drives, self._scan_rules)
         if not roots:
@@ -306,6 +318,9 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
             daemon=True,
         ).start()
 
+    # Application roots are discovered once for this whole scan instead of once
+    # per file. Cleanup runs in a different worker and rediscovers them.
+    @scan_root_snapshot()
     def _scan_worker(
         self,
         token: str,
@@ -433,57 +448,78 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
                 cancel,
                 progress,
             ):
-                if record.kind is ScanRecordKind.FILE:
-                    session.observe_path(
-                        record.path,
-                        active_rules,
-                        target_kind=CleanupTargetKind.FILE,
-                    )
-                    file_item = triage_file(
-                        record,
-                        known_roots=active_known_roots,
-                        delete_config=active_rules.delete.classification,
-                        keep_config=active_rules.keep.classification,
-                        now=now,
-                    )
-                    routed = route_unresolved_file_to_ai(file_item)
-                    session.add(app._effective_deletable_item(routed, active_rules))
-                elif record.kind is ScanRecordKind.DIRECTORY:
-                    session.observe_path(
-                        record.path,
-                        active_rules,
-                        target_kind=CleanupTargetKind.DIRECTORY,
-                    )
-                    item = triage_directory(
-                        record,
-                        known_roots=active_known_roots,
-                        delete_config=active_rules.delete.classification,
-                        keep_config=active_rules.keep.classification,
-                    )
-                    if item is not None:
-                        session.add(item)
+                try:
+                    if record.kind is ScanRecordKind.FILE:
+                        session.observe_path(
+                            record.path,
+                            active_rules,
+                            target_kind=CleanupTargetKind.FILE,
+                        )
+                        file_item = triage_file(
+                            record,
+                            known_roots=active_known_roots,
+                            delete_config=active_rules.delete.classification,
+                            keep_config=active_rules.keep.classification,
+                            now=now,
+                        )
+                        routed = route_unresolved_file_to_ai(file_item)
+                        session.add(app._effective_deletable_item(routed, active_rules))
+                    elif record.kind is ScanRecordKind.DIRECTORY:
+                        session.observe_path(
+                            record.path,
+                            active_rules,
+                            target_kind=CleanupTargetKind.DIRECTORY,
+                        )
+                        item = triage_directory(
+                            record,
+                            known_roots=active_known_roots,
+                            delete_config=active_rules.delete.classification,
+                            keep_config=active_rules.keep.classification,
+                        )
+                        if item is not None:
+                            session.add(item)
+                except Exception:
+                    # One file that cannot be classified is left out, which
+                    # protects it, and is counted; it must not end the scan.
+                    session.unclassified_files += 1
                 if time.monotonic() >= next_publish:
                     buckets = app._rows_of(session, active_rules)
                     next_publish = time.monotonic() + app._SCAN_PREVIEW_INTERVAL_SECONDS
                     self._events.put(("scan_partial", (token, buckets)))
-        except (OSError, RuntimeError, ValueError) as error:
-            self._events.put(("scan_error", (token, str(error))))
+        except Exception as error:
+            # Any failure is reported; a silently dead worker would leave the
+            # window stuck in the scanning state.
+            self._events.put(("scan_error", (token, f"{type(error).__name__}: {error}")))
             return
         self._events.put(("scan_done", (token, session, cancel.is_cancelled())))
 
     def _publish(self, session: TriageSession) -> None:
         super()._publish(session)
+        rendered = self._stop_scan_clock()
+        if rendered is None:
+            return
+        skipped = getattr(session, "unclassified_files", 0)
+        note = f"；{skipped:,} 个文件无法分类，已按保护处理、不列出" if skipped else ""
+        self._scan_duration.set(f"扫描耗时：{rendered}{note}")
+
+    def _scan_failed(self) -> None:
+        rendered = self._stop_scan_clock()
+        self._scan_duration.set(
+            "扫描耗时：—" if rendered is None else f"扫描耗时：{rendered}（扫描失败）"
+        )
+
+    def _stop_scan_clock(self) -> str | None:
+        """Stop the running scan clock and render it; ``None`` if none was running."""
+
         started = self._scan_started_at
         if started is None:
-            return
-        elapsed = max(0.0, time.monotonic() - started)
+            return None
         self._scan_started_at = None
+        elapsed = max(0.0, time.monotonic() - started)
         if elapsed < 60:
-            rendered = f"{elapsed:.1f} 秒"
-        else:
-            minutes, seconds = divmod(elapsed, 60)
-            rendered = f"{int(minutes)} 分 {seconds:.0f} 秒"
-        self._scan_duration.set(f"扫描耗时：{rendered}")
+            return f"{elapsed:.1f} 秒"
+        minutes, seconds = divmod(elapsed, 60)
+        return f"{int(minutes)} 分 {seconds:.0f} 秒"
 
 
 __all__ = ["ProductDevCleanWindow"]

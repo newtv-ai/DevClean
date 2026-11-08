@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -18,6 +17,7 @@ from devclean.platform.windows.exact_cleanup import (
     ExactRootBoundary,
     purge_exact_directory_tree,
 )
+from devclean.platform.windows.executables import path_tool
 from devclean.platform.windows.filesystem import read_file_metadata
 from devclean.platform.windows.volumes import is_local_fixed_path
 
@@ -165,7 +165,7 @@ def meson_executable(environment: Mapping[str, str] | None = None) -> str:
         return configured
     if environment is None:
         for name in (("meson.exe", "meson") if os.name == "nt" else ("meson",)):
-            located = shutil.which(name)
+            located = path_tool(name)
             if located:
                 return located
     return "meson.exe" if os.name == "nt" else "meson"

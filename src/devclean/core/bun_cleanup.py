@@ -99,6 +99,7 @@ BUN_RULES: tuple[ApplicationCleanupRule, ...] = (
 _PROJECT_METADATA_NAMES = frozenset({"bun.lock", "bun.lockb", "bunfig.toml"})
 
 
+@_impl.snapshot_roots
 def bun_roots(environment: Mapping[str, str] | None = None) -> BunRootSet:
     env = _casefold_env(environment)
     homes: list[PureWindowsPath] = []

@@ -187,6 +187,8 @@ def purge_exact_file(
     """
 
     source_path = _ordinary_absolute_path(source, "source")
+    if os.name != "nt":
+        return _purge_exact_file_posix(source_path, expected, boundary)
     root_handle, root_final = _open_boundary(boundary)
     try:
         handle = _open_exact_file(source_path)
@@ -198,6 +200,61 @@ def purge_exact_file(
             _close_handle(handle)
     finally:
         _close_handle(root_handle)
+    absent, replaced = _source_name_state(source_path, expected)
+    if not absent and not replaced:
+        raise ExactCleanupError("verified object still exists after permanent purge")
+    return ExactMutationResult(
+        source_path=source_path,
+        destination_path=None,
+        source_name_absent=absent,
+        source_name_replaced=replaced,
+        destination_matches=False,
+    )
+
+
+def _purge_exact_file_posix(
+    source_path: str,
+    expected: ExactFileSnapshot,
+    boundary: ExactRootBoundary,
+) -> ExactMutationResult:
+    """Non-Windows counterpart with the same rules, used on Linux test fixtures.
+
+    The approved root must still be the same directory; no component of the
+    path may be a link, so a replaced parent cannot redirect the deletion; the
+    file must still match the scan snapshot; and the entry is unlinked through
+    a handle on its parent only after that handle shows the same object.
+    """
+
+    root = os.path.abspath(os.fspath(boundary.path))
+    root_metadata = read_file_metadata(root)
+    if (
+        not root_metadata.is_directory
+        or root_metadata.is_reparse_point
+        or root_metadata.identity != (boundary.volume_serial, boundary.file_id)
+    ):
+        raise ExactCleanupError("approved root identity changed")
+    parent, name = os.path.split(source_path)
+    real_parent = os.path.realpath(parent)
+    real_root = os.path.realpath(root)
+    if real_parent != os.path.normpath(parent) or real_root != os.path.normpath(root):
+        raise ExactCleanupError("a link in the path would redirect the deletion")
+    if os.path.commonpath((real_parent, real_root)) != real_root:
+        raise ExactCleanupError("target is outside the approved root")
+    metadata = read_file_metadata(source_path)
+    _require_snapshot(metadata, expected)
+    # POSIX-only flags; looked up so the Windows type check accepts this module.
+    directory_flag = getattr(os, "O_DIRECTORY", None)
+    no_follow_flag = getattr(os, "O_NOFOLLOW", None)
+    if directory_flag is None or no_follow_flag is None:
+        raise ExactCleanupError("cannot open the parent folder without following links")
+    directory = os.open(parent, os.O_RDONLY | directory_flag | no_follow_flag)
+    try:
+        current = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        if (int(current.st_dev), f"{current.st_ino:x}") != metadata.identity:
+            raise ExactCleanupError("file was replaced during deletion")
+        os.unlink(name, dir_fd=directory)
+    finally:
+        os.close(directory)
     absent, replaced = _source_name_state(source_path, expected)
     if not absent and not replaced:
         raise ExactCleanupError("verified object still exists after permanent purge")

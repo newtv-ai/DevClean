@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -14,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from devclean.core.cargo_cleanup import cargo_process_running, clear_cargo_process_cache
+from devclean.platform.windows.executables import path_tool
 from devclean.platform.windows.volumes import is_local_fixed_path
 
 _GIB = 1024**3
@@ -139,7 +139,7 @@ def cargo_executable(environment: Mapping[str, str] | None = None) -> str:
         return configured
     if environment is None:
         name = "cargo.exe" if os.name == "nt" else "cargo"
-        located = shutil.which(name)
+        located = path_tool(name)
         if located:
             return located
     return "cargo.exe" if os.name == "nt" else "cargo"

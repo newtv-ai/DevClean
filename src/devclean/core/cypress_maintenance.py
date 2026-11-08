@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 
+from devclean.platform.windows.executables import path_tool
 from devclean.platform.windows.filesystem import read_file_metadata
 from devclean.platform.windows.volumes import is_local_fixed_path
 
@@ -295,7 +295,7 @@ def _resolve_cypress_tool(
         search_path = folded.get("path")
         candidates = ("cypress.cmd", "cypress.exe", "cypress") if os.name == "nt" else ("cypress",)
         resolved = next(
-            (candidate for name in candidates if (candidate := shutil.which(name, path=search_path))),
+            (candidate for name in candidates if (candidate := path_tool(name, search_path=search_path))),
             None,
         )
         if resolved is None:

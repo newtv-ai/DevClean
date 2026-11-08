@@ -148,6 +148,7 @@ _PROJECT_PROTECTED_CHILDREN = frozenset(
 )
 
 
+@_impl.snapshot_roots
 def yarn_roots(environment: Mapping[str, str] | None = None) -> YarnRootSet:
     env = _casefold_env(environment)
     classic: list[PureWindowsPath] = []
@@ -313,7 +314,17 @@ def yarn_process_running() -> bool:
     return result.returncode != 0 or "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
+def _yarn_config_files() -> tuple[str, ...]:
+    """Yarn Classic and Yarn Berry user configuration files."""
+
+    profile = _casefold_env(None).get("userprofile")
+    return _impl.config_paths(
+        os.path.join(profile, ".yarnrc") if profile else None,
+        os.path.join(profile, ".yarnrc.yml") if profile else None,
+    )
+
+
+@_impl.cached_until_config_changes(_yarn_config_files)
 def _live_yarn_paths() -> YarnRootSet:
     version = _run_yarn(("--version",))
     if version is None:

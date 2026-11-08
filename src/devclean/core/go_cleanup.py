@@ -111,6 +111,7 @@ _PROJECT_METADATA_NAMES = frozenset(
 )
 
 
+@_impl.snapshot_roots
 def go_roots(environment: Mapping[str, str] | None = None) -> GoRootSet:
     env = _casefold_env(environment)
     discovered = _effective_go_env() if environment is None else {}
@@ -284,7 +285,17 @@ def go_process_running() -> bool:
     return result.returncode != 0 or "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
+def _go_config_files() -> tuple[str, ...]:
+    """The Go env file that ``go env -w`` writes."""
+
+    env = _casefold_env(None)
+    return _impl.config_paths(
+        env.get("goenv")
+        or (os.path.join(env["appdata"], "go", "env") if env.get("appdata") else None),
+    )
+
+
+@_impl.cached_until_config_changes(_go_config_files)
 def _effective_go_env() -> dict[str, str]:
     try:
         result = subprocess.run(

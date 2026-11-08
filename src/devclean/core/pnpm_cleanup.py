@@ -205,6 +205,7 @@ _CURRENT_METADATA_DIRS = frozenset(
 )
 
 
+@_impl.snapshot_roots
 def pnpm_roots(environment: Mapping[str, str] | None = None) -> PnpmRootSet:
     env = _casefold_env(environment)
     localappdata = env.get("localappdata")
@@ -447,7 +448,19 @@ def pnpm_process_running() -> bool:
     return result.returncode != 0 or "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
+def _pnpm_config_files() -> tuple[str, ...]:
+    """pnpm's global rc file plus the npm user config it also reads."""
+
+    env = _casefold_env(None)
+    local = env.get("localappdata")
+    profile = env.get("userprofile")
+    return _impl.config_paths(
+        os.path.join(local, "pnpm", "config", "rc") if local else None,
+        env.get("npm_config_userconfig") or (os.path.join(profile, ".npmrc") if profile else None),
+    )
+
+
+@_impl.cached_until_config_changes(_pnpm_config_files)
 def _effective_pnpm_config() -> dict[str, str]:
     executable = "pnpm.cmd" if os.name == "nt" else "pnpm"
     try:
@@ -476,7 +489,7 @@ def _effective_pnpm_config() -> dict[str, str]:
     }
 
 
-@lru_cache(maxsize=1)
+@_impl.cached_until_config_changes(_pnpm_config_files)
 def _active_pnpm_store_path() -> str | None:
     executable = "pnpm.cmd" if os.name == "nt" else "pnpm"
     try:

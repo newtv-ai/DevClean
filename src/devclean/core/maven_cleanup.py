@@ -127,6 +127,7 @@ _REPO_ARG_PATTERN = re.compile(
 )
 
 
+@_impl.snapshot_roots
 def maven_roots(environment: Mapping[str, str] | None = None) -> MavenRootSet:
     env = _casefold_env(environment)
     home = env.get("userprofile")

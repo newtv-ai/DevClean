@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -31,6 +30,7 @@ from devclean.core.go_cleanup import (
     go_process_running,
     go_roots,
 )
+from devclean.platform.windows.executables import path_tool
 from devclean.platform.windows.filesystem import read_file_metadata
 from devclean.platform.windows.volumes import is_local_fixed_path
 
@@ -325,7 +325,7 @@ def _resolve_go_tool(environment: Mapping[str, str] | None) -> GoPathIdentity:
     raw = go_executable(environment)
     candidate = Path(raw).expanduser()
     if not candidate.is_absolute():
-        resolved = shutil.which(raw, path=_environment_value(env, "PATH"))
+        resolved = path_tool(raw, search_path=_environment_value(env, "PATH"))
         if resolved is None:
             raise FileNotFoundError("未找到 Go CLI")
         candidate = Path(resolved)

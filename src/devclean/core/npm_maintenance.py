@@ -8,7 +8,6 @@ an abbreviated npx key as deletion authority.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -20,6 +19,7 @@ from devclean.core.npm_cleanup import (
     match_npm_rule,
     npm_process_running,
 )
+from devclean.platform.windows.executables import path_tool
 from devclean.platform.windows.filesystem import read_file_metadata
 from devclean.platform.windows.volumes import is_local_fixed_path
 
@@ -663,7 +663,7 @@ def _resolve_npm_tool(environment: Mapping[str, str] | None) -> NpmPathIdentity:
     raw = folded.get("devclean_npm_exe") or ("npm.cmd" if os.name == "nt" else "npm")
     candidate = Path(raw)
     if not candidate.is_absolute():
-        resolved = shutil.which(raw, path=folded.get("path"))
+        resolved = path_tool(raw, search_path=folded.get("path"))
         if resolved is None:
             raise FileNotFoundError("未找到 npm CLI")
         candidate = Path(resolved)

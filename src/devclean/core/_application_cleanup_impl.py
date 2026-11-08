@@ -16,12 +16,16 @@ import fnmatch
 import json
 import os
 import subprocess
-from collections.abc import Mapping
+import threading
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from functools import lru_cache
+from functools import lru_cache, wraps
 from pathlib import Path, PureWindowsPath
+from typing import Protocol, cast
 
 _MIB = 1024**2
 _GIB = 1024**3
@@ -113,6 +117,165 @@ class ApplicationPolicyDecision:
     @property
     def requires_process_closed(self) -> bool:
         return self.rule.requires_process_closed
+
+
+class RootBuilder[T](Protocol):
+    def __call__(self, environment: Mapping[str, str] | None = None) -> T: ...
+
+
+# A scan classifies every file against every application profile, and each
+# profile rebuilds its roots from the environment, registry and vendor files.
+# Inside one scan those inputs are fixed, so each builder runs once per scan.
+# Execution-time checks run outside a scan and always rediscover.
+_scan_roots: ContextVar[dict[object, object] | None] = ContextVar("_scan_roots", default=None)
+
+
+@contextmanager
+def scan_root_snapshot() -> Iterator[None]:
+    """Reuse application root discovery for the duration of one scan."""
+
+    token = _scan_roots.set({})
+    try:
+        yield
+    finally:
+        _scan_roots.reset(token)
+
+
+def snapshot_roots[T](builder: RootBuilder[T]) -> RootBuilder[T]:
+    """Let *builder* reuse its live-environment result inside a scan snapshot."""
+
+    @wraps(builder)
+    def snapshotted(environment: Mapping[str, str] | None = None) -> T:
+        snapshot = _scan_roots.get()
+        if snapshot is None or environment is not None:
+            return builder(environment)
+        if builder not in snapshot:
+            snapshot[builder] = builder(None)
+        return cast(T, snapshot[builder])
+
+    return snapshotted
+
+
+# Answers shared by every caller in one scan or cleanup run (see run_cached).
+_run_cache: dict[object, object] = {}
+
+
+def run_cached[T](key: object, build: Callable[[], T]) -> T:
+    """Share *build*'s answer across one scan or cleanup run.
+
+    Inside :func:`scan_root_snapshot` the answer lasts exactly that run, so a
+    cleanup sees the state at its own start rather than the scan's. Outside a
+    snapshot it is kept until :func:`clear_process_cache`.
+    """
+
+    snapshot = _scan_roots.get()
+    store = snapshot if snapshot is not None else _run_cache
+    marker = ("run_cached", key)
+    if marker not in store:
+        store[marker] = build()
+    return cast(T, store[marker])
+
+
+def forget_run_cached(*keys: object) -> None:
+    """Drop answers kept outside a run; a run keeps its own until it ends."""
+
+    for key in keys:
+        _run_cache.pop(("run_cached", key), None)
+
+
+def first_in_run(key: object) -> bool:
+    """True the first time *key* is seen in the current snapshot; always True outside one."""
+
+    snapshot = _scan_roots.get()
+    if snapshot is None:
+        return True
+    marker = ("first_in_run", key)
+    if marker in snapshot:
+        return False
+    snapshot[marker] = True
+    return True
+
+
+class ConfigCachedQuery[T]:
+    """A tool query reused until that tool's own configuration files change.
+
+    Package managers report where their caches live only when asked, which
+    starts the tool. Asking again for every deletion would start every package
+    manager for every file; never asking again would miss a location changed
+    after the scan. The answer is therefore reused only while the environment
+    and the stat signature of the tool's configuration files are unchanged.
+    """
+
+    def __init__(
+        self,
+        query: Callable[[], T],
+        config_files: Callable[[], Iterable[str]],
+    ) -> None:
+        self._query = query
+        self._config_files = config_files
+        self._lock = threading.Lock()
+        self._answer: tuple[tuple[object, ...], T] | None = None
+        self.__doc__ = query.__doc__
+
+    def __call__(self) -> T:
+        signature = _config_signature(self._config_files())
+        with self._lock:
+            answer = self._answer
+        if answer is not None and answer[0] == signature:
+            return answer[1]
+        value = self._query()
+        with self._lock:
+            self._answer = (signature, value)
+        return value
+
+    def cache_clear(self) -> None:
+        with self._lock:
+            self._answer = None
+
+
+def cached_until_config_changes[T](
+    config_files: Callable[[], Iterable[str]],
+) -> Callable[[Callable[[], T]], ConfigCachedQuery[T]]:
+    """Decorate a zero-argument tool query; see :class:`ConfigCachedQuery`."""
+
+    def decorate(query: Callable[[], T]) -> ConfigCachedQuery[T]:
+        return ConfigCachedQuery(query, config_files)
+
+    return decorate
+
+
+def _config_signature(paths: Iterable[str]) -> tuple[object, ...]:
+    signature: list[object] = [hash(frozenset(os.environ.items()))]
+    for path in paths:
+        try:
+            status = os.stat(path)
+        except OSError:
+            signature.append((path, None))
+        else:
+            signature.append((path, status.st_size, status.st_mtime_ns))
+    return tuple(signature)
+
+
+def config_paths(*candidates: str | None) -> tuple[str, ...]:
+    """Drop unset candidates; a missing file still counts, so creating it is noticed."""
+
+    return tuple(candidate for candidate in candidates if candidate)
+
+
+def file_time_utc(value_ns: int | None) -> datetime | None:
+    """Convert a file time, or ``None`` when Python cannot represent it here.
+
+    NTFS stores times from 1601 to 30828. Python rejects some of those -- on
+    Windows anything before 1970 -- with OSError, OverflowError or ValueError.
+    One such file must not stop a scan; its age is simply unknown.
+    """
+
+    if value_ns is None:
+        return None
+    try:
+        return datetime.fromtimestamp(value_ns / 1_000_000_000, tz=UTC)
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -452,6 +615,7 @@ CODEX_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@snapshot_roots
 def application_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[ApplicationRoot, ...]:
@@ -622,9 +786,7 @@ def _codex_activity_cached(codex_home: str) -> datetime | None:
         except OSError:
             continue
         latest_ns = observed if latest_ns is None else max(latest_ns, observed)
-    if latest_ns is None:
-        return None
-    return datetime.fromtimestamp(latest_ns / 1_000_000_000, tz=UTC)
+    return file_time_utc(latest_ns)
 
 
 def _latest_codex_history_timestamp(path: Path) -> datetime | None:
@@ -688,6 +850,7 @@ def application_process_running(app_id: str) -> bool:
 def clear_process_cache() -> None:
     application_process_running.cache_clear()
     _codex_activity_cached.cache_clear()
+    _run_cache.clear()
 
 
 def process_guard_allows(
@@ -754,7 +917,14 @@ def _casefold_env(environment: Mapping[str, str] | None) -> dict[str, str]:
 
 
 def _normalize(path: str | os.PathLike[str] | PureWindowsPath) -> str:
-    rendered = str(PureWindowsPath(os.fspath(path)))
+    return _normalize_text(os.fspath(path))
+
+
+# Pure string work. Every scanned file is compared with the same few hundred
+# audited roots, so caching avoids re-parsing those roots for each file.
+@lru_cache(maxsize=4096)
+def _normalize_text(path: str) -> str:
+    rendered = str(PureWindowsPath(path))
     return rendered.rstrip("\\/").casefold()
 
 

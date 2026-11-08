@@ -29,6 +29,7 @@ from devclean.core._application_cleanup_impl import (
     RebuildCost,
     effective_idle_days,
 )
+from devclean.core.live_owners import forget_live_state, shared_running_processes
 
 _MIB = 1024**2
 
@@ -135,6 +136,7 @@ ANDROID_SDK_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def android_sdk_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[PureWindowsPath, ...]:
@@ -282,33 +284,27 @@ def android_sdk_process_running() -> bool:
     return "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
 def _running_sdk_roots() -> tuple[str, ...]:
     """Collect explicit ``sdkmanager --sdk_root`` roots from running Java CLIs."""
 
     if os.name != "nt":
         return ()
-    script = (
-        "$p=Get-CimInstance Win32_Process | Where-Object { "
-        "$_.Name -match '^(?i:javaw?\\.exe)$' -and "
-        "$_.CommandLine -match '(?i)(?:SdkManagerCli|com\\.android\\.sdkmanager\\.Main)' }; "
-        "$p | ForEach-Object { $_.CommandLine }"
-    )
-    try:
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=6,
+    # One process list per scan or cleanup run, shared by every application.
+    lines = [
+        process.command_line
+        for process in shared_running_processes()
+        if (
+            re.fullmatch(r"javaw?\.exe", process.name, re.IGNORECASE)
+            and re.search(
+                r"(?:SdkManagerCli|com\.android\.sdkmanager\.Main)",
+                process.command_line,
+                re.IGNORECASE,
+            )
         )
-    except (OSError, subprocess.SubprocessError):
-        return ()
-    if result.returncode != 0:
-        return ()
+    ]
 
     found: list[str] = []
-    for line in result.stdout.splitlines():
+    for line in lines:
         value = _sdk_root_from_command_line(line)
         if value:
             found.append(value)
@@ -317,7 +313,7 @@ def _running_sdk_roots() -> tuple[str, ...]:
 
 def clear_android_sdk_process_cache() -> None:
     android_sdk_process_running.cache_clear()
-    _running_sdk_roots.cache_clear()
+    forget_live_state()
 
 
 def _sdk_root_from_command_line(command_line: str) -> str | None:

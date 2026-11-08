@@ -41,6 +41,8 @@ _HARD_PROTECTION_TAGS = frozenset(
         "application_state",
         "system_managed",
         "application_keep",
+        "installed_program",
+        "system_installer_cache",
     }
 )
 

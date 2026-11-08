@@ -396,6 +396,7 @@ CURSOR_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def cursor_roots(environment: Mapping[str, str] | None = None) -> CursorRootSet:
     env = _casefold_env(environment)
     appdata = env.get("appdata")

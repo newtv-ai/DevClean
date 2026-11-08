@@ -31,6 +31,7 @@ from devclean.core._application_cleanup_impl import (
     effective_idle_days,
 )
 from devclean.core.chrome_cleanup import CHROME_RULES
+from devclean.core.live_owners import forget_live_state, shared_running_processes
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +92,7 @@ VIVALDI_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def vivaldi_roots(environment: Mapping[str, str] | None = None) -> VivaldiRootSet:
     env = _casefold_env(environment)
     localappdata = env.get("localappdata")
@@ -264,32 +266,21 @@ def vivaldi_process_running() -> bool:
     return "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
 def _running_override_roots() -> tuple[
     tuple[PureWindowsPath, ...], tuple[PureWindowsPath, ...]
 ]:
     if os.name != "nt":
         return (), ()
-    script = (
-        "$p=Get-CimInstance Win32_Process | Where-Object { $_.Name -ieq 'vivaldi.exe' }; "
-        "$p | ForEach-Object { \"{0}`t{1}\" -f $_.ExecutablePath,$_.CommandLine }"
-    )
-    try:
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=6,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return (), ()
-    if result.returncode != 0:
-        return (), ()
+    # One process list per scan or cleanup run, shared by every application.
+    lines = [
+        process.command_line
+        for process in shared_running_processes()
+        if process.name.casefold() == "vivaldi.exe"
+    ]
 
     data: list[PureWindowsPath] = []
     cache: list[PureWindowsPath] = []
-    for line in result.stdout.splitlines():
+    for line in lines:
         executable, _, command_line = line.partition("\t")
         value = _switch_path(command_line, "user-data-dir")
         if value:
@@ -319,7 +310,7 @@ def _standalone_user_data_root(executable: str) -> PureWindowsPath | None:
 
 def clear_vivaldi_process_cache() -> None:
     vivaldi_process_running.cache_clear()
-    _running_override_roots.cache_clear()
+    forget_live_state()
 
 
 def _switch_path(command_line: str, switch: str) -> str | None:

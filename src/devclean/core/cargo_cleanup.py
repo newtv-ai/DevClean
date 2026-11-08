@@ -137,6 +137,7 @@ _PROJECT_METADATA_NAMES = frozenset({"cargo.toml", "cargo.lock"})
 _PROJECT_CONFIG_NAMES = frozenset({"config", "config.toml"})
 
 
+@_impl.snapshot_roots
 def cargo_roots(environment: Mapping[str, str] | None = None) -> CargoRootSet:
     env = _casefold_env(environment)
     home = env.get("devclean_cargo_home") or env.get("cargo_home")

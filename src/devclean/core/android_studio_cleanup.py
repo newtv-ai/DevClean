@@ -28,6 +28,7 @@ from devclean.core._application_cleanup_impl import (
     effective_idle_days,
 )
 from devclean.core.jetbrains_cleanup import JETBRAINS_RULES
+from devclean.core.live_owners import forget_live_state, shared_running_processes
 
 _SELECTOR_RE = re.compile(
     r"^AndroidStudio(?:Preview)?\d+(?:\.\d+){1,3}$",
@@ -85,6 +86,7 @@ _ANDROID_STUDIO_CONFIG_RULE = _RULE_BY_ID["android-studio-config-state"]
 _ANDROID_STUDIO_PLUGIN_RULE = _RULE_BY_ID["android-studio-user-plugins"]
 
 
+@_impl.snapshot_roots
 def android_studio_roots(
     environment: Mapping[str, str] | None = None,
 ) -> AndroidStudioRootSet:
@@ -322,30 +324,18 @@ def android_studio_process_running() -> bool:
     return "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
 def _running_override_paths() -> dict[str, str]:
     if os.name != "nt":
         return {}
-    script = (
-        "$p=Get-CimInstance Win32_Process | Where-Object { "
-        f"$_.Name -match '{_PROCESS_NAME_REGEX}' }}; "
-        "$p | ForEach-Object { $_.CommandLine }"
-    )
-    try:
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=6,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return {}
-    if result.returncode != 0:
-        return {}
+    # One process list per scan or cleanup run, shared by every application.
+    lines = [
+        process.command_line
+        for process in shared_running_processes()
+        if re.search(_PROCESS_NAME_REGEX, process.name)
+    ]
 
     found: dict[str, str] = {}
-    for line in result.stdout.splitlines():
+    for line in lines:
         for property_name, kind in _PATH_PROPERTIES.items():
             value = _vm_property(line, property_name)
             if value and PureWindowsPath(value).is_absolute():
@@ -355,7 +345,7 @@ def _running_override_paths() -> dict[str, str]:
 
 def clear_android_studio_process_cache() -> None:
     android_studio_process_running.cache_clear()
-    _running_override_paths.cache_clear()
+    forget_live_state()
 
 
 def _existing_selectors(

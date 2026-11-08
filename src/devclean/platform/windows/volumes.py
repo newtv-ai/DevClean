@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import stat
 from ctypes import wintypes
 from enum import IntEnum
 from pathlib import Path
@@ -58,7 +59,7 @@ def has_reparse_ancestor(path: Path) -> bool:
         except OSError:
             return True
         attributes = int(getattr(metadata, "st_file_attributes", 0))
-        if attributes & FILE_ATTRIBUTE_REPARSE_POINT:
+        if attributes & FILE_ATTRIBUTE_REPARSE_POINT or stat.S_ISLNK(metadata.st_mode):
             return True
         candidate = candidate.parent
     return False

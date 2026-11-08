@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from urllib.parse import urlparse
+
+from devclean.platform.windows.executables import path_tool
 
 _BATCH_SIZE = 40
 _ALLOWED_VM_TYPES = frozenset({"wsl", "hyperv"})
@@ -72,7 +73,7 @@ def podman_executable(environment: Mapping[str, str] | None = None) -> str:
         return configured
     if environment is None:
         for name in ("podman.exe", "podman") if os.name == "nt" else ("podman",):
-            located = shutil.which(name)
+            located = path_tool(name)
             if located:
                 return located
     return "podman.exe" if os.name == "nt" else "podman"

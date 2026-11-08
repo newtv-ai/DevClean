@@ -228,6 +228,7 @@ _NPM_LEGACY_DEBUG_RULE = ApplicationCleanupRule(
 )
 
 
+@_impl.snapshot_roots
 def npm_roots(environment: Mapping[str, str] | None = None) -> NpmRootSet:
     env = _casefold_env(environment)
     localappdata = env.get("localappdata")
@@ -437,7 +438,22 @@ def npm_process_running() -> bool:
     return "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
+def _npm_config_files() -> tuple[str, ...]:
+    """npm's user and global configuration files (``npm config set`` writes these)."""
+
+    env = _casefold_env(None)
+    profile = env.get("userprofile")
+    prefix = env.get("npm_config_prefix") or (
+        os.path.join(env["appdata"], "npm") if env.get("appdata") else None
+    )
+    return _impl.config_paths(
+        env.get("npm_config_userconfig") or (os.path.join(profile, ".npmrc") if profile else None),
+        env.get("npm_config_globalconfig")
+        or (os.path.join(prefix, "etc", "npmrc") if prefix else None),
+    )
+
+
+@_impl.cached_until_config_changes(_npm_config_files)
 def _effective_npm_config() -> dict[str, str]:
     """Read non-secret effective paths from npm once when the CLI is available."""
 

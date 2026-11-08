@@ -2,6 +2,16 @@
 
 Audited: 2026-08-20
 
+> **Later changes (current behaviour).** Since `c084637` (2026-08-22) the product
+> scan routes generic files tagged byproduct/cache-directory/path-heuristic/unknown
+> into the AI-review list (`core/review_routing.py`). They are listed for the user or
+> AI to decide, never ticked and never deleted automatically; hard protections
+> (program payload, installed add-ons, application state, system/vendor roots, temp
+> roots) still never enter that list. Since 2026-11-07, standalone installers saved
+> directly in the user's Downloads folder are USER_REVIEW. Rule 3 below and the
+> "Generic authority removed" list describe the state on 2026-08-20. See
+> `docs/cleanup-safety-fixes-2026-11-07.md`.
+
 ## Product conclusion
 
 DevClean must not outsource technical uncertainty to a non-expert user or automatically spend paid AI calls on generic unknown paths. Generic path/name heuristics remain useful for explanation, but they do not by themselves create deletion authority.

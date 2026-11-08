@@ -83,6 +83,7 @@ OLLAMA_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def ollama_roots(environment: Mapping[str, str] | None = None) -> OllamaRootSet:
     env = _casefold_env(environment)
     userprofile = env.get("userprofile")

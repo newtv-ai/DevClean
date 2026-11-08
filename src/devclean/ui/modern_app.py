@@ -558,23 +558,27 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         holder.columnconfigure(0, weight=1)
         tree = ttk.Treeview(
             holder,
-            columns=("check", "size", "path"),
+            columns=app.ROW_COLUMNS,
             show="headings",
             style="Modern.Treeview",
             height=15,
         )
         tree.heading("check", text="", anchor=tk.CENTER)
         tree.heading("size", text="大小", anchor=tk.E)
+        tree.heading("action", text="动作", anchor=tk.W)
         tree.heading("path", text="位置", anchor=tk.W)
+        tree.heading("reason", text="原因", anchor=tk.W)
         tree.column("check", width=38, anchor=tk.CENTER, stretch=False)
         tree.column("size", width=96, anchor=tk.E, stretch=False)
+        tree.column("action", width=130, anchor=tk.W, stretch=False)
         tree.column(
             "path",
-            width=440,
+            width=380,
             minwidth=220,
             anchor=tk.W,
             stretch=True,
         )
+        tree.column("reason", width=360, minwidth=160, anchor=tk.W, stretch=True)
         tree.tag_configure("odd", background="#FAFBFC")
         tree.grid(row=0, column=0, sticky="nsew")
         vertical = ttk.Scrollbar(holder, orient=tk.VERTICAL, command=tree.yview)
@@ -636,6 +640,8 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         self._unsure.clear()
         self._checked.clear()
         self._ai_unsure_reasons.clear()
+        self._cleanup_failures.clear()
+        self._review_approvals.clear()
         self._ai_packages.clear()
         self._ai_group_members.clear()
         self._deletable_tree.delete(*self._deletable_tree.get_children())

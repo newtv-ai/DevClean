@@ -71,6 +71,7 @@ VISUAL_STUDIO_INSTALLER_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def visual_studio_installer_roots(
     environment: Mapping[str, str] | None = None,
 ) -> VisualStudioInstallerRootSet:

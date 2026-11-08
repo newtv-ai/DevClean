@@ -93,12 +93,23 @@ def test_generic_filename_cache_and_development_hints_are_protected(tmp_path: Pa
         tmp_path / "cache" / "payload.bin",
         tmp_path / "huggingface" / "opaque.bin",
         tmp_path / "target" / "artifact.blob",
-        tmp_path / "Downloads" / "installer.iso",
         tmp_path / "unknown" / "mystery.blob",
     )
     for path in cases:
         path.parent.mkdir(parents=True, exist_ok=True)
         _assert_protected(_triage(path))
+
+
+def test_disk_image_waits_for_an_ai_or_user_decision(tmp_path: Path) -> None:
+    # An ISO may be old install media or a disk a VM still mounts: never ticked,
+    # never deleted until the AI or the user approves it.
+    image = tmp_path / "Downloads" / "installer.iso"
+    image.parent.mkdir(parents=True)
+    item = _triage(image)
+
+    assert item.lane is ReviewLane.AI_REVIEW
+    assert app.is_ai_review_eligible(item)
+    assert not app.is_direct_cleanup_eligible(item)
 
 
 def test_legacy_age_based_root_is_protected_regardless_of_mtime(tmp_path: Path) -> None:

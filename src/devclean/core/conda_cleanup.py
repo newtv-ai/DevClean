@@ -114,6 +114,7 @@ CONDA_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def conda_roots(environment: Mapping[str, str] | None = None) -> CondaRootSet:
     env = _casefold_env(environment)
     package_caches: list[PureWindowsPath] = []
@@ -286,7 +287,20 @@ def conda_process_running() -> bool:
     return result.returncode != 0 or "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
+def _conda_config_files() -> tuple[str, ...]:
+    """Conda's user ``.condarc`` locations plus an explicit ``CONDARC``."""
+
+    env = _casefold_env(None)
+    profile = env.get("userprofile")
+    return _impl.config_paths(
+        env.get("condarc"),
+        os.path.join(profile, ".condarc") if profile else None,
+        os.path.join(profile, ".conda", "condarc") if profile else None,
+        os.path.join(profile, ".conda", ".condarc") if profile else None,
+    )
+
+
+@_impl.cached_until_config_changes(_conda_config_files)
 def _effective_conda_info() -> dict[str, object]:
     executable = conda_executable()
     try:

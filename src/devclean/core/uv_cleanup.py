@@ -90,6 +90,7 @@ UV_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def uv_roots(environment: Mapping[str, str] | None = None) -> UvRootSet:
     env = _casefold_env(environment)
     cache_roots: list[PureWindowsPath] = []
@@ -236,7 +237,18 @@ def uv_process_running() -> bool:
     return result.returncode != 0 or "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
+def _uv_config_files() -> tuple[str, ...]:
+    """uv's user and system ``uv.toml`` files."""
+
+    env = _casefold_env(None)
+    return _impl.config_paths(
+        env.get("uv_config_file"),
+        os.path.join(env["appdata"], "uv", "uv.toml") if env.get("appdata") else None,
+        os.path.join(env["programdata"], "uv", "uv.toml") if env.get("programdata") else None,
+    )
+
+
+@_impl.cached_until_config_changes(_uv_config_files)
 def _active_uv_cache_dir() -> str | None:
     executable = "uv.exe" if os.name == "nt" else "uv"
     try:

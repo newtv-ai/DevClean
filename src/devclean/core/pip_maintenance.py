@@ -10,7 +10,6 @@ from that number.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -23,6 +22,7 @@ from devclean.core.pip_cleanup import (
     pip_process_running,
     pip_roots,
 )
+from devclean.platform.windows.executables import path_tool
 from devclean.platform.windows.filesystem import read_file_metadata
 from devclean.platform.windows.volumes import is_local_fixed_path
 
@@ -246,10 +246,7 @@ def _resolve_command_prefix(
     raw_executable = raw_prefix[0]
     candidate = Path(raw_executable).expanduser()
     if not candidate.is_absolute():
-        resolved = shutil.which(
-            raw_executable,
-            path=_environment_value(environment, "PATH"),
-        )
+        resolved = path_tool(raw_executable, search_path=_environment_value(environment, "PATH"))
         if resolved is None:
             raise FileNotFoundError(f"未找到 pip 命令: {raw_executable}")
         candidate = Path(resolved)

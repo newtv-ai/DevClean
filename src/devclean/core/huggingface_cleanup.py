@@ -99,6 +99,7 @@ HUGGINGFACE_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def huggingface_roots(
     environment: Mapping[str, str] | None = None,
 ) -> HuggingFaceRootSet:

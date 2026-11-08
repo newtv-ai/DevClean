@@ -5,12 +5,12 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from devclean.platform.windows.executables import path_tool
 from devclean.platform.windows.volumes import is_local_fixed_path
 
 
@@ -340,7 +340,7 @@ def git_executable(environment: Mapping[str, str] | None = None) -> str:
         return configured
     if environment is None:
         name = "git.exe" if os.name == "nt" else "git"
-        located = shutil.which(name)
+        located = path_tool(name)
         if located:
             return located
     return "git.exe" if os.name == "nt" else "git"

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import math
 import os
-import shutil
 import subprocess
 import tempfile
 from collections.abc import Mapping
@@ -25,6 +24,7 @@ from devclean.core.pnpm_cleanup import (
     pnpm_process_running,
     pnpm_roots,
 )
+from devclean.platform.windows.executables import path_tool
 from devclean.platform.windows.filesystem import read_file_metadata
 from devclean.platform.windows.volumes import is_local_fixed_path
 
@@ -272,7 +272,7 @@ def _resolve_pnpm_tool(
     )
     candidate = Path(raw).expanduser()
     if not candidate.is_absolute():
-        resolved = shutil.which(raw, path=folded.get("path"))
+        resolved = path_tool(raw, search_path=folded.get("path"))
         if resolved is None:
             raise FileNotFoundError("未找到 pnpm CLI")
         candidate = Path(resolved)

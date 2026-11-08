@@ -118,6 +118,7 @@ VISUAL_STUDIO_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def visual_studio_roots(
     environment: Mapping[str, str] | None = None,
 ) -> VisualStudioRootSet:

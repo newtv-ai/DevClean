@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -21,6 +20,7 @@ from devclean.core.huggingface_cleanup import (
     huggingface_process_running,
     huggingface_roots,
 )
+from devclean.platform.windows.executables import path_tool
 from devclean.platform.windows.filesystem import read_file_metadata
 from devclean.platform.windows.volumes import is_local_fixed_path
 
@@ -748,7 +748,7 @@ def _resolve_hf_tool(environment: Mapping[str, str] | None) -> HuggingFacePathId
     raw = hf_executable(environment)
     candidate = Path(raw)
     if not candidate.is_absolute():
-        resolved = shutil.which(raw, path=folded.get("path"))
+        resolved = path_tool(raw, search_path=folded.get("path"))
         if resolved is None:
             raise FileNotFoundError(
                 "未找到 Hugging Face `hf` CLI; 需要当前支持 `hf cache ls/rm/prune --format json` 的版本"

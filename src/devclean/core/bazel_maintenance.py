@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+
+from devclean.platform.windows.executables import path_tool
 
 _GIB = 1024**3
 _RECOMMEND_BYTES = 2 * _GIB
@@ -136,7 +137,7 @@ def bazel_executable(environment: Mapping[str, str] | None = None) -> str:
             "bazelisk.exe" if os.name == "nt" else "bazelisk",
             "bazel.exe" if os.name == "nt" else "bazel",
         ):
-            located = shutil.which(name)
+            located = path_tool(name)
             if located:
                 return located
     return "bazel.exe" if os.name == "nt" else "bazel"

@@ -28,6 +28,7 @@ from devclean.core._application_cleanup_impl import (
     PolicyAction,
     RebuildCost,
 )
+from devclean.core.live_owners import forget_live_state, shared_running_processes
 
 # These names are useful for inventory/explanation only. Gradle's own cleanup
 # decisions use effective CacheConfigurations plus usage markers and version
@@ -166,6 +167,7 @@ GRADLE_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def gradle_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[PureWindowsPath, ...]:
@@ -300,31 +302,21 @@ def gradle_process_running() -> bool:
     return "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
 def _running_override_paths() -> tuple[str, ...]:
     if os.name != "nt":
         return ()
-    script = (
-        "$p=Get-CimInstance Win32_Process | Where-Object { "
-        "$_.Name -match '^(?i:javaw?\\.exe)$' -and "
-        f"$_.CommandLine -match '{_GRADLE_COMMAND_RE}' }}; "
-        "$p | ForEach-Object { $_.CommandLine }"
-    )
-    try:
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=6,
+    # One process list per scan or cleanup run, shared by every application.
+    lines = [
+        process.command_line
+        for process in shared_running_processes()
+        if (
+            re.fullmatch(r"javaw?\.exe", process.name, re.IGNORECASE)
+            and re.search(_GRADLE_COMMAND_RE, process.command_line)
         )
-    except (OSError, subprocess.SubprocessError):
-        return ()
-    if result.returncode != 0:
-        return ()
+    ]
 
     found: list[str] = []
-    for line in result.stdout.splitlines():
+    for line in lines:
         value = _gradle_user_home_from_command_line(line)
         if value:
             found.append(value)
@@ -333,7 +325,7 @@ def _running_override_paths() -> tuple[str, ...]:
 
 def clear_gradle_process_cache() -> None:
     gradle_process_running.cache_clear()
-    _running_override_paths.cache_clear()
+    forget_live_state()
 
 
 def _dynamic_report_roots_for(

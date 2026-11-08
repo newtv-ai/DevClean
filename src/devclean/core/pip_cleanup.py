@@ -75,6 +75,7 @@ PIP_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def pip_roots(environment: Mapping[str, str] | None = None) -> PipRootSet:
     env = _casefold_env(environment)
     managed: list[PureWindowsPath] = []
@@ -212,7 +213,22 @@ def pip_process_running() -> bool:
     return result.returncode != 0 or "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
+def _pip_config_files() -> tuple[str, ...]:
+    """pip's configuration files on Windows (user, legacy user and site-wide)."""
+
+    env = _casefold_env(None)
+    appdata = env.get("appdata")
+    profile = env.get("userprofile")
+    programdata = env.get("programdata")
+    return _impl.config_paths(
+        env.get("pip_config_file"),
+        os.path.join(appdata, "pip", "pip.ini") if appdata else None,
+        os.path.join(profile, "pip", "pip.ini") if profile else None,
+        os.path.join(programdata, "pip", "pip.ini") if programdata else None,
+    )
+
+
+@_impl.cached_until_config_changes(_pip_config_files)
 def _active_pip_cache_dir() -> str | None:
     for command in pip_command_candidates():
         try:

@@ -49,6 +49,7 @@ PLAYWRIGHT_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def playwright_roots(
     environment: Mapping[str, str] | None = None,
 ) -> PlaywrightRootSet:

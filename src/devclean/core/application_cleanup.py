@@ -9,7 +9,7 @@ real user-preference decision, and KEEP remains non-deletable.
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import PureWindowsPath
 
@@ -25,6 +25,9 @@ from devclean.core._application_cleanup_impl import (
     PolicyAction,
     RebuildCost,
     effective_idle_days,
+    file_time_utc,
+    scan_root_snapshot,
+    snapshot_roots,
 )
 from devclean.core.android_avd_cleanup import (
     ANDROID_AVD_RULES,
@@ -100,6 +103,7 @@ from devclean.core.claude_cleanup import (
     claude_process_running,
     claude_scan_roots,
     clear_claude_process_cache,
+    clear_claude_settings_cache,
     evaluate_claude_path,
     match_claude_rule,
 )
@@ -985,123 +989,86 @@ def evaluate_application_path(
     return decision
 
 
+PROTECTED_OWNER_REFUSAL = "the target now belongs to protected application data"
+RUNNING_OWNER_REFUSAL = "owning application is running; close it before cleaning this target"
+
+# One row per audited application: its live-process probe and the function
+# that forgets everything cached for it (process state and tool discovery).
+# Probes are looked up at call time so tests can replace them.
+_APPLICATION_STATE: dict[str, tuple[Callable[[], bool], Callable[[], None]]] = {
+    "android_avd": (lambda: android_avd_process_running(), clear_android_avd_process_cache),
+    "android_sdk": (lambda: android_sdk_process_running(), clear_android_sdk_process_cache),
+    "gradle": (lambda: gradle_process_running(), clear_gradle_process_cache),
+    "android_studio": (
+        lambda: android_studio_process_running(),
+        clear_android_studio_process_cache,
+    ),
+    "toolbox": (lambda: toolbox_process_running(), clear_toolbox_process_cache),
+    "jetbrains": (lambda: jetbrains_process_running(), clear_jetbrains_process_cache),
+    "firefox": (lambda: firefox_process_running(), clear_firefox_process_cache),
+    "opera": (lambda: opera_process_running(), clear_opera_process_cache),
+    "vivaldi": (lambda: vivaldi_process_running(), clear_vivaldi_process_cache),
+    "brave": (lambda: brave_process_running(), clear_brave_process_cache),
+    "edge": (lambda: edge_process_running(), clear_edge_process_cache),
+    "chrome": (lambda: chrome_process_running(), clear_chrome_process_cache),
+    "visual_studio": (lambda: visual_studio_process_running(), clear_visual_studio_process_cache),
+    "visual_studio_installer": (
+        lambda: visual_studio_installer_process_running(),
+        clear_visual_studio_installer_process_cache,
+    ),
+    "electron": (lambda: electron_process_running(), clear_electron_process_cache),
+    "cypress": (lambda: cypress_process_running(), clear_cypress_process_cache),
+    "puppeteer": (lambda: puppeteer_process_running(), clear_puppeteer_process_cache),
+    "playwright": (lambda: playwright_process_running(), clear_playwright_process_cache),
+    "docker": (lambda: docker_process_running(), clear_docker_process_cache),
+    "ollama": (lambda: ollama_process_running(), clear_ollama_process_cache),
+    "huggingface": (lambda: huggingface_process_running(), clear_huggingface_process_cache),
+    "maven": (lambda: maven_process_running(), clear_maven_process_cache),
+    "cargo": (lambda: cargo_process_running(), clear_cargo_process_cache),
+    "go": (lambda: go_process_running(), clear_go_process_cache),
+    "nuget": (lambda: nuget_process_running(), clear_nuget_process_cache),
+    "conda": (lambda: conda_process_running(), clear_conda_process_cache),
+    "uv": (lambda: uv_process_running(), clear_uv_process_cache),
+    "pip": (lambda: pip_process_running(), clear_pip_process_cache),
+    "bun": (lambda: bun_process_running(), clear_bun_process_cache),
+    "yarn": (lambda: yarn_process_running(), clear_yarn_process_cache),
+    "pnpm": (lambda: pnpm_process_running(), clear_pnpm_process_cache),
+    "npm": (lambda: npm_process_running(), clear_npm_process_cache),
+    "windsurf": (lambda: windsurf_process_running(), clear_windsurf_process_cache),
+    "trae": (lambda: trae_process_running(), clear_trae_process_cache),
+    "vscode": (lambda: vscode_process_running(), clear_vscode_process_cache),
+    "cursor": (lambda: cursor_process_running(), clear_cursor_process_cache),
+    "claude": (lambda: claude_process_running(), clear_claude_process_cache),
+}
+
+
 def application_process_running(app_id: str) -> bool:
-    if app_id == "android_avd":
-        return android_avd_process_running()
-    if app_id == "android_sdk":
-        return android_sdk_process_running()
-    if app_id == "gradle":
-        return gradle_process_running()
-    if app_id == "android_studio":
-        return android_studio_process_running()
-    if app_id == "toolbox":
-        return toolbox_process_running()
-    if app_id == "jetbrains":
-        return jetbrains_process_running()
-    if app_id == "firefox":
-        return firefox_process_running()
-    if app_id == "opera":
-        return opera_process_running()
-    if app_id == "vivaldi":
-        return vivaldi_process_running()
-    if app_id == "brave":
-        return brave_process_running()
-    if app_id == "edge":
-        return edge_process_running()
-    if app_id == "chrome":
-        return chrome_process_running()
-    if app_id == "visual_studio":
-        return visual_studio_process_running()
-    if app_id == "visual_studio_installer":
-        return visual_studio_installer_process_running()
-    if app_id == "electron":
-        return electron_process_running()
-    if app_id == "cypress":
-        return cypress_process_running()
-    if app_id == "puppeteer":
-        return puppeteer_process_running()
-    if app_id == "playwright":
-        return playwright_process_running()
-    if app_id == "docker":
-        return docker_process_running()
-    if app_id == "ollama":
-        return ollama_process_running()
-    if app_id == "huggingface":
-        return huggingface_process_running()
-    if app_id == "maven":
-        return maven_process_running()
-    if app_id == "cargo":
-        return cargo_process_running()
-    if app_id == "go":
-        return go_process_running()
-    if app_id == "nuget":
-        return nuget_process_running()
-    if app_id == "conda":
-        return conda_process_running()
-    if app_id == "uv":
-        return uv_process_running()
-    if app_id == "pip":
-        return pip_process_running()
-    if app_id == "bun":
-        return bun_process_running()
-    if app_id == "yarn":
-        return yarn_process_running()
-    if app_id == "pnpm":
-        return pnpm_process_running()
-    if app_id == "npm":
-        return npm_process_running()
-    if app_id == "windsurf":
-        return windsurf_process_running()
-    if app_id == "trae":
-        return trae_process_running()
-    if app_id == "vscode":
-        return vscode_process_running()
-    if app_id == "cursor":
-        return cursor_process_running()
-    if app_id == "claude":
-        return claude_process_running()
-    return _ORIGINAL_APPLICATION_PROCESS_RUNNING(app_id)
+    state = _APPLICATION_STATE.get(app_id)
+    if state is None:
+        return _ORIGINAL_APPLICATION_PROCESS_RUNNING(app_id)
+    return state[0]()
 
 
 def clear_process_cache() -> None:
     _impl.clear_process_cache()
-    clear_claude_process_cache()
-    clear_cursor_process_cache()
-    clear_vscode_process_cache()
-    clear_trae_process_cache()
-    clear_windsurf_process_cache()
-    clear_npm_process_cache()
-    clear_pnpm_process_cache()
-    clear_yarn_process_cache()
-    clear_bun_process_cache()
-    clear_pip_process_cache()
-    clear_uv_process_cache()
-    clear_conda_process_cache()
-    clear_nuget_process_cache()
-    clear_go_process_cache()
-    clear_cargo_process_cache()
-    clear_maven_process_cache()
-    clear_huggingface_process_cache()
-    clear_ollama_process_cache()
-    clear_docker_process_cache()
-    clear_playwright_process_cache()
-    clear_puppeteer_process_cache()
-    clear_cypress_process_cache()
-    clear_electron_process_cache()
-    clear_visual_studio_process_cache()
-    clear_visual_studio_installer_process_cache()
-    clear_chrome_process_cache()
-    clear_edge_process_cache()
-    clear_brave_process_cache()
-    clear_vivaldi_process_cache()
-    clear_opera_process_cache()
-    clear_firefox_process_cache()
-    clear_jetbrains_process_cache()
-    clear_toolbox_process_cache()
-    clear_android_studio_process_cache()
-    clear_gradle_process_cache()
-    clear_android_sdk_process_cache()
-    clear_android_avd_process_cache()
+    for _probe, clear in _APPLICATION_STATE.values():
+        clear()
+
+
+def _refresh_application(app_id: str) -> None:
+    """Forget one application's cached process state and discovery.
+
+    Within one cleanup run this happens once per application, not once per
+    file, so a batch of that application's files starts its tools only once.
+    """
+
+    if not _impl.first_in_run(("refresh_application", app_id)):
+        return
+    state = _APPLICATION_STATE.get(app_id)
+    if state is None:
+        _impl.clear_process_cache()
+    else:
+        state[1]()
 
 
 def process_guard_allows(
@@ -1114,15 +1081,45 @@ def process_guard_allows(
     selection. A USER rule therefore must not be treated like KEEP here: USER is
     allowed after that selection, KEEP remains a hard block, and TOOL/USER paths
     with a process-close requirement still need the owning application closed.
+
+    Ownership is re-read without starting other programs: environment, settings
+    files, registry and folder layout are evaluated again, and a package
+    manager's reported locations are reused only while that tool's own
+    configuration files are unchanged (otherwise only that tool is asked
+    again). A path no application owns, such as a downloaded installer, is then
+    deleted as an ordinary file. For an owned path only the owning
+    application is rediscovered and its process checked again; other
+    applications' caches are left alone, so later ordinary files in the same
+    cleanup still start nothing.
     """
 
-    clear_process_cache()
+    return process_guard_refusal(path, environment) is None
+
+
+def process_guard_refusal(
+    path: str | os.PathLike[str],
+    environment: Mapping[str, str] | None = None,
+) -> str | None:
+    """Return why *path* may not be deleted now, or ``None`` when it may.
+
+    See :func:`process_guard_allows` for what is re-checked and what is not.
+    """
+
+    clear_claude_settings_cache()
     rule = match_application_rule(path, environment)
-    if rule is not None and rule.owner is DecisionOwner.KEEP:
-        return False
-    if rule is None or not rule.requires_process_closed:
-        return True
-    return not application_process_running(rule.app_id)
+    if rule is None:
+        return None
+    _refresh_application(rule.app_id)
+    refreshed = match_application_rule(path, environment)
+    if refreshed is not None and refreshed.app_id != rule.app_id:
+        _refresh_application(refreshed.app_id)
+    if refreshed is not None and refreshed.owner is DecisionOwner.KEEP:
+        return PROTECTED_OWNER_REFUSAL
+    if refreshed is None or not refreshed.requires_process_closed:
+        return None
+    if application_process_running(refreshed.app_id):
+        return RUNNING_OWNER_REFUSAL
+    return None
 
 
 def whole_tree_application_rule(
@@ -1325,7 +1322,9 @@ __all__ = [
     "PIP_RULES",
     "PLAYWRIGHT_RULES",
     "PNPM_RULES",
+    "PROTECTED_OWNER_REFUSAL",
     "PUPPETEER_RULES",
+    "RUNNING_OWNER_REFUSAL",
     "TOOLBOX_RULES",
     "TRAE_RULES",
     "UV_RULES",
@@ -1351,7 +1350,11 @@ __all__ = [
     "clear_process_cache",
     "effective_idle_days",
     "evaluate_application_path",
+    "file_time_utc",
     "match_application_rule",
     "process_guard_allows",
+    "process_guard_refusal",
+    "scan_root_snapshot",
+    "snapshot_roots",
     "whole_tree_application_rule",
 ]

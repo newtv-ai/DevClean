@@ -55,8 +55,7 @@
       "windowsapps",
       "assembly",
       "winsxs",
-      "servicing",
-      "installer"
+      "servicing"
     ],
     "system_areas": [
       "$recycle.bin",

@@ -30,6 +30,7 @@ from devclean.core._application_cleanup_impl import (
     effective_idle_days,
 )
 from devclean.core.chrome_cleanup import CHROME_RULES
+from devclean.core.live_owners import forget_live_state, shared_running_processes
 
 _MIB = 1024**2
 
@@ -128,6 +129,7 @@ EDGE_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def edge_roots(environment: Mapping[str, str] | None = None) -> EdgeRootSet:
     env = _casefold_env(environment)
     localappdata = env.get("localappdata")
@@ -355,32 +357,21 @@ def edge_process_running() -> bool:
     return "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
 def _running_override_roots() -> tuple[
     tuple[PureWindowsPath, ...], tuple[PureWindowsPath, ...]
 ]:
     if os.name != "nt":
         return (), ()
-    script = (
-        "$p=Get-CimInstance Win32_Process | Where-Object { $_.Name -ieq 'msedge.exe' }; "
-        "$p | ForEach-Object { $_.CommandLine }"
-    )
-    try:
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=6,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return (), ()
-    if result.returncode != 0:
-        return (), ()
+    # One process list per scan or cleanup run, shared by every application.
+    lines = [
+        process.command_line
+        for process in shared_running_processes()
+        if process.name.casefold() == "msedge.exe"
+    ]
 
     data: list[PureWindowsPath] = []
     cache: list[PureWindowsPath] = []
-    for line in result.stdout.splitlines():
+    for line in lines:
         value = _switch_path(line, "user-data-dir")
         if value:
             data.append(PureWindowsPath(value))
@@ -455,7 +446,7 @@ def _policy_path(value: str | None, env: Mapping[str, str]) -> PureWindowsPath |
 
 def clear_edge_process_cache() -> None:
     edge_process_running.cache_clear()
-    _running_override_roots.cache_clear()
+    forget_live_state()
 
 
 def _switch_path(command_line: str, switch: str) -> str | None:

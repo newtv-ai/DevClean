@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -25,6 +27,8 @@ from devclean.core.application_cleanup import (
     PolicyAction,
     application_display_name,
     evaluate_application_path,
+    file_time_utc,
+    snapshot_roots,
 )
 from devclean.core.cleanup_catalog import (
     CleanupCategory,
@@ -34,6 +38,14 @@ from devclean.core.cleanup_catalog import (
     known_root_for_path,
     source_domain_for_category,
 )
+from devclean.core.installer_files import (
+    has_installed_program_markers,
+    identify_installer_package,
+    installed_program_owner,
+    looks_like_uninstaller,
+    program_location,
+    system_installer_cache,
+)
 from devclean.core.user_rules import (
     DeleteClassification,
     KeepClassification,
@@ -41,6 +53,7 @@ from devclean.core.user_rules import (
     UserRules,
     normalise_path,
 )
+from devclean.platform.windows.known_folders import downloads_path
 from devclean.scanner.filesystem import ScanRecord, ScanRecordKind
 
 
@@ -311,8 +324,13 @@ def triage_file(
     now: datetime | None = None,
     temp_root: Path | None = None,
     known_roots: tuple[KnownCleanupRoot, ...] = (),
+    download_roots: tuple[Path, ...] | None = None,
 ) -> TriageItem:
-    """Classify one file observation without reading contents or mutating state."""
+    """Classify one file observation without mutating state.
+
+    Contents are read only for executables and installer packages, and only a
+    bounded header, to tell an installer apart from a program file.
+    """
 
     if record.kind is not ScanRecordKind.FILE:
         raise ValueError("triage accepts file observations only")
@@ -323,6 +341,7 @@ def triage_file(
         now=now,
         temp_root=temp_root,
         known_roots=known_roots,
+        download_roots=user_download_roots() if download_roots is None else download_roots,
         delete_config=delete_config,
         keep_config=keep_config,
     )
@@ -475,6 +494,7 @@ def _classify(
     now: datetime | None,
     temp_root: Path | None,
     known_roots: tuple[KnownCleanupRoot, ...],
+    download_roots: tuple[Path, ...],
     delete_config: DeleteClassification,
     keep_config: KeepClassification,
 ) -> _Classification:
@@ -500,6 +520,15 @@ def _classify(
             "已安装的扩展或捆绑运行时的一部分，不是垃圾；只能靠重装该扩展恢复",
             ("installed_payload",),
         )
+    installer = _installer_file_classification(
+        path,
+        known_roots=known_roots,
+        temp_root=temp_root,
+        download_roots=download_roots,
+        delete_config=delete_config,
+    )
+    if installer is not None:
+        return installer
     if is_program_payload_file(path, keep_config):
         return _Classification(
             _infer_presentation_category(path, delete_config),
@@ -509,7 +538,10 @@ def _classify(
             Actionability.REPORT_ONLY,
             ExecutionPolicy.NONE,
             RecoveryCapability.NONE,
-            "程序本体、其载入的库，或虚拟磁盘；不是垃圾，释放这类空间要用它自己的工具",
+            (
+                "程序文件、库文件或虚拟磁盘：被程序直接运行、加载或挂载，"
+                "没有安装包特征；删除会让对应程序或虚拟机无法使用"
+            ),
             ("program_payload",),
         )
     if is_application_state_file(path, keep_config):
@@ -601,7 +633,10 @@ def _classify(
                 "位于当前用户临时目录，但 Windows 的维护语义是清理未在使用的临时文件；"
                 "单独的 mtime/年龄不能证明当前未使用，工具直接保护"
             ),
-            ("temp_root", "unknown", "report_only"),
+            # Not "unknown": a temp file is a known kind that stays protected,
+            # exactly like the catalogued user-temp root, so neither the AI lane
+            # nor a learned file rule can reach it.
+            ("temp_root", "report_only"),
         )
 
     if is_regenerable_byproduct(path, delete_config):
@@ -690,9 +725,7 @@ def _application_classification(
     now: datetime | None,
     delete_config: DeleteClassification,
 ) -> _Classification | None:
-    last_used = None
-    if last_write_time_ns is not None:
-        last_used = datetime.fromtimestamp(last_write_time_ns / 1_000_000_000, tz=UTC)
+    last_used = file_time_utc(last_write_time_ns)
     decision = evaluate_application_path(
         path,
         logical_size=logical_size,
@@ -855,6 +888,143 @@ def is_program_payload_file(path: Path, config: KeepClassification) -> bool:
     return path.suffix.casefold() in config.program_payload_suffixes
 
 
+@snapshot_roots
+def user_download_roots(environment: Mapping[str, str] | None = None) -> tuple[Path, ...]:
+    """The current user's Downloads folder, including a redirected Known Folder."""
+
+    source = os.environ if environment is None else environment
+    profile = next((value for key, value in source.items() if key.casefold() == "userprofile"), "")
+    roots: list[Path] = []
+    if profile and os.path.isabs(profile):
+        roots.append(Path(profile) / "Downloads")
+    if os.name == "nt" and environment is None:
+        with suppress(OSError, RuntimeError):
+            roots.append(downloads_path())
+    return tuple(dict.fromkeys(roots))
+
+
+def _installer_file_classification(
+    path: Path,
+    *,
+    known_roots: tuple[KnownCleanupRoot, ...],
+    temp_root: Path | None,
+    download_roots: tuple[Path, ...],
+    delete_config: DeleteClassification,
+) -> _Classification | None:
+    """Classify executables, installer packages and disk images by what they are.
+
+    An installer package is deletable wherever it sits, at any folder depth,
+    unless an installed program, Windows or a Windows installer cache owns it.
+    An executable without installer evidence, in any scanned folder, is
+    uncertain: the AI or the user decides, and nothing is deleted before that.
+    Returns ``None`` when catalogued roots and temp folders keep their own
+    policy.
+    """
+
+    suffix = path.suffix.casefold()
+    if suffix != ".exe" and suffix not in delete_config.installer_suffixes:
+        return None
+    if known_root_for_path(path, known_roots) is not None:
+        return None
+    if _is_descendant(path, temp_root or Path(tempfile.gettempdir())):
+        return None
+    refusal = installer_ownership(path)
+    if refusal is not None:
+        reason, tag = refusal
+        return _Classification(
+            _infer_presentation_category(path, delete_config),
+            ReviewLane.REPORT_ONLY,
+            RiskTier.PROTECTED,
+            EvidenceKind.FILESYSTEM_OBSERVATION,
+            Actionability.REPORT_ONLY,
+            ExecutionPolicy.NONE,
+            RecoveryCapability.NONE,
+            reason,
+            (tag, "report_only"),
+        )
+    package = identify_installer_package(path)
+    if package is not None:
+        return _Classification(
+            CleanupCategory.INSTALLERS_DOWNLOADS,
+            ReviewLane.DETERMINISTIC_CANDIDATE,
+            RiskTier.LOW,
+            EvidenceKind.FILESYSTEM_OBSERVATION,
+            Actionability.REVIEW_PLAN,
+            ExecutionPolicy.USER_CHOICE_DELETE,
+            RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT,
+            (
+                f"安装包（{package.description}）：只用于安装软件，不属于任何已安装程序；"
+                "删除只移除这个文件，不会卸载已安装的软件，需要时可重新下载"
+            ),
+            ("installer_package", f"installer_format:{package.kind}"),
+        )
+    downloaded = any(_is_descendant(path, root) for root in download_roots)
+    category = (
+        CleanupCategory.INSTALLERS_DOWNLOADS
+        if downloaded or suffix != ".exe"
+        else _infer_presentation_category(path, delete_config)
+    )
+    if suffix == ".iso":
+        reason = "光盘镜像：可能是系统或软件的安装介质，也可能正被虚拟机挂载；需要你或 AI 判断"
+    elif suffix == ".exe":
+        reason = (
+            f"{'下载的' if downloaded else ''}可执行文件，没有发现安装包特征"
+            "（安装框架标记或版本信息），也不属于已安装程序或系统："
+            "可能是便携程序、工具或构建产物；需要你或 AI 判断"
+        )
+    else:
+        reason = "扩展名是安装包，但内容不是有效的安装包格式；需要你或 AI 判断"
+    return _Classification(
+        category,
+        ReviewLane.AI_REVIEW,
+        RiskTier.MEDIUM,
+        EvidenceKind.FILESYSTEM_OBSERVATION,
+        Actionability.AI_REVIEW,
+        ExecutionPolicy.USER_CHOICE_DELETE,
+        RecoveryCapability.UNKNOWN,
+        reason,
+        ("installer_uncertain", "ai_review_candidate"),
+    )
+
+
+def installer_ownership(path: Path) -> tuple[str, str] | None:
+    """Return (reason, tag) when an installed program or system cache owns *path*.
+
+    Checked at scan time and again just before deletion.
+    """
+
+    cache = system_installer_cache(path)
+    if cache is not None:
+        return (
+            f"{cache}：已安装软件修复和卸载要用到其中的安装包，不能删除",
+            "system_installer_cache",
+        )
+    location = program_location(path)
+    if location is not None:
+        return (
+            f"位于{location}：这里的程序由 Windows 或安装程序管理，删除会损坏它们",
+            "installed_program",
+        )
+    owner = installed_program_owner(path)
+    if owner is not None:
+        return (
+            f"已安装程序「{owner}」的文件（Windows 已安装程序列表登记的位置）："
+            "删除会影响它的运行、修复或卸载",
+            "installed_program",
+        )
+    if looks_like_uninstaller(path) or has_installed_program_markers(path.parent):
+        return (
+            "已安装程序的卸载程序或安装文件夹（旁边有安装程序留下的卸载数据）："
+            "删除会让该程序无法正常卸载或修复",
+            "installed_program",
+        )
+    if getattr(sys, "frozen", False) and _normalized_path(path) == _normalized_path(
+        Path(sys.executable)
+    ):
+        return ("正在运行的 DevClean 程序本身", "program_payload")
+    return None
+
+
 def is_installed_addon_payload(path: Path, config: KeepClassification) -> bool:
     return bool({part.casefold() for part in path.parts} & config.installed_payload_segments)
 
@@ -939,9 +1109,9 @@ def _infer_presentation_category(path: Path, config: DeleteClassification) -> Cl
 
 
 def _is_older_than(last_write_time_ns: int | None, age: timedelta, now: datetime | None) -> bool:
-    if last_write_time_ns is None:
+    observed = file_time_utc(last_write_time_ns)
+    if observed is None:
         return False
-    observed = datetime.fromtimestamp(last_write_time_ns / 1_000_000_000, tz=UTC)
     return observed <= (now or datetime.now(UTC)) - age
 
 
@@ -959,6 +1129,7 @@ __all__ = [
     "TriageItem",
     "TriageSession",
     "directory_cleanup_scope",
+    "installer_ownership",
     "is_application_state_file",
     "is_development_cache_hint",
     "is_inside_cache_directory",
@@ -969,4 +1140,5 @@ __all__ = [
     "is_stale_version_directory",
     "triage_directory",
     "triage_file",
+    "user_download_roots",
 ]

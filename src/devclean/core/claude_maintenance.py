@@ -5,13 +5,13 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from devclean.core.claude_cleanup import claude_process_running, claude_roots
+from devclean.platform.windows.executables import path_tool
 
 
 class ClaudeMaintenanceError(RuntimeError):
@@ -37,7 +37,7 @@ def resolve_claude_binary(environment: Mapping[str, str] | None = None) -> Path 
         if path.is_file():
             return path
     for name in ("claude.exe", "claude"):
-        found = shutil.which(name)
+        found = path_tool(name)
         if found:
             return Path(found)
     return None

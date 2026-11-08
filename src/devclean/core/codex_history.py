@@ -19,7 +19,6 @@ import json
 import os
 import queue
 import re
-import shutil
 import subprocess
 import threading
 import uuid
@@ -35,6 +34,7 @@ from devclean.core.application_cleanup import (
     application_roots,
     clear_process_cache,
 )
+from devclean.platform.windows.executables import path_tool
 
 _ROLLOUT_SUFFIXES = (".jsonl", ".jsonl.zst")
 _THREAD_ID_RE = re.compile(
@@ -364,7 +364,7 @@ def resolve_codex_binary() -> Path | None:
         if path.is_file():
             return path
     for name in ("codex.exe", "codex"):
-        found = shutil.which(name)
+        found = path_tool(name)
         if found:
             return Path(found)
     return None

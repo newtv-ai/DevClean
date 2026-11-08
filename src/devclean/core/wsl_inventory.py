@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import locale
 import os
-import shutil
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
+
+from devclean.platform.windows.executables import path_tool
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,7 +97,7 @@ def wsl_executable(environment: Mapping[str, str] | None = None) -> str:
     if configured:
         return configured
     if environment is None:
-        located = shutil.which("wsl.exe" if os.name == "nt" else "wsl")
+        located = path_tool("wsl.exe" if os.name == "nt" else "wsl")
         if located:
             return located
     return "wsl.exe" if os.name == "nt" else "wsl"

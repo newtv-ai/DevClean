@@ -74,6 +74,7 @@ CYPRESS_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def cypress_roots(
     environment: Mapping[str, str] | None = None,
 ) -> CypressRootSet:

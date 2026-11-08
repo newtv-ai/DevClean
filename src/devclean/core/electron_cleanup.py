@@ -61,6 +61,7 @@ ELECTRON_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def electron_roots(
     environment: Mapping[str, str] | None = None,
 ) -> ElectronRootSet:

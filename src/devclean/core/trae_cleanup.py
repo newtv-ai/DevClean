@@ -28,6 +28,7 @@ from devclean.core._application_cleanup_impl import (
     RebuildCost,
     effective_idle_days,
 )
+from devclean.core.live_owners import forget_live_state, shared_running_processes
 
 _MIB = 1024**2
 
@@ -201,6 +202,7 @@ TRAE_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def trae_roots(environment: Mapping[str, str] | None = None) -> TraeRootSet:
     env = _casefold_env(environment)
     appdata = env.get("appdata")
@@ -391,30 +393,18 @@ def trae_process_running() -> bool:
     return "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
 def _running_override_roots() -> tuple[tuple[PureWindowsPath, ...], tuple[PureWindowsPath, ...]]:
     if os.name != "nt":
         return (), ()
-    script = (
-        "$p=Get-CimInstance Win32_Process | Where-Object { "
-        "$_.Name -ieq 'Trae.exe' -or $_.Name -ieq 'Trae CN.exe' }; "
-        "$p | ForEach-Object { $_.CommandLine }"
-    )
-    try:
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=6,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return (), ()
-    if result.returncode != 0:
-        return (), ()
+    # One process list per scan or cleanup run, shared by every application.
+    lines = [
+        process.command_line
+        for process in shared_running_processes()
+        if process.name.casefold() in {"trae.exe", "trae cn.exe"}
+    ]
     data: list[PureWindowsPath] = []
     extensions: list[PureWindowsPath] = []
-    for line in result.stdout.splitlines():
+    for line in lines:
         user_data = _argument_value(line, "--user-data-dir")
         extension_dir = _argument_value(line, "--extensions-dir")
         if user_data:
@@ -437,7 +427,7 @@ def _argument_value(command_line: str, flag: str) -> str | None:
 
 def clear_trae_process_cache() -> None:
     trae_process_running.cache_clear()
-    _running_override_roots.cache_clear()
+    forget_live_state()
 
 
 def _unique_paths(paths: list[PureWindowsPath]) -> tuple[PureWindowsPath, ...]:

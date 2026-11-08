@@ -21,7 +21,7 @@ import sys
 import threading
 import time
 import tkinter as tk
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,13 +43,26 @@ from devclean.core.ai_review_contract import (
     parse_partial_ai_review_response,
     serialize_ai_review_package,
 )
+from devclean.core.application_cleanup import (
+    PROTECTED_OWNER_REFUSAL,
+    RUNNING_OWNER_REFUSAL,
+    scan_root_snapshot,
+)
 from devclean.core.cleanup_catalog import (
     KnownCleanupRoot,
     discover_known_cleanup_roots,
 )
 from devclean.core.cleanup_journal import ActionState, CleanupMode
+from devclean.core.live_owners import (
+    HIDDEN_RELATED_REFUSAL,
+    HIDDEN_UNVERIFIED_REFUSAL,
+    LIVE_CHECK_UNAVAILABLE_REFUSAL,
+    LIVE_OWNER_REFUSAL,
+)
 from devclean.core.paths import data_dir
 from devclean.core.postscan_cleanup import (
+    INSTALLED_PROGRAM_REFUSAL,
+    REVIEW_NOT_APPROVED_REFUSAL,
     CleanupExecutionProgress,
     CleanupExecutionResult,
     CleanupRefusal,
@@ -86,6 +99,7 @@ from devclean.core.user_rules import (
     read_rule_documents,
     reusable_path_pattern,
 )
+from devclean.platform.windows.exact_cleanup import ExactCleanupError
 from devclean.platform.windows.volumes import fixed_volume_roots
 from devclean.scanner import (
     CancellationToken,
@@ -121,6 +135,8 @@ _EVENT_POLL_MS = 120
 
 # (path, size in bytes, is a whole directory)
 Row = tuple[str, int, bool]
+# Result list columns: tick box, size, what cleaning does, location, why.
+ROW_COLUMNS = ("check", "size", "action", "path", "reason")
 # (largest rows rendered during scan, effective item count, effective bytes)
 PartialBucket = tuple[tuple[Row, ...], int, int]
 
@@ -543,6 +559,18 @@ def _expanded_live_verdicts(
     return tuple(expanded)
 
 
+# Safety-check refusals in the user's terms; the first matching entry wins.
+_SAFETY_REFUSAL_REASONS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("hard-linked",), "文件还有其他硬链接名称，删除这一处不会释放空间，已跳过"),
+    (("protected and report-only",), "受保护的项目，不能删除"),
+    (
+        ("link", "reparse", "local fixed", "escaped", "outside"),
+        "路径被替换成链接或离开了扫描范围，安全检查拒绝",
+    ),
+    (("changed", "replaced", "modified", "no longer matches"), "扫描后内容已改变，安全检查拒绝"),
+)
+
+
 def _reason_of(error: BaseException) -> str:
     """Name why one object could not be processed, in the user's terms."""
 
@@ -551,9 +579,59 @@ def _reason_of(error: BaseException) -> str:
         return "扫描后已自行消失"
     if isinstance(error, PermissionError) or winerror in {5, 32, 33}:
         return "被程序占用或权限不足"
-    if isinstance(error, CleanupRefusal):
-        return "扫描后内容已改变，安全检查拒绝"
-    return f"其他（{type(error).__name__}）"
+    if isinstance(error, (CleanupRefusal, ExactCleanupError)):
+        message = str(error)
+        if message == PROTECTED_OWNER_REFUSAL:
+            return "扫描后它已归属受保护的应用数据，已拒绝删除"
+        if message == RUNNING_OWNER_REFUSAL:
+            return "所属程序正在运行，请关闭后再清理"
+        if message == INSTALLED_PROGRAM_REFUSAL:
+            return "扫描后它已归属已安装的程序或安装缓存，已拒绝删除"
+        if message == REVIEW_NOT_APPROVED_REFUSAL:
+            return "需要 AI 或你批准后才能删除，尚未批准"
+        if message.startswith(LIVE_OWNER_REFUSAL):
+            owner = message[len(LIVE_OWNER_REFUSAL) :].lstrip(": ")
+            return f"{owner} 使用它所在的位置，已拒绝删除；关闭该程序或停止该服务后重试"
+        if message.startswith(HIDDEN_RELATED_REFUSAL):
+            name, _, why = message[len(HIDDEN_RELATED_REFUSAL) :].lstrip(": ").partition(": ")
+            return (
+                f"无法读取正在运行的程序 {name} 的启动参数，而{why}，可能正被它使用，"
+                "已拒绝删除；关闭该程序或以管理员身份运行 DevClean 后重试"
+            )
+        if message.startswith(HIDDEN_UNVERIFIED_REFUSAL):
+            names = message[len(HIDDEN_UNVERIFIED_REFUSAL) :].lstrip(": ")
+            return (
+                f"无法读取正在运行的程序 {names[:120]} 的启动参数；这一项是经 AI 或你批准的"
+                "不确定项，不能确认它没有被这些程序使用，已拒绝删除；关闭这些程序或以管理员"
+                "身份运行 DevClean 后重试"
+            )
+        if message.startswith(LIVE_CHECK_UNAVAILABLE_REFUSAL):
+            detail = message[len(LIVE_CHECK_UNAVAILABLE_REFUSAL) :].lstrip(": ")
+            return (
+                f"无法确认正在运行的程序和服务是否在使用它（{detail[:120]}），已拒绝删除；"
+                "以管理员身份运行 DevClean 或关闭相关程序后重试"
+            )
+        for words, reason in _SAFETY_REFUSAL_REASONS:
+            if any(word in message for word in words):
+                return reason
+        return f"安全检查拒绝（{message[:120]}）"
+    return f"其他（{type(error).__name__}：{str(error)[:120]}）"
+
+
+def _grouped_reasons(failures: Iterable[tuple[str, str]]) -> list[tuple[str, int]]:
+    """Count failures per reason, most frequent first."""
+
+    counts: dict[str, int] = {}
+    for _path, reason in failures:
+        counts[reason] = counts.get(reason, 0) + 1
+    return sorted(counts.items(), key=lambda pair: -pair[1])
+
+
+def _row_action(is_directory: bool, *, pending: bool) -> str:
+    """What cleaning this row will do, in the user's terms."""
+
+    action = "删除整个目录" if is_directory else "删除此文件"
+    return f"待你决定：{action}" if pending else action
 
 
 def _format_bytes(value: int) -> str:
@@ -706,6 +784,11 @@ class DevCleanWindow:
         # Only paths an imported answer explicitly left UNSURE may enter the
         # user's final-decision action.
         self._ai_unsure_reasons: dict[str, str] = {}
+        # Why a selected row was not cleaned last time, shown in its reason column.
+        self._cleanup_failures: dict[str, str] = {}
+        # Review items (AI or "需要判断") the AI or the user approved for deletion
+        # in this scan, by normalised path; saved DELETE rules count as well.
+        self._review_approvals: set[str] = set()
         self._rule_error = ""
         try:
             self._rules = load_rules()
@@ -954,14 +1037,18 @@ class DevCleanWindow:
         holder.columnconfigure(0, weight=1)
         tree = ttk.Treeview(
             holder,
-            columns=("check", "size", "path"),
+            columns=ROW_COLUMNS,
             show="headings",
             style="Rows.Treeview",
             height=15,
         )
         tree.heading("check", text="", anchor=tk.CENTER)
         tree.heading("size", text="大小", anchor=tk.E)
+        tree.heading("action", text="动作", anchor=tk.W)
         tree.heading("path", text="位置", anchor=tk.W)
+        tree.heading("reason", text="原因", anchor=tk.W)
+        tree.column("action", width=150, anchor=tk.W, stretch=False)
+        tree.column("reason", width=520, anchor=tk.W, stretch=False)
         tree.column("check", width=32, anchor=tk.CENTER, stretch=False)
         tree.column("size", width=86, anchor=tk.E, stretch=False)
         tree.column(
@@ -1053,6 +1140,8 @@ class DevCleanWindow:
         self._unsure.clear()
         self._checked.clear()
         self._ai_unsure_reasons.clear()
+        self._cleanup_failures.clear()
+        self._review_approvals.clear()
         # Completed exports remain recoverable from the bounded session index.
         # Do not retain every old package and all of its TriageItems in memory
         # across scans.
@@ -1087,6 +1176,8 @@ class DevCleanWindow:
             daemon=True,
         ).start()
 
+    # One discovery snapshot per scan, as in the product window's scan worker.
+    @scan_root_snapshot()
     def _scan_worker(
         self,
         token: str,
@@ -1176,6 +1267,9 @@ class DevCleanWindow:
             return
         self._events.put(("scan_done", (token, session, cancel.is_cancelled())))
 
+    def _scan_failed(self) -> None:
+        """Reset scan-only indicators after a failed scan; nothing to do here."""
+
     def _publish(self, session: TriageSession) -> None:
         self._session = session
         previous_deletable = {item.path for item in self._deletable}
@@ -1198,6 +1292,8 @@ class DevCleanWindow:
     _UNTICKED = "\u2610"
 
     def _fill(self, tree: ttk.Treeview, items: Sequence[TriageItem]) -> None:
+        drawn = items[:_ROWS_DRAWN]
+        pending = tree is not self._deletable_tree
         self._fill_rows(
             tree,
             tuple(
@@ -1206,14 +1302,39 @@ class DevCleanWindow:
                     self._size_of(item),
                     item.target_kind is CleanupTargetKind.DIRECTORY,
                 )
-                for item in items[:_ROWS_DRAWN]
+                for item in drawn
             ),
+            {
+                item.path: (
+                    _row_action(
+                        item.target_kind is CleanupTargetKind.DIRECTORY,
+                        pending=pending,
+                    ),
+                    self._row_reason(item.path, item.reason),
+                )
+                for item in drawn
+            },
         )
 
-    def _fill_rows(self, tree: ttk.Treeview, rows: Sequence[Row]) -> None:
+    def _row_reason(self, row_id: str, reason: str) -> str:
+        failure = self._cleanup_failures.get(row_id)
+        return f"上次清理未完成：{failure}" if failure else reason
+
+    def _fill_rows(
+        self,
+        tree: ttk.Treeview,
+        rows: Sequence[Row],
+        details: Mapping[str, tuple[str, str]] | None = None,
+    ) -> None:
+        """Draw rows; *details* maps a row to its (action, reason) texts."""
+
         tree.delete(*tree.get_children())
+        pending = tree is not self._deletable_tree
         for index, (item_path, size, is_directory) in enumerate(rows[:_ROWS_DRAWN]):
-            label = f"[整个目录] {item_path}" if is_directory else item_path
+            action, reason = (details or {}).get(
+                item_path,
+                (_row_action(is_directory, pending=pending), ""),
+            )
             if tree is not self._deletable_tree:
                 mark = ""  # the AI pane is exported whole; nothing to tick
             elif item_path in self._checked:
@@ -1224,7 +1345,7 @@ class DevCleanWindow:
                 "",
                 tk.END,
                 iid=item_path,
-                values=(mark, _format_bytes(size), label),
+                values=(mark, _format_bytes(size), action, item_path, reason),
                 tags=("odd",) if index % 2 else (),
             )
 
@@ -1358,16 +1479,19 @@ class DevCleanWindow:
             daemon=True,
         ).start()
 
+    # One discovery snapshot per cleanup run: pre-delete checks of every item
+    # reuse it instead of rebuilding application roots for each file.
+    @scan_root_snapshot()
     def _delete_worker(self, token: str, items: tuple[TriageItem, ...], mode: CleanupMode) -> None:
         candidates: list[ScanCleanupCandidate] = []
-        reasons: dict[str, int] = {}
+        failures: list[tuple[str, str]] = []
         for prepared, item in enumerate(items, start=1):
             try:
                 candidates.append(self._candidate(item))
             except (CleanupRefusal, OSError, TypeError, ValueError) as error:
-                # "N items could not be processed" answers nothing.  Group by
-                # what actually went wrong so the number is explainable.
-                reasons[_reason_of(error)] = reasons.get(_reason_of(error), 0) + 1
+                # "N items could not be processed" answers nothing.  Keep what
+                # actually went wrong for each row so it can be shown.
+                failures.append((item.path, _reason_of(error)))
             self._events.put(
                 (
                     "delete_prepare_progress",
@@ -1375,7 +1499,9 @@ class DevCleanWindow:
                 )
             )
         if not candidates:
-            detail = "；".join(f"{name} {count:,} 项" for name, count in reasons.items())
+            detail = "；".join(
+                f"{name} {count:,} 项" for name, count in _grouped_reasons(failures)
+            )
             self._events.put(("delete_error", (token, f"所有勾选项都无法处理：{detail}", ())))
             return
         results: list[CleanupExecutionResult] = []
@@ -1428,10 +1554,10 @@ class DevCleanWindow:
                 # carry on; stopping here is what made a single changed cache
                 # file end a 7,000-item run.
                 reason = _reason_of(error)
-                reasons[reason] = reasons.get(reason, 0) + len(batch.actions)
+                failures.extend((str(action.candidate.path), reason) for action in batch.actions)
             done += len(batch.actions)
             self._events.put(("delete_progress", (token, mode, done, len(plan.actions))))
-        self._events.put(("delete_done", (token, tuple(results), reasons)))
+        self._events.put(("delete_done", (token, tuple(results), tuple(failures))))
 
     def _candidate(self, item: TriageItem) -> ScanCleanupCandidate:
         if item.target_kind is CleanupTargetKind.DIRECTORY:
@@ -1447,13 +1573,27 @@ class DevCleanWindow:
                 known_roots=self._known_roots,
                 delete_config=self._scan_rules.delete.classification,
                 keep_config=self._scan_rules.keep.classification,
+                review_approved=self._is_review_approved(item),
             )
         return candidate_from_triage_item(
             item,
             known_roots=self._known_roots,
             delete_config=self._scan_rules.delete.classification,
             keep_config=self._scan_rules.keep.classification,
+            review_approved=self._is_review_approved(item),
         )
+
+    def _is_review_approved(self, item: TriageItem) -> bool:
+        """An AI or user DELETE decision exists for this review item."""
+
+        if normalise_path(item.path) in self._review_approvals:
+            return True
+        decision = (
+            self._rules.directory_decision_for(item.path)
+            if item.target_kind is CleanupTargetKind.DIRECTORY
+            else self._rules.decision_for(item.path)
+        )
+        return decision is RuleDecision.DELETE
 
     # ---- AI -----------------------------------------------------------------
 
@@ -1673,6 +1813,8 @@ class DevCleanWindow:
             if self._rules.decision_for(key) is RuleDecision.KEEP:
                 deletable.remove(key)
                 keep.add(key)
+        self._review_approvals.update(deletable)
+        self._review_approvals.difference_update(keep)
         if rules_saved and self._session is not None:
             # One classification function owns both queues.  Rebuilding from the
             # completed session applies imported decisions, pre-existing regex
@@ -1783,6 +1925,11 @@ class DevCleanWindow:
         selected_paths = {item.path for item in items}
         for item in items:
             self._ai_unsure_reasons.pop(normalise_path(item.path), None)
+        decided = {normalise_path(path) for path in selected_paths}
+        if decision is RuleDecision.DELETE:
+            self._review_approvals.update(decided)
+        else:
+            self._review_approvals.difference_update(decided)
         if rules_saved and self._session is not None:
             self._publish(self._session)
         else:
@@ -1922,6 +2069,7 @@ class DevCleanWindow:
                     self._busy = None
                     self._sync_buttons()
                     self._status.set(f"扫描失败：{detail}")
+                    self._scan_failed()
                 elif kind == "delete_prepare_progress":
                     token, mode, done, total, accepted = cast(
                         tuple[str, CleanupMode, int, int, int], payload
@@ -2005,8 +2153,12 @@ class DevCleanWindow:
                         f"… {done:,} / {total:,}"
                     )
                 elif kind == "delete_done":
-                    token, results, reasons = cast(
-                        tuple[str, tuple[CleanupExecutionResult, ...], dict[str, int]],
+                    token, results, failures = cast(
+                        tuple[
+                            str,
+                            tuple[CleanupExecutionResult, ...],
+                            tuple[tuple[str, str], ...],
+                        ],
                         payload,
                     )
                     if token != self._delete_token:
@@ -2014,7 +2166,7 @@ class DevCleanWindow:
                     self._progress.stop()
                     self._progress.configure(mode="indeterminate", value=0)
                     self._busy = None
-                    self._report_deletion(results, reasons)
+                    self._report_deletion(results, failures)
                 elif kind == "delete_error":
                     token, detail, results = cast(
                         tuple[str, str, tuple[CleanupExecutionResult, ...]], payload
@@ -2072,7 +2224,7 @@ class DevCleanWindow:
     def _report_deletion(
         self,
         results: tuple[CleanupExecutionResult, ...],
-        reasons: dict[str, int],
+        failures: tuple[tuple[str, str], ...],
     ) -> None:
         finished = 0
         failed = 0
@@ -2086,13 +2238,23 @@ class DevCleanWindow:
                     failed += 1
             freed += result.purged_logical_bytes
             unverified_recycles += len(result.unverified_recycle_paths)
-        failed += sum(reasons.values())
+        failed += len(failures)
+        notes = dict(failures)
+        for result in results:
+            for path, error in result.failures:
+                notes[path] = _reason_of(error)
         gone = {path for result in results for path in result.completed_paths}
+        self._cleanup_failures = {
+            path: reason
+            for path, reason in {**self._cleanup_failures, **notes}.items()
+            if path not in gone
+        }
         if gone:
             self._deletable = [item for item in self._deletable if item.path not in gone]
             self._checked -= gone
-            self._fill(self._deletable_tree, self._deletable)
-            self._refresh_totals()
+        self._fill(self._deletable_tree, self._deletable)
+        self._fill(self._unsure_tree, self._unsure)
+        self._refresh_totals()
         self._sync_buttons()
         parts = [f"已删除 {finished:,} 项"]
         if freed:
@@ -2104,7 +2266,7 @@ class DevCleanWindow:
                 f"{unverified_recycles:,} 项已由 Windows 移除，但无法确认是否进入"
                 "回收站，可能无法恢复"
             )
-        for name, count in sorted(reasons.items(), key=lambda pair: -pair[1]):
+        for name, count in _grouped_reasons(notes.items()):
             parts.append(f"{name} {count:,} 项")
         self._status.set("；".join(parts) + "。点「扫描」可核对结果。")
 

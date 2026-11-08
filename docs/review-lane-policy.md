@@ -21,7 +21,7 @@ A generic filename suffix, a directory merely named `cache`, or a broad build-ou
 
 ## User review versus AI
 
-User review is for cases where the product can explain the tradeoff in ordinary terms: for example, a generic cache-looking path, a project output that can usually be rebuilt, or a manually reviewed known root. The user can mark the item reusable/deleteable without paying for AI, or explicitly escalate a selected file if they want a second opinion.
+User review is for cases where the product can explain the tradeoff in ordinary terms: for example, a generic cache-looking path, a project output that can usually be rebuilt, a manually reviewed known root, or a standalone installer saved directly in the user's Downloads folder (deleting it removes only that file; it never uninstalls the installed program or starts any installer, uninstaller or package manager). The user can mark the item reusable/deleteable without paying for AI, or explicitly escalate a selected file if they want a second opinion.
 
 AI review is reserved by default for the remainder: unknown files, ambiguous development-storage hints, and heuristic categories where path metadata alone cannot support a stable local decision. AI advice never grants execution authority; imported DELETE decisions still require the normal DevClean cleanup path and safety checks.
 

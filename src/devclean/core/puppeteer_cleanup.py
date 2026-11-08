@@ -48,6 +48,7 @@ PUPPETEER_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def puppeteer_roots(
     environment: Mapping[str, str] | None = None,
 ) -> PuppeteerRootSet:

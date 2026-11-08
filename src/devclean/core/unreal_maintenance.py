@@ -9,12 +9,13 @@ commandlet so the engine and registered cache stores retain ownership of GC.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+
+from devclean.platform.windows.executables import path_tool
 
 _GIB = 1024**3
 _RECOMMEND_BYTES = 2 * _GIB
@@ -223,9 +224,7 @@ def _discover_engines(
             candidates.append(_editor_for_engine_root(root))
 
     if environment is None:
-        located = shutil.which(
-            "UnrealEditor-Cmd.exe" if os.name == "nt" else "UnrealEditor-Cmd"
-        )
+        located = path_tool("UnrealEditor-Cmd.exe" if os.name == "nt" else "UnrealEditor-Cmd")
         if located:
             candidates.append(Path(located))
 

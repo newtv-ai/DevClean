@@ -185,6 +185,7 @@ TOOLBOX_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def toolbox_root(
     environment: Mapping[str, str] | None = None,
 ) -> PureWindowsPath | None:

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import ntpath
 import os
-import shutil
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -25,6 +24,7 @@ from devclean.core.nuget_cleanup import (
     nuget_process_running,
     nuget_roots,
 )
+from devclean.platform.windows.executables import path_tool
 from devclean.platform.windows.filesystem import read_file_metadata
 from devclean.platform.windows.volumes import is_local_fixed_path
 
@@ -375,10 +375,7 @@ def _resolved_dotnet_identity(
     raw = dotnet_executable(environment)
     candidate = Path(raw).expanduser()
     if not candidate.is_absolute():
-        resolved = shutil.which(
-            raw,
-            path=_environment_value(merged_environment, "PATH"),
-        )
+        resolved = path_tool(raw, search_path=_environment_value(merged_environment, "PATH"))
         if resolved is None:
             raise FileNotFoundError(f"未找到 .NET CLI: {raw}")
         candidate = Path(resolved)

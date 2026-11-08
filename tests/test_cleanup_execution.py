@@ -123,6 +123,8 @@ def _candidates(
             _item(path, root),
             delete_config=rules.delete.classification,
             keep_config=rules.keep.classification,
+            # These AI-review items stand for rows the user already approved.
+            review_approved=True,
         )
         for path in paths
     )

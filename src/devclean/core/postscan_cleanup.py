@@ -20,7 +20,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from devclean.core.application_cleanup import DecisionOwner, process_guard_allows
+from devclean.core.application_cleanup import DecisionOwner, process_guard_refusal
 from devclean.core.cleanup_catalog import (
     CleanupCategory,
     CleanupPolicy,
@@ -34,6 +34,7 @@ from devclean.core.cleanup_journal import (
     CleanupMode,
     JournalTargetKind,
 )
+from devclean.core.live_owners import live_owner_refusal
 from devclean.core.paths import data_dir
 from devclean.core.triage import (
     Actionability,
@@ -44,6 +45,7 @@ from devclean.core.triage import (
     ReviewLane,
     TriageItem,
     directory_cleanup_scope,
+    installer_ownership,
 )
 from devclean.core.user_rules import DeleteClassification, KeepClassification
 from devclean.core.whole_tree_policy import (
@@ -73,6 +75,13 @@ from devclean.platform.windows.volumes import is_local_fixed_path
 from devclean.scanner.filesystem import ScanRecordKind
 
 MAX_CLEANUP_BATCH_FILES = 32
+REVIEW_NOT_APPROVED_REFUSAL = "this item awaits an AI or user decision and was not approved"
+INSTALLED_PROGRAM_REFUSAL = "the target now belongs to an installed program or installer cache"
+# Windows always reports a 128-bit file id. Other hosts (Linux test fixtures)
+# only offer the inode, which pins one object on that filesystem just the same.
+_ACCEPTED_FILE_ID_KINDS = (
+    frozenset({"file_id_128"}) if os.name == "nt" else frozenset({"file_id_128", "stat_ino"})
+)
 _MAX_PATH_LENGTH = 32_767
 _SEAL = object()
 _CAPABILITY_KEY = secrets.token_bytes(32)
@@ -101,6 +110,8 @@ class ScanCleanupCandidate:
     directory_scope: DirectoryScope | None = None
     subtree_files: int = 0
     subtree_bytes: int = 0
+    # Deletable by a scan rule, not by an AI or user decision on an uncertain item.
+    rule_proven: bool = False
     _integrity: str = field(repr=False, compare=False, default="")
     _seal: object = field(repr=False, compare=False, default=None)
 
@@ -118,6 +129,7 @@ class ScanCleanupCandidate:
             self.directory_scope,
             self.subtree_files,
             self.subtree_bytes,
+            self.rule_proven,
         )
         if not hmac.compare_digest(self._integrity, expected):
             raise CleanupRefusal("opaque cleanup candidate was altered")
@@ -180,6 +192,8 @@ class CleanupExecutionResult:
     purged_logical_bytes: int
     completed_paths: tuple[str, ...]
     unverified_recycle_paths: tuple[str, ...] = ()
+    # Why each failed action did not complete, for display next to its row.
+    failures: tuple[tuple[str, BaseException], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,12 +218,13 @@ def candidate_from_triage_item(
     delete_config: DeleteClassification,
     keep_config: KeepClassification,
     known_roots: tuple[KnownCleanupRoot, ...] = (),
+    review_approved: bool = False,
 ) -> ScanCleanupCandidate:
     """Bind an exact scan observation to its original, user-chosen scan root.
 
-    Presentation-only and protected items are never candidates. Ordinary
-    AI/manual-review items enter only after the UI has classified or approved
-    them; the cleanup mode remains the user's button choice.
+    Presentation-only and protected items are never candidates. Rule-deletable
+    items need nothing more than the user's cleanup click. AI/manual-review
+    items need *review_approved*: an AI or user DELETE decision for this item.
     """
 
     record = item.record
@@ -217,6 +232,7 @@ def candidate_from_triage_item(
         raise CleanupRefusal("candidate must be an exact file item from the completed scan")
     if item.lane is ReviewLane.REPORT_ONLY or item.actionability is Actionability.REPORT_ONLY:
         raise CleanupRefusal("protected and report-only items cannot become cleanup actions")
+    _require_review_approval(item, review_approved)
     if item.execution_policy is not ExecutionPolicy.USER_CHOICE_DELETE:
         raise CleanupRefusal("this item requires an implemented vendor action or is not executable")
     path = _absolute_local_path(Path(record.path), "candidate")
@@ -228,6 +244,7 @@ def candidate_from_triage_item(
     snapshot = _snapshot_from_record(item)
     root_snapshot = _directory_snapshot(scan_root, "original scan root")
     candidate_id = "candidate_" + secrets.token_hex(16)
+    rule_proven = item.lane is ReviewLane.DETERMINISTIC_CANDIDATE
     integrity = _candidate_integrity(
         candidate_id,
         path,
@@ -235,6 +252,7 @@ def candidate_from_triage_item(
         root_snapshot,
         snapshot,
         item.category,
+        rule_proven=rule_proven,
     )
     return ScanCleanupCandidate(
         candidate_id=candidate_id,
@@ -243,6 +261,7 @@ def candidate_from_triage_item(
         scan_root_snapshot=root_snapshot,
         snapshot=snapshot,
         category=item.category,
+        rule_proven=rule_proven,
         _integrity=integrity,
         _seal=_SEAL,
     )
@@ -255,6 +274,7 @@ def candidate_from_directory_item(
     delete_config: DeleteClassification,
     keep_config: KeepClassification,
     known_roots: tuple[KnownCleanupRoot, ...] = (),
+    review_approved: bool = False,
 ) -> ScanCleanupCandidate:
     """Bind one whole-directory observation to its original scan root.
 
@@ -268,6 +288,7 @@ def candidate_from_directory_item(
     record = item.record
     if item.target_kind is not CleanupTargetKind.DIRECTORY:
         raise CleanupRefusal("directory candidates require a whole-directory scan item")
+    _require_review_approval(item, review_approved)
     if record.kind is not ScanRecordKind.DIRECTORY or item.path != record.path:
         raise CleanupRefusal("candidate must be an exact directory item from the scan")
     path = _absolute_local_path(Path(record.path), "candidate directory")
@@ -292,6 +313,7 @@ def candidate_from_directory_item(
     snapshot = _snapshot_selected_directory(item)
     root_snapshot = _directory_snapshot(scan_root, "original scan root")
     candidate_id = "candidate_" + secrets.token_hex(16)
+    rule_proven = item.lane is ReviewLane.DETERMINISTIC_CANDIDATE
     integrity = _candidate_integrity(
         candidate_id,
         path,
@@ -303,6 +325,7 @@ def candidate_from_directory_item(
         scope,
         subtree_files,
         subtree_bytes,
+        rule_proven,
     )
     return ScanCleanupCandidate(
         candidate_id=candidate_id,
@@ -315,9 +338,15 @@ def candidate_from_directory_item(
         directory_scope=scope,
         subtree_files=subtree_files,
         subtree_bytes=subtree_bytes,
+        rule_proven=rule_proven,
         _integrity=integrity,
         _seal=_SEAL,
     )
+
+
+def _require_review_approval(item: TriageItem, review_approved: bool) -> None:
+    if item.lane in {ReviewLane.AI_REVIEW, ReviewLane.USER_REVIEW} and not review_approved:
+        raise CleanupRefusal(REVIEW_NOT_APPROVED_REFUSAL)
 
 
 def _reject_overlapping_candidates(candidates: Sequence[ScanCleanupCandidate]) -> None:
@@ -468,6 +497,7 @@ def execute_cleanup_batch(
 
     purged_directory_bytes: dict[str, int] = {}
     unverified_recycle_paths: list[str] = []
+    failures: list[tuple[str, BaseException]] = []
     for action_index, action in enumerate(batch.actions):
         candidate = action.candidate
         _report_cleanup_progress(
@@ -577,6 +607,7 @@ def execute_cleanup_batch(
                 )
         except Exception as error:
             _record_failure(active_journal, action.action_id, error)
+            failures.append((str(candidate.path), error))
         finally:
             _report_cleanup_progress(
                 on_progress,
@@ -613,6 +644,7 @@ def execute_cleanup_batch(
             if action.action_id in completed_ids
         ),
         unverified_recycle_paths=tuple(unverified_recycle_paths),
+        failures=tuple(failures),
     )
 
 
@@ -658,7 +690,7 @@ def _snapshot_from_record(item: TriageItem) -> ExactFileSnapshot:
         or record.last_write_time_ns is None
     ):
         raise CleanupRefusal("scan item lacks stable file identity or timestamps")
-    if record.file_id_kind != "file_id_128":
+    if record.file_id_kind not in _ACCEPTED_FILE_ID_KINDS:
         raise CleanupRefusal("cleanup requires a Windows 128-bit file identity")
     if record.link_count != 1:
         raise CleanupRefusal("hard-linked files cannot become cleanup actions")
@@ -688,7 +720,7 @@ def _snapshot_selected_directory(item: TriageItem) -> ExactFileSnapshot:
         or record.creation_time_ns is None
     ):
         raise CleanupRefusal("scan item lacks a stable directory identity")
-    if record.file_id_kind != "file_id_128":
+    if record.file_id_kind not in _ACCEPTED_FILE_ID_KINDS:
         raise CleanupRefusal("cleanup requires a Windows 128-bit directory identity")
     if (record.attributes or 0) & FILE_ATTRIBUTE_REPARSE_POINT or record.reparse_tag is not None:
         raise CleanupRefusal("reparse-point records cannot become cleanup actions")
@@ -709,9 +741,10 @@ def _snapshot_from_live_read(item: TriageItem) -> ExactFileSnapshot:
 
     record = item.record
     metadata = read_file_metadata(Path(record.path))
+    if metadata.is_reparse_point:
+        raise CleanupRefusal("selected file was replaced by a link since the completed scan")
     if (
         metadata.is_directory
-        or metadata.is_reparse_point
         or metadata.is_cloud_placeholder
         or metadata.volume_serial is None
         or metadata.file_id is None
@@ -721,7 +754,7 @@ def _snapshot_from_live_read(item: TriageItem) -> ExactFileSnapshot:
         or metadata.last_write_time_ns is None
     ):
         raise CleanupRefusal("selected file has no stable ordinary-file identity")
-    if metadata.file_id_kind != "file_id_128":
+    if metadata.file_id_kind not in _ACCEPTED_FILE_ID_KINDS:
         raise CleanupRefusal("cleanup requires a Windows 128-bit file identity")
     if metadata.link_count != 1:
         raise CleanupRefusal("hard-linked files cannot become cleanup actions")
@@ -756,8 +789,16 @@ def _preflight_candidate(
     keep_config: KeepClassification,
     known_roots: tuple[KnownCleanupRoot, ...] = (),
 ) -> None:
-    if not process_guard_allows(candidate.path):
-        raise CleanupRefusal("owning application is running; close it before cleaning this target")
+    refusal = process_guard_refusal(candidate.path)
+    if refusal is not None:
+        raise CleanupRefusal(refusal)
+    refusal = live_owner_refusal(
+        candidate.path,
+        directory=candidate.target_kind is CleanupTargetKind.DIRECTORY,
+        rule_proven=candidate.rule_proven,
+    )
+    if refusal is not None:
+        raise CleanupRefusal(refusal)
     _reject_protected_path(candidate.path, known_roots, keep_config)
     _require_strict_descendant(candidate.path, candidate.scan_root)
     if not is_local_fixed_path(candidate.path) or not is_local_fixed_path(candidate.scan_root):
@@ -785,6 +826,8 @@ def _preflight_candidate(
         return
     if not metadata_matches_snapshot(metadata, candidate.snapshot):
         raise CleanupRefusal("candidate changed since the completed scan")
+    if installer_ownership(candidate.path) is not None:
+        raise CleanupRefusal(INSTALLED_PROGRAM_REFUSAL)
 
 
 def _intent_for(action: CleanupAction, batch_id: str) -> CleanupIntent:
@@ -909,6 +952,7 @@ def _candidate_integrity(
     directory_scope: DirectoryScope | None = None,
     subtree_files: int = 0,
     subtree_bytes: int = 0,
+    rule_proven: bool = False,
 ) -> str:
     values = (
         candidate_id,
@@ -921,6 +965,7 @@ def _candidate_integrity(
         directory_scope.value if directory_scope else "",
         str(subtree_files),
         str(subtree_bytes),
+        "rule" if rule_proven else "review",
     )
     digest = hmac.new(_CAPABILITY_KEY, digestmod=hashlib.sha256)
     for value in values:
@@ -997,7 +1042,8 @@ def _snapshot_from_directory_metadata(
         or metadata.creation_time_ns is None
         or metadata.last_write_time_ns is None
         or metadata.link_count is None
-        or metadata.attributes is None
+        # Windows always reports attribute bits; other hosts have none to report.
+        or (metadata.attributes is None and os.name == "nt")
     ):
         raise CleanupRefusal(f"{label} has no stable ordinary-directory identity")
     return ExactFileSnapshot(
@@ -1060,7 +1106,9 @@ def _directory_execution_boundary(
 
 
 __all__ = [
+    "INSTALLED_PROGRAM_REFUSAL",
     "MAX_CLEANUP_BATCH_FILES",
+    "REVIEW_NOT_APPROVED_REFUSAL",
     "CleanupAction",
     "CleanupExecutionProgress",
     "CleanupExecutionResult",

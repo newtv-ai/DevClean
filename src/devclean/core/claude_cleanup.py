@@ -488,6 +488,7 @@ _CLAUDE_CWD_TEMP_RULE = _rule(
 )
 
 
+@_impl.snapshot_roots
 def claude_roots(environment: Mapping[str, str] | None = None) -> ClaudeRootSet:
     env = _casefold_env(environment)
     profile_value = env.get("userprofile")
@@ -760,6 +761,12 @@ def claude_process_running() -> bool:
 
 def clear_claude_process_cache() -> None:
     claude_process_running.cache_clear()
+    clear_claude_settings_cache()
+
+
+def clear_claude_settings_cache() -> None:
+    """Re-read Claude's settings.json next time; this never starts a process."""
+
     _custom_auto_memory_root_cached.cache_clear()
 
 
@@ -776,6 +783,7 @@ __all__ = [
     "claude_roots",
     "claude_scan_roots",
     "clear_claude_process_cache",
+    "clear_claude_settings_cache",
     "evaluate_claude_path",
     "match_claude_rule",
 ]

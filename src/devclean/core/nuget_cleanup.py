@@ -117,6 +117,7 @@ _PROJECT_METADATA_NAMES = frozenset(
 )
 
 
+@_impl.snapshot_roots
 def nuget_roots(environment: Mapping[str, str] | None = None) -> NuGetRootSet:
     env = _casefold_env(environment)
     discovered = _effective_nuget_locals() if environment is None else {}
@@ -290,7 +291,16 @@ def nuget_process_running() -> bool:
     return result.returncode != 0 or "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
+def _nuget_config_files() -> tuple[str, ...]:
+    """The user-level NuGet.Config that redirects NuGet's local folders."""
+
+    appdata = _casefold_env(None).get("appdata")
+    return _impl.config_paths(
+        os.path.join(appdata, "NuGet", "NuGet.Config") if appdata else None,
+    )
+
+
+@_impl.cached_until_config_changes(_nuget_config_files)
 def _effective_nuget_locals() -> dict[str, str]:
     executable = dotnet_executable()
     try:

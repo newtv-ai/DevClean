@@ -244,6 +244,7 @@ ANDROID_AVD_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def android_avd_roots(
     environment: Mapping[str, str] | None = None,
 ) -> AndroidAvdRootSet:

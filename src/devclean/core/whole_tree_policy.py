@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from devclean.core.application_cleanup import (
@@ -23,6 +22,7 @@ from devclean.core.application_cleanup import (
     DecisionOwner,
     LastUseStrategy,
     evaluate_application_path,
+    file_time_utc,
 )
 from devclean.core.cleanup_catalog import CleanupPolicy, KnownCleanupRoot, known_root_for_path
 from devclean.scanner.filesystem import ScanOptions, ScanRecordKind, scan_roots
@@ -85,10 +85,8 @@ def assess_application_whole_tree_policy(
     if rule is None:
         return None
 
-    observed = datetime.fromtimestamp(
-        evidence.latest_activity_time_ns / 1_000_000_000,
-        tz=UTC,
-    )
+    # An unrepresentable time means unknown usage, which keeps the tree.
+    observed = file_time_utc(evidence.latest_activity_time_ns)
     decision = evaluate_application_path(
         path,
         logical_size=evidence.logical_bytes,

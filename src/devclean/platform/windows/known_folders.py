@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 _FOLDERID_LOCAL_APPDATA = "F1B32785-6FBA-4FCF-9D55-7B8E7F157091"
+_FOLDERID_DOWNLOADS = "374DE290-123F-4565-9164-39C4925E467B"
 _COINIT_APARTMENTTHREADED = 0x2
 _S_OK = 0
 _S_FALSE = 1
@@ -32,6 +33,16 @@ def local_appdata_path() -> Path:
     local-volume/reparse/storage boundary before granting mutation authority.
     """
 
+    return _known_folder(_FOLDERID_LOCAL_APPDATA, "Local AppData")
+
+
+def downloads_path() -> Path:
+    """Return the current user's Downloads folder, following any redirection."""
+
+    return _known_folder(_FOLDERID_DOWNLOADS, "Downloads")
+
+
+def _known_folder(folder_id: str, label: str) -> Path:
     if not _WINDOWS:
         raise RuntimeError("Windows Known Folder API is only available on Windows")
 
@@ -68,7 +79,7 @@ def local_appdata_path() -> Path:
         )
         raise RuntimeError(message)
 
-    guid = _guid(_FOLDERID_LOCAL_APPDATA)
+    guid = _guid(folder_id)
     pointer = ctypes.c_void_p()
     try:
         result = int(
@@ -81,8 +92,7 @@ def local_appdata_path() -> Path:
         )
         if result < 0 or pointer.value is None:
             raise RuntimeError(
-                "SHGetKnownFolderPath(FOLDERID_LocalAppData) failed: "
-                f"0x{result & 0xFFFFFFFF:08X}"
+                f"SHGetKnownFolderPath({label}) failed: 0x{result & 0xFFFFFFFF:08X}"
             )
         try:
             value = ctypes.wstring_at(pointer.value)
@@ -93,10 +103,10 @@ def local_appdata_path() -> Path:
             co_uninitialize()
 
     if not value or "\x00" in value:
-        raise RuntimeError("Windows returned an invalid Local AppData known-folder path")
+        raise RuntimeError(f"Windows returned an invalid {label} known-folder path")
     candidate = Path(value)
     if not candidate.is_absolute():
-        raise RuntimeError("Windows returned a non-absolute Local AppData known-folder path")
+        raise RuntimeError(f"Windows returned a non-absolute {label} known-folder path")
     return Path(os.path.abspath(candidate))
 
 
@@ -106,4 +116,4 @@ def _guid(value: str) -> _GUID:
     return _GUID(parsed.time_low, parsed.time_mid, parsed.time_hi_version, data4)
 
 
-__all__ = ["local_appdata_path"]
+__all__ = ["downloads_path", "local_appdata_path"]

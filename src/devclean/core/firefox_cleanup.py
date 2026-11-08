@@ -32,6 +32,7 @@ from devclean.core._application_cleanup_impl import (
     RebuildCost,
     effective_idle_days,
 )
+from devclean.core.live_owners import forget_live_state, shared_running_processes
 
 _MIB = 1024**2
 
@@ -223,6 +224,7 @@ FIREFOX_RULES: tuple[ApplicationCleanupRule, ...] = (
 )
 
 
+@_impl.snapshot_roots
 def firefox_roots(environment: Mapping[str, str] | None = None) -> FirefoxRootSet:
     env = _casefold_env(environment)
     appdata = env.get("appdata")
@@ -482,29 +484,18 @@ def firefox_process_running() -> bool:
     return "RUNNING" in result.stdout
 
 
-@lru_cache(maxsize=1)
 def _running_profile_roots() -> tuple[PureWindowsPath, ...]:
     if os.name != "nt":
         return ()
-    script = (
-        "$p=Get-CimInstance Win32_Process | Where-Object { $_.Name -ieq 'firefox.exe' }; "
-        "$p | ForEach-Object { $_.CommandLine }"
-    )
-    try:
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=6,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return ()
-    if result.returncode != 0:
-        return ()
+    # One process list per scan or cleanup run, shared by every application.
+    lines = [
+        process.command_line
+        for process in shared_running_processes()
+        if process.name.casefold() == "firefox.exe"
+    ]
 
     found: list[PureWindowsPath] = []
-    for line in result.stdout.splitlines():
+    for line in lines:
         value = _profile_switch_path(line)
         if not value:
             continue
@@ -516,7 +507,7 @@ def _running_profile_roots() -> tuple[PureWindowsPath, ...]:
 
 def clear_firefox_process_cache() -> None:
     firefox_process_running.cache_clear()
-    _running_profile_roots.cache_clear()
+    forget_live_state()
 
 
 def _profile_switch_path(command_line: str) -> str | None:
