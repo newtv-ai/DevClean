@@ -353,6 +353,8 @@ def _run_pnpm(
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            # Never wait for an answer nobody can type: a prompt fails at once.
+            stdin=subprocess.DEVNULL,
             env=env,
         )
     except (OSError, subprocess.SubprocessError) as error:

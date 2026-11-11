@@ -225,6 +225,7 @@ class CleanupExecutionProgress:
 
 
 type CleanupProgressReporter = Callable[[CleanupExecutionProgress], None]
+type ActionDoneReporter = Callable[[CleanupExecutionResult], None]
 
 
 def candidate_from_triage_item(
@@ -507,8 +508,13 @@ def execute_cleanup_batch(
     on_progress: CleanupProgressReporter | None = None,
     known_roots: tuple[KnownCleanupRoot, ...] = (),
     user_rules: UserRules | None = None,
+    on_action_done: ActionDoneReporter | None = None,
 ) -> CleanupExecutionResult:
     """Execute a durable, post-scan batch once; there is no replay path.
+
+    *on_action_done* hears about each action as soon as it is over -- removed,
+    partly removed or refused -- as a one-action result, so a window can show
+    every row's outcome while the rest still runs.
 
     Two outcomes, matching what the user chose: ``RECYCLE`` sends the object to
     the Windows Recycle Bin, where they already know how to get it back, and the
@@ -529,6 +535,7 @@ def execute_cleanup_batch(
     removed_files: dict[str, int] = {}
     for action_index, action in enumerate(batch.actions):
         candidate = action.candidate
+        action_failure: BaseException | None = None
         _report_cleanup_progress(
             on_progress,
             action_index=action_index,
@@ -685,6 +692,7 @@ def execute_cleanup_batch(
         except Exception as error:
             _record_failure(active_journal, action.action_id, error)
             failures.append((str(candidate.path), error))
+            action_failure = error
         finally:
             _report_cleanup_progress(
                 on_progress,
@@ -693,6 +701,20 @@ def execute_cleanup_batch(
                 candidate=candidate,
                 files_processed=max(1, candidate.subtree_files),
                 completed=True,
+            )
+            _report_action_done(
+                on_action_done,
+                active_journal,
+                action,
+                failure=action_failure,
+                left=next(
+                    (outcome for path, outcome in partial if path == str(candidate.path)), None
+                ),
+                purged_bytes=purged_directory_bytes.get(
+                    action.action_id, candidate.selected_logical_bytes
+                ),
+                files=removed_files.get(action.action_id),
+                unverified=str(candidate.path) in unverified_recycle_paths,
             )
 
     active_journal.finalize_batch(batch.batch_id)
@@ -741,6 +763,47 @@ def execute_cleanup_batch(
         removed=removed,
     )
 
+
+
+def _report_action_done(
+    reporter: ActionDoneReporter | None,
+    journal: CleanupJournal,
+    action: CleanupAction,
+    *,
+    failure: BaseException | None,
+    left: TempFolderPurgeResult | None,
+    purged_bytes: int,
+    files: int | None,
+    unverified: bool,
+) -> None:
+    """Tell *reporter* how one action ended; a reporting problem never stops deletion."""
+
+    if reporter is None:
+        return
+    try:
+        candidate = action.candidate
+        path = str(candidate.path)
+        state = journal.action(action.action_id).state
+        finished = state in {ActionState.PURGED, ActionState.RECYCLED}
+        if files is None:
+            files = (
+                max(1, candidate.subtree_files)
+                if candidate.target_kind is CleanupTargetKind.DIRECTORY
+                else 1
+            )
+        reporter(
+            CleanupExecutionResult(
+                action_states=((action.action_id, state),),
+                purged_logical_bytes=purged_bytes if state is ActionState.PURGED else 0,
+                completed_paths=(path,) if finished and left is None else (),
+                unverified_recycle_paths=(path,) if unverified else (),
+                failures=((path, failure),) if failure is not None else (),
+                partial=((path, left),) if left is not None else (),
+                removed=((path, files, purged_bytes),) if finished else (),
+            )
+        )
+    except Exception:
+        return
 
 
 def _entry_in_use(path: str, is_directory: bool) -> str | None:

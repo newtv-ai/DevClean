@@ -38,9 +38,10 @@ lists processes once instead of once per application.
 
 from __future__ import annotations
 
+import bisect
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from devclean.core._application_cleanup_impl import forget_run_cached, run_cached
@@ -119,6 +120,41 @@ class LiveState:
 class _OwnerIndex:
     files: dict[str, str]
     folders: tuple[tuple[str, str], ...]
+    # Each folder without its trailing separator -> (its place in *folders*,
+    # owner).  Looking a path's own ancestors up here finds the same owner as
+    # scanning *folders* in order, in a few lookups instead of one per folder;
+    # emptying a temp folder asks this for every entry in it.
+    folder_rank: dict[str, tuple[int, str]] = field(default_factory=dict)
+    # Every used path (files first, then folders) -> (its place, owner), and the
+    # same paths sorted, so "something used inside this folder" is a range
+    # lookup instead of a scan of every path.
+    used_rank: dict[str, tuple[int, str]] = field(default_factory=dict)
+    used_sorted: tuple[str, ...] = ()
+
+    def owning_folder(self, target: str) -> str | None:
+        """The owner of the first folder in *folders* that *target* lies inside."""
+
+        best: tuple[int, str] | None = None
+        cut = target.find(os.sep)
+        while cut >= 0:
+            hit = self.folder_rank.get(target[:cut])
+            if hit is not None and (best is None or hit[0] < best[0]):
+                best = hit
+            cut = target.find(os.sep, cut + 1)
+        return None if best is None else best[1]
+
+    def first_used_inside(self, target: str) -> str | None:
+        """The owner of the first used path (files, then folders) that is or lies in *target*."""
+
+        best = self.used_rank.get(target)
+        below = target.rstrip(os.sep) + os.sep
+        for path in self.used_sorted[bisect.bisect_left(self.used_sorted, below) :]:
+            if not path.startswith(below):
+                break
+            hit = self.used_rank[path]
+            if best is None or hit[0] < best[0]:
+                best = hit
+        return None if best is None else best[1]
 
 
 def list_processes() -> tuple[ProcessInfo, ...]:
@@ -175,25 +211,20 @@ def live_owner_refusal(
     # folders as the user knows them. Should expansion have changed the path's
     # shape, the checked form is shown instead.
     written = os.path.normpath(os.path.abspath(os.fspath(path)))
-    if len(_parts(written)) != len(_parts(target)):
-        written = target
+    target_parts = _parts(target)
+    written_parts = _parts(written)
+    if len(written_parts) != len(target_parts):
+        written, written_parts = target, target_parts
     index = run_cached("live_owner_index", _build_owner_index)
-    owner = index.files.get(target) or next(
-        (name for folder, name in index.folders if is_within(target, folder)), None
-    )
+    owner = index.files.get(target) or index.owning_folder(target)
     if owner is None and directory:
-        owner = next(
-            (
-                name
-                for used, name in (*index.files.items(), *index.folders)
-                if used == target or is_within(used, target)
-            ),
-            None,
-        )
+        owner = index.first_used_inside(target)
     if owner is not None:
         return f"{LIVE_OWNER_REFUSAL}: {owner}"
+    # Worked out once per target, not once per hidden process.
+    named = _NamedParts(target_parts, written_parts)
     for process in state.hidden:
-        why = _relation(process, target, written, directory=directory)
+        why = _relation(process, target, written, directory=directory, named=named)
         if why is not None:
             return f"{HIDDEN_RELATED_REFUSAL}: {process.name}: {why}"
     unplaced = frozenset(process.name.casefold() for process in state.hidden if not process.program)
@@ -282,18 +313,51 @@ def _hidden(process: ProcessInfo) -> HiddenProcess:
     return HiddenProcess(process.name, program, folder, usable_stem)
 
 
+class _NamedParts:
+    """A target's path parts, folded and split into name tokens once."""
+
+    def __init__(self, target_parts: list[str], written_parts: list[str]) -> None:
+        self.target_parts = target_parts
+        self.written_parts = written_parts
+        self._tokens: list[tuple[str, frozenset[str], str]] | None = None
+        self._ancestors: dict[str, list[str]] = {}
+
+    def tokens(self) -> list[tuple[str, frozenset[str], str]]:
+        """(folded part, its name tokens, the part as written) for each part."""
+
+        if self._tokens is None:
+            self._tokens = [
+                (text, frozenset(re.split(r"[^0-9a-z]+", text)), shown)
+                for text, shown in (
+                    (part.casefold(), shown)
+                    for part, shown in zip(self.target_parts, self.written_parts, strict=True)
+                )
+            ]
+        return self._tokens
+
+    def ancestors(self, start: str) -> list[str]:
+        if start not in self._ancestors:
+            self._ancestors[start] = _ancestors(start)
+        return self._ancestors[start]
+
+
 def _relation(
     process: HiddenProcess,
     target: str,
     written: str,
     *,
     directory: bool,
+    named: _NamedParts | None = None,
 ) -> str | None:
     """How *target* relates to a hidden process, in the user's terms, or ``None``.
 
     *target* is normalised and used for every comparison; *written* is the same
-    path as the user knows it and only supplies the folder names shown.
+    path as the user knows it and only supplies the folder names shown.  *named*
+    carries the target's parts when several processes are asked about it.
     """
+
+    if named is None:
+        named = _NamedParts(_parts(target), _parts(written))
 
     if process.program is not None:
         if target == process.program or (directory and is_within(process.program, target)):
@@ -307,14 +371,12 @@ def _relation(
         if os.path.basename(target).casefold() == name:
             return "它可能就是这个正在运行的程序"
         start = target if directory else os.path.dirname(target)
-        for folder in _ancestors(start):
+        for folder in named.ancestors(start):
             if _program_file_exists(folder, process.name):
-                shown = os.path.join(*_parts(written)[: len(_parts(folder))])
+                shown = os.path.join(*named.written_parts[: len(_parts(folder))])
                 return f"同一文件夹（{shown}）里有同名程序，它可能正从那里运行"
     if process.stem is not None:
-        for part, shown in zip(_parts(target), _parts(written), strict=True):
-            text = part.casefold()
-            tokens = re.split(r"[^0-9a-z]+", text)
+        for text, tokens, shown in named.tokens():
             if process.stem in tokens or (len(process.stem) >= 5 and process.stem in text):
                 return f"路径中含有它的名称（{shown}）"
     if process.name.casefold() == "msiexec.exe" and target.endswith(_INSTALLER_PACKAGES):
@@ -430,7 +492,14 @@ def _build_owner_index() -> _OwnerIndex:
         note(service.image_path, owner, program_folder=True)
         for setting in service.settings:
             note(setting, owner, program_folder=False)
-    return _OwnerIndex(files, tuple(folders.items()))
+    ordered = tuple(folders.items())
+    rank: dict[str, tuple[int, str]] = {}
+    for position, (folder, owner) in enumerate(ordered):
+        rank.setdefault(folder.rstrip(os.sep), (position, owner))
+    used: dict[str, tuple[int, str]] = {}
+    for position, (path, owner) in enumerate((*files.items(), *ordered)):
+        used.setdefault(path, (position, owner))
+    return _OwnerIndex(files, ordered, rank, used, tuple(sorted(used)))
 
 
 __all__ = [

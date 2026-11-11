@@ -1115,3 +1115,209 @@ def test_the_scan_worker_hands_over_totals_and_the_finished_partition(
     assert [item.path for item in partition.deletable] == [item.path for item in expected.deletable]
     assert [item.path for item in partition.unsure] == [item.path for item in expected.unsure]
     assert {Path(item.path).name for item in partition.deletable} == {"setup.exe"}
+
+
+# ---- the product cleanup: every row reported as it ends (2026-11-11) ----------------
+# User report on 9459930: "正在清理 128 项…" for a long time and nothing removed.
+
+
+def _drain(window: Any) -> list[tuple[str, Any]]:
+    events = []
+    while not window._events.empty():
+        events.append(window._events.get_nowait())
+    return events
+
+
+def _hold_open(path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Make *path* undeletable as if another program held it open."""
+
+    if os.name == "nt":
+        return path.open("rb")  # Python opens files without delete sharing
+    real_unlink = os.unlink
+
+    def unlink(name: Any, *, dir_fd: int | None = None) -> None:
+        if name == path.name:
+            raise OSError(32, "The process cannot access the file because it is in use", name)
+        real_unlink(name, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "unlink", unlink)
+    return None
+
+
+def _row_paths(payload: Any) -> tuple[str, ...]:
+    _token, _count, _total, result, failure = payload
+    if failure is not None:
+        return (failure[0],)
+    return (*result.completed_paths, *(path for path, _left in result.partial))
+
+
+def test_every_row_is_reported_as_it_ends_and_temp_folders_go_last(
+    ws: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pathlib import PureWindowsPath
+
+    from devclean.core.triage import DirectoryScope
+
+    temp = ws.home / "AppData" / "Local" / "Temp"
+    entries = [_write(temp / f"t{i % 6}" / f"u{i % 5}" / f"f{i}.tmp", b"x") for i in range(600)]
+    held = _write(temp / "held.tmp", b"held")
+    installers = [_nsis(ws.downloads / f"old-setup-{i}.exe") for i in range(3)]
+    window, _session = _scan(ws)
+    deletable, _unsure = _partition(window)
+    temp_row = next(
+        item for item in deletable.values() if item.directory_scope is DirectoryScope.TEMP_FOLDER
+    )
+    # Temp first, as the window lists it (the largest row).
+    rows = (temp_row, *(deletable[path.name] for path in installers))
+    # What a desktop runs: programs with folders of their own, some whose
+    # command line Windows hides.
+    programs = ws.root / "programs"
+    for index in range(150):
+        program = programs / f"App{index}" / f"app{index}.exe"
+        data = programs / f"Data{index}"
+        ws.processes.append(
+            ProcessInfo(f"app{index}.exe", str(program), f'"{program}" --data "{data}"')
+        )
+    for index in range(10):
+        hidden = programs / f"Hidden{index}" / f"hidden{index}.exe"
+        ws.processes.append(ProcessInfo(f"hidden{index}.exe", str(hidden), "", 1))
+    counts = {"checked": 0, "parts": 0, "is_within": 0, "edge_walks": 0}
+
+    def counting(name: str, function: Any) -> Any:
+        def counted(*args: Any, **kwargs: Any) -> Any:
+            counts[name] += 1
+            return function(*args, **kwargs)
+
+        return counted
+
+    monkeypatch.setattr(
+        postscan_cleanup, "_entry_in_use", counting("checked", postscan_cleanup._entry_in_use)
+    )
+    monkeypatch.setattr(live_owners, "_parts", counting("parts", live_owners._parts))
+    monkeypatch.setattr(live_owners, "is_within", counting("is_within", installer_files.is_within))
+    relative_to = PureWindowsPath.relative_to
+
+    def edge_walk(self: PureWindowsPath, *args: Any, **kwargs: Any) -> PureWindowsPath:
+        if "\\temp\\" in str(self).casefold().replace("/", "\\"):
+            counts["edge_walks"] += 1
+        return relative_to(self, *args, **kwargs)
+
+    monkeypatch.setattr(PureWindowsPath, "relative_to", edge_walk)
+    holder = _hold_open(held, monkeypatch)
+    try:
+        window._product_delete_worker("delete", rows, ())
+    finally:
+        if holder is not None:
+            holder.close()
+
+    events = _drain(window)
+    kinds = [kind for kind, _payload in events]
+    # The window hears from the cleanup at once, not only at the end.
+    assert kinds[0] == "delete_prepare_progress" and kinds[-1] == "delete_done"
+    finished = [
+        (position, payload)
+        for position, (kind, payload) in enumerate(events)
+        if kind == "delete_item_done"
+    ]
+    assert [payload[1:3] for _position, payload in finished] == [(1, 4), (2, 4), (3, 4), (4, 4)]
+    # The installers were reported before the Temp folder, which goes last.
+    reported = [_row_paths(payload) for _position, payload in finished]
+    assert reported[-1] == (str(temp),)
+    assert sorted(path for paths in reported[:-1] for path in paths) == sorted(map(str, installers))
+    temp_progress = [
+        position
+        for position, (kind, payload) in enumerate(events)
+        if kind == "delete_action_progress" and payload[4].path == str(temp)
+    ]
+    assert temp_progress and temp_progress[0] < finished[-1][0]
+
+    assert held.exists() and not any(path.exists() for path in (*entries, *installers))
+    _token, results, failures = events[-1][1]
+    assert failures == ()
+    left = {path: outcome for result in results for path, outcome in result.partial}
+    assert left[str(temp)].in_use == 1
+
+    # Each entry costs a few lookups, not one per running program (160 here):
+    # the path is split twice, not twice per hidden program; program folders
+    # are looked up by ancestor and by sorted range, not scanned; what is left
+    # is one folder test per hidden program (10 here).  Edge never walks the
+    # parents of a Temp path.
+    assert counts["checked"] >= len(entries)
+    assert counts["parts"] <= 2 * counts["checked"] + 20
+    assert counts["is_within"] <= 20 * counts["checked"]
+    assert counts["edge_walks"] == 0
+
+
+def test_a_hanging_official_command_holds_back_no_other_row(
+    ws: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+    from types import SimpleNamespace
+
+    installers = [_nsis(ws.downloads / f"old-setup-{i}.exe") for i in range(3)]
+    window, _session = _scan(ws)
+    deletable, _unsure = _partition(window)
+    rows = tuple(deletable[path.name] for path in installers)
+    release = threading.Event()
+
+    def command(candidate: Any) -> Any:
+        if candidate.candidate_id == "slow":
+            assert release.wait(timeout=60)
+            return SimpleNamespace(reclaimed_bytes=10, path=ws.root / "go-build")
+        raise RuntimeError("无法执行 dotnet nuget locals: Command timed out after 600 seconds")
+
+    monkeypatch.setattr(product_vendor_app, "execute_vendor_cleanup", command)
+    vendor = (SimpleNamespace(candidate_id="slow"), SimpleNamespace(candidate_id="stuck"))
+    worker = threading.Thread(target=window._product_delete_worker, args=("delete", rows, vendor))
+    worker.start()
+    try:
+        seen: list[tuple[str, Any]] = []
+        while sum(kind == "delete_item_done" for kind, _payload in seen) < 3:
+            seen.append(window._events.get(timeout=60))
+        # Every file row is over while the first command still runs.
+        filesystem = [_row_paths(payload) for kind, payload in seen if kind == "delete_item_done"]
+        reported = sorted(path for paths in filesystem for path in paths)
+        assert reported == sorted(map(str, installers))
+        assert worker.is_alive() and not any(path.exists() for path in installers)
+    finally:
+        release.set()
+        worker.join(timeout=60)
+    assert not worker.is_alive()
+    rest = _drain(window)
+    assert rest[-1][0] == "delete_done"
+    commands = [payload for kind, payload in rest if kind == "delete_item_done"]
+    assert {payload[1] for payload in commands} == {4, 5}
+    failed = [payload[4] for payload in commands if payload[4] is not None]
+    timed_out = "无法执行 dotnet nuget locals: Command timed out after 600 seconds"
+    assert failed == [("vendor:stuck", f"其他（RuntimeError：{timed_out}）")]
+
+
+def test_an_unexpected_error_still_reports_every_row_and_ends_the_run(
+    ws: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installers = [_nsis(ws.downloads / f"old-setup-{i}.exe") for i in range(3)]
+    window, _session = _scan(ws)
+    deletable, _unsure = _partition(window)
+    rows = tuple(deletable[path.name] for path in installers)
+
+    def broken(*_args: Any, **_kwargs: Any) -> Any:
+        raise KeyError("journal went away")
+
+    monkeypatch.setattr(product_vendor_app, "execute_cleanup_batch", broken)
+    window._product_delete_worker("delete", rows, ())
+    events = _drain(window)
+    assert events[-1][0] == "delete_done"
+    failures = [payload[4] for kind, payload in events if kind == "delete_item_done"]
+    assert sorted(path for path, _reason in failures) == sorted(map(str, installers))
+    assert {reason for _path, reason in failures} == {"其他（KeyError：'journal went away'）"}
+    assert all(path.exists() for path in installers)
+
+    def crashed(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("worker crashed")
+
+    monkeypatch.setattr(window, "_clean_filesystem_rows", crashed)
+    window._product_delete_worker("delete", rows, ())
+    events = _drain(window)
+    assert events[-1][0] == "delete_done"  # the window is never left waiting
+    failures = [payload[4] for kind, payload in events if kind == "delete_item_done"]
+    assert sorted(path for path, _reason in failures) == sorted(map(str, installers))

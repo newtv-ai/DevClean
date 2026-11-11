@@ -934,16 +934,25 @@ def _normalize_text(path: str) -> str:
     return rendered.rstrip("\\/").casefold()
 
 
+# Rule candidates and roots are a few hundred fixed strings, compared with every
+# scanned file and every entry of a temp folder being emptied: their folded
+# form, "below me" prefix and wildcard flag are worked out once, not per call.
+@lru_cache(maxsize=8192)
+def _candidate_form(candidate: str) -> tuple[str, str, bool]:
+    folded = candidate.casefold()
+    return folded, folded.rstrip("\\") + "\\", any(char in folded for char in "*?[")
+
+
 def _matches(path: str, candidate: str, kind: MatchKind) -> bool:
-    candidate = candidate.casefold()
+    folded, below, wildcard = _candidate_form(candidate)
     if kind is MatchKind.EXACT:
-        return path == candidate
+        return path == folded
     if kind is MatchKind.PREFIX:
-        return path == candidate or path.startswith(candidate.rstrip("\\") + "\\")
-    if fnmatch.fnmatchcase(path, candidate):
+        return path == folded or path.startswith(below)
+    if fnmatch.fnmatchcase(path, folded):
         return True
-    if not any(char in candidate for char in "*?["):
-        return path.startswith(candidate.rstrip("\\") + "\\")
+    if not wildcard:
+        return path.startswith(below)
     return False
 
 
@@ -955,11 +964,13 @@ def _could_hold(normalized_root: str, normalized_path: str) -> bool:
     it -- unless the root itself contains wildcard characters.
     """
 
-    return (
-        normalized_path == normalized_root
-        or normalized_path.startswith(normalized_root.rstrip("\\") + "\\")
-        or any(char in normalized_root for char in "*?[")
-    )
+    below, wildcard = _root_form(normalized_root)
+    return normalized_path == normalized_root or normalized_path.startswith(below) or wildcard
+
+
+@lru_cache(maxsize=4096)
+def _root_form(normalized_root: str) -> tuple[str, bool]:
+    return normalized_root.rstrip("\\") + "\\", any(char in normalized_root for char in "*?[")
 
 
 @lru_cache(maxsize=4096)

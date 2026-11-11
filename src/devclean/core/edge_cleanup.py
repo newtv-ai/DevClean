@@ -463,6 +463,11 @@ def _switch_path(command_line: str, switch: str) -> str | None:
 def _profile_root_for_path(
     path: str | os.PathLike[str], data_root: PureWindowsPath
 ) -> PureWindowsPath | None:
+    # A path outside the data root has no profile; telling so by string costs
+    # nothing, while ``relative_to`` builds every parent.  Edge is asked about
+    # every entry of %TEMP% (its update logs live there), so this runs a lot.
+    if not _impl._normalize(path).startswith(_impl._normalize(data_root) + "\\"):
+        return None
     target = PureWindowsPath(os.fspath(path))
     try:
         relative = target.relative_to(data_root)
@@ -505,6 +510,9 @@ def _append_match(
     index: int,
 ) -> None:
     normalized_root = _impl._normalize(root)
+    # Every candidate is the root or below it (see _impl._could_hold).
+    if not _impl._could_hold(normalized_root, normalized_path):
+        return
     for expanded in _impl._expand_braces(rule.relative_pattern):
         candidate = normalized_root + ("\\" + expanded if expanded else "")
         if not _impl._matches(normalized_path, candidate, rule.match_kind):

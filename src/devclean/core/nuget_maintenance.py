@@ -495,6 +495,8 @@ def _run_dotnet(
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            # Never wait for an answer nobody can type: a prompt fails at once.
+            stdin=subprocess.DEVNULL,
             env=environment,
         )
     except (OSError, subprocess.SubprocessError) as error:

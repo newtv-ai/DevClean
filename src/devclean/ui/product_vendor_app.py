@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 import tkinter as tk
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -32,14 +33,14 @@ from devclean.core.cleanup_catalog import KnownCleanupRoot
 from devclean.core.cleanup_journal import ActionState, CleanupMode
 from devclean.core.npm_maintenance import npm_generic_scan_skip_paths
 from devclean.core.postscan_cleanup import (
+    CleanupExecutionProgress,
     CleanupExecutionResult,
-    CleanupRefusal,
     ScanCleanupCandidate,
     execute_cleanup_batch,
     prepare_cleanup_plan,
 )
 from devclean.core.rule_schema import CleanupCategory
-from devclean.core.triage import CleanupTargetKind, TriageItem, TriageSession
+from devclean.core.triage import CleanupTargetKind, DirectoryScope, TriageItem, TriageSession
 from devclean.core.user_rules import UserRules, normalise_path
 from devclean.core.vendor_cleanup_actions import (
     VendorCleanupCandidate,
@@ -120,6 +121,17 @@ def _generic_vendor_skip_paths(
     )
     paths.extend(str(path) for path in source_proven_paths if _path_reachable(path, drives))
     return tuple(dict.fromkeys(paths))
+
+
+def _paths_of(result: CleanupExecutionResult) -> tuple[str, ...]:
+    """Every row path a one-action result speaks for."""
+
+    return (
+        *result.completed_paths,
+        *(path for path, _outcome in result.partial),
+        *(path for path, _error in result.failures),
+        *(path for path, _files, _bytes in result.removed),
+    )
 
 
 class ProductDevCleanWindow(_BaseProductDevCleanWindow):
@@ -310,11 +322,17 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
             ("all", bool(all_rows)),
             ("none", bool(self._checked)),
             ("recycle", selected > 0),
-            ("report", bool(getattr(self, "_cleanup_report", ""))),
+            (
+                "report",
+                bool(getattr(self, "_cleanup_report", ""))
+                or bool(getattr(self, "_live_outcomes", None)),
+            ),
         ):
             button = self._buttons.get(key)
+            # The report can be read while a cleanup still runs.
+            usable = enabled and (not busy or key == "report")
             if button is not None:
-                button.configure(state=tk.NORMAL if not busy and enabled else tk.DISABLED)
+                button.configure(state=tk.NORMAL if usable else tk.DISABLED)
         purge = self._buttons.get("purge")
         if purge is not None:
             purge.configure(state=tk.DISABLED)
@@ -370,6 +388,12 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
             return
 
         self._busy = "deleting"
+        # Each row's outcome is shown as it comes in (app.DevCleanWindow._item_done).
+        self._live_outcomes = {}
+        self._live_freed = 0
+        self._live_status = ""
+        self._live_report_at = 0.0
+        self._cleanup_report = ""
         self._sync_buttons()
         self._progress.configure(mode="indeterminate", value=0)
         self._progress.start(60)
@@ -393,58 +417,156 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
         items: tuple[TriageItem, ...],
         vendor: tuple[VendorCleanupCandidate, ...],
     ) -> None:
+        """Clean every selected row, telling the window about each one as it ends.
+
+        Rows are reported one by one (``delete_item_done``), so the window shows
+        what went, what stayed and why while the rest still runs; the closing
+        ``delete_done`` is sent whatever happens.  Official package-manager
+        commands run beside the filesystem rows, never in front of them, and
+        temp folders -- the rows with the most entries to check -- go last.
+        """
+
         results: list[CleanupExecutionResult] = []
         failures: list[tuple[str, str]] = []
-        filesystem_candidates: list[ScanCleanupCandidate] = []
+        lock = threading.Lock()
+        total = len(items) + len(vendor)
+        finished = 0
 
-        for item in items:
-            try:
-                filesystem_candidates.append(self._candidate(item))
-            except (CleanupRefusal, OSError, TypeError, ValueError) as error:
-                failures.append((item.path, app._reason_of(error)))
+        def item_done(
+            result: CleanupExecutionResult | None, failure: tuple[str, str] | None
+        ) -> None:
+            nonlocal finished
+            with lock:
+                finished += 1
+                count = finished
+                if result is not None:
+                    results.append(result)
+                if failure is not None:
+                    failures.append(failure)
+            self._events.put(("delete_item_done", (token, count, total, result, failure)))
 
-        if filesystem_candidates:
+        commands = threading.Thread(
+            target=self._run_vendor_commands, args=(vendor, item_done), daemon=True
+        )
+        commands.start()
+        try:
+            self._clean_filesystem_rows(token, items, total, item_done)
+        except Exception as error:  # never leave the window waiting for the end
+            reason = app._reason_of(error)
+            with lock:
+                reported = {path for path, _reason in failures} | {
+                    path for result in results for path in _paths_of(result)
+                }
+            for item in items:
+                if item.path not in reported:
+                    item_done(None, (item.path, reason))
+        finally:
+            commands.join()
+            with lock:
+                closing = (tuple(results), tuple(failures))
+            self._events.put(("delete_done", (token, *closing)))
+
+    def _clean_filesystem_rows(
+        self,
+        token: str,
+        items: tuple[TriageItem, ...],
+        total: int,
+        item_done: Callable[[CleanupExecutionResult | None, tuple[str, str] | None], None],
+    ) -> None:
+        # Temp folders last: every entry in them is checked on its own, so they
+        # take longest, and nothing else should wait behind them.
+        ordered = sorted(items, key=lambda item: item.directory_scope is DirectoryScope.TEMP_FOLDER)
+        candidates: list[ScanCleanupCandidate] = []
+        for prepared, item in enumerate(ordered, start=1):
             try:
-                plan = prepare_cleanup_plan(tuple(filesystem_candidates))
+                candidates.append(self._candidate(item))
+            except Exception as error:
+                item_done(None, (item.path, app._reason_of(error)))
+            self._events.put(
+                (
+                    "delete_prepare_progress",
+                    (token, CleanupMode.PERMANENT, prepared, len(ordered), len(candidates)),
+                )
+            )
+        if not candidates:
+            return
+        try:
+            plan = prepare_cleanup_plan(tuple(candidates))
+        except Exception as error:
+            reason = app._reason_of(error)
+            for candidate in candidates:
+                item_done(None, (str(candidate.path), reason))
+            return
+        self._events.put(("delete_execute_started", (token, CleanupMode.PERMANENT, total)))
+        before = total - len(plan.actions)
+        for batch in plan.batches:
+            reported: set[str] = set()
+            last_update = 0.0
+
+            def report(
+                progress: CleanupExecutionProgress, *, completed_before: int = before
+            ) -> None:
+                nonlocal last_update
+                now = time.monotonic()
+                if not progress.completed and now - last_update < 0.25:
+                    return
+                last_update = now
+                self._events.put(
+                    (
+                        "delete_action_progress",
+                        (
+                            token,
+                            CleanupMode.PERMANENT,
+                            completed_before + progress.action_index,
+                            total,
+                            progress,
+                        ),
+                    )
+                )
+
+            def done(result: CleanupExecutionResult, *, seen: set[str] = reported) -> None:
+                seen.update(action_id for action_id, _state in result.action_states)
+                item_done(result, None)
+
+            try:
+                execute_cleanup_batch(
+                    batch,
+                    CleanupMode.PERMANENT,
+                    known_roots=self._known_roots,
+                    delete_config=self._scan_rules.delete.classification,
+                    keep_config=self._scan_rules.keep.classification,
+                    user_rules=self._rules,
+                    on_progress=report,
+                    on_action_done=done,
+                )
             except Exception as error:
                 reason = app._reason_of(error)
-                failures.extend(
-                    (str(candidate.path), reason) for candidate in filesystem_candidates
-                )
-            else:
-                for batch in plan.batches:
-                    try:
-                        results.append(
-                            execute_cleanup_batch(
-                                batch,
-                                CleanupMode.PERMANENT,
-                                known_roots=self._known_roots,
-                                delete_config=self._scan_rules.delete.classification,
-                                keep_config=self._scan_rules.keep.classification,
-                                user_rules=self._rules,
-                            )
-                        )
-                    except Exception as error:
-                        reason = app._reason_of(error)
-                        failures.extend(
-                            (str(action.candidate.path), reason) for action in batch.actions
-                        )
+                for action in batch.actions:
+                    if action.action_id not in reported:
+                        item_done(None, (str(action.candidate.path), reason))
+            before += len(batch.actions)
+
+    @staticmethod
+    def _run_vendor_commands(
+        vendor: tuple[VendorCleanupCandidate, ...],
+        item_done: Callable[[CleanupExecutionResult | None, tuple[str, str] | None], None],
+    ) -> None:
+        """Official cleanup commands, one by one, each reported when it ends."""
 
         for candidate in vendor:
             try:
                 vendor_result = execute_vendor_cleanup(candidate)
-            except (OSError, RuntimeError, TypeError, ValueError) as error:
-                failures.append((_vendor_row_id(candidate), app._reason_of(error)))
+            except Exception as error:  # a timeout or a refusal ends this row only
+                item_done(None, (_vendor_row_id(candidate), app._reason_of(error)))
                 continue
-            results.append(
+            item_done(
                 CleanupExecutionResult(
                     action_states=((candidate.candidate_id, ActionState.PURGED),),
                     purged_logical_bytes=vendor_result.reclaimed_bytes,
                     completed_paths=(str(vendor_result.path),),
-                )
+                ),
+                None,
             )
-
-        self._events.put(("delete_done", (token, tuple(results), tuple(failures))))
 
     def _report_deletion(
         self,

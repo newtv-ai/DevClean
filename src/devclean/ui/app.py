@@ -907,6 +907,26 @@ def render_cleanup_report(
     return "\n".join(lines)
 
 
+def _show_report_text(body: tk.Text, text: str) -> None:
+    body.configure(state=tk.NORMAL)
+    body.delete("1.0", tk.END)
+    body.insert("1.0", text)
+    # Read-only, but the text can still be selected and copied.
+    body.configure(state=tk.DISABLED)
+
+
+def refresh_open_cleanup_report(window: object) -> None:
+    """Put the current report text into the report window, if it is open."""
+
+    dialog = getattr(window, "_cleanup_report_window", None)
+    body = getattr(window, "_cleanup_report_body", None)
+    if dialog is None or body is None:
+        return
+    with contextlib.suppress(tk.TclError):
+        if dialog.winfo_exists():
+            _show_report_text(body, getattr(window, "_cleanup_report", ""))
+
+
 def open_cleanup_report(window: object) -> None:
     """Show the last cleanup's report in its own scrollable, copyable window."""
 
@@ -915,9 +935,13 @@ def open_cleanup_report(window: object) -> None:
     if root is None or not text:
         return
     previous = getattr(window, "_cleanup_report_window", None)
-    if previous is not None:
+    body = getattr(window, "_cleanup_report_body", None)
+    if previous is not None and body is not None:
         with contextlib.suppress(tk.TclError):
-            previous.destroy()
+            if previous.winfo_exists():
+                _show_report_text(body, text)
+                previous.lift()
+                return
     dialog = tk.Toplevel(root)
     dialog.title("清理结果")
     dialog.geometry("960x560")
@@ -928,11 +952,10 @@ def open_cleanup_report(window: object) -> None:
     body.configure(yscrollcommand=scroll.set)
     scroll.pack(side=tk.RIGHT, fill=tk.Y)
     body.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    body.insert("1.0", text)
-    # Read-only, but the text can still be selected and copied.
-    body.configure(state=tk.DISABLED)
+    _show_report_text(body, text)
     ttk.Button(dialog, text="关闭", command=dialog.destroy).pack(pady=(0, 10))
     window._cleanup_report_window = dialog  # type: ignore[attr-defined]
+    window._cleanup_report_body = body  # type: ignore[attr-defined]
 
 
 def forget_live_rows(window: object, tree: object) -> None:
@@ -1127,6 +1150,11 @@ class DevCleanWindow:
         self._cleanup_failures: dict[str, str] = {}
         # The last cleanup's item-by-item result, shown in the 「清理结果」 window.
         self._cleanup_report = ""
+        # The running cleanup's outcomes so far, row by row (see _item_done).
+        self._live_outcomes: dict[str, CleanupOutcome] = {}
+        self._live_freed = 0
+        self._live_status = ""
+        self._live_report_at = 0.0
         # Review items (AI or "需要判断") the AI or the user approved for deletion
         # in this scan, by normalised path; saved DELETE rules count as well.
         self._review_approvals: set[str] = set()
@@ -2533,26 +2561,43 @@ class DevCleanWindow:
                             maximum=total,
                             value=min(total, before + fraction),
                         )
+                        # What is already over stays in view while a big folder runs.
+                        tally = getattr(self, "_live_status", "")
+                        suffix = f"。{tally}" if tally else ""
                         if (
                             progress.target_kind is CleanupTargetKind.DIRECTORY
                             and not progress.completed
                         ):
                             self._status.set(
-                                f"正在彻底删除第 {current:,} / {total:,} 项："
-                                f"当前目录已处理 "
+                                f"正在彻底删除第 {current:,} / {total:,} 项"
+                                f"（{progress.path}）：当前目录已处理 "
                                 f"{progress.files_processed:,} / "
-                                f"{progress.files_total:,} 个文件"
+                                f"{progress.files_total:,} 个文件{suffix}"
                             )
                         else:
                             self._status.set(
                                 f"正在彻底删除… {min(total, before + int(progress.completed)):,}"
-                                f" / {total:,}"
+                                f" / {total:,}{suffix}"
                             )
                     else:
                         # Windows owns a Recycle Bin directory operation and
                         # exposes no reliable per-child counter. Keep the bar
                         # moving and report the exact item ordinal.
                         self._status.set(f"正在移入回收站第 {current:,} / {total:,} 项")
+                elif kind == "delete_item_done":
+                    token, done_count, total, result, failure = cast(
+                        tuple[
+                            str,
+                            int,
+                            int,
+                            CleanupExecutionResult | None,
+                            tuple[str, str] | None,
+                        ],
+                        payload,
+                    )
+                    if token != self._delete_token:
+                        continue
+                    self._item_done(done_count, total, result, failure)
                 elif kind == "delete_progress":
                     token, mode, done, total = cast(tuple[str, CleanupMode, int, int], payload)
                     if token != self._delete_token:
@@ -2659,6 +2704,11 @@ class DevCleanWindow:
         # What the scan could not read inside a whole-tree row (product scan).
         scan_notes = getattr(getattr(self, "_session", None), "summary_notes", None)
         self._cleanup_report = render_cleanup_report(outcomes, freed, scan_notes)
+        # The run is over: what was shown row by row now comes from all results.
+        self._live_outcomes = {}
+        self._live_freed = 0
+        self._live_status = ""
+        refresh_open_cleanup_report(self)
         self._sync_buttons()
         # An item with nothing removed is not "cleaned": it counts as not done.
         parts = [f"已删除 {finished:,} 项"]
@@ -2687,7 +2737,67 @@ class DevCleanWindow:
         if partial or failed:
             open_cleanup_report(self)
 
+    def _item_done(
+        self,
+        finished: int,
+        total: int,
+        result: CleanupExecutionResult | None,
+        failure: tuple[str, str] | None,
+    ) -> None:
+        """Show one row's outcome the moment it is known, not after the whole run.
+
+        Only that row is touched (removed, or its reason rewritten); the whole
+        table is redrawn once, by :meth:`_report_deletion`, when the run ends.
+        """
+
+        live: dict[str, CleanupOutcome] = getattr(self, "_live_outcomes", None) or {}
+        self._live_outcomes = live
+        outcomes = cleanup_outcomes(
+            () if result is None else (result,), () if failure is None else (failure,)
+        )
+        tree = self._deletable_tree
+        for outcome in outcomes:
+            live[outcome.path] = outcome
+            if outcome.state == "done":
+                if tree.exists(outcome.path):
+                    tree.delete(outcome.path)
+            else:
+                self._cleanup_failures[outcome.path] = outcome.note
+                if tree.exists(outcome.path):
+                    tree.set(outcome.path, "reason", self._row_reason(outcome.path, ""))
+        self._live_freed = getattr(self, "_live_freed", 0) + (
+            0 if result is None else result.purged_logical_bytes
+        )
+        states = [outcome.state for outcome in live.values()]
+        self._live_status = (
+            f"已处理 {finished:,} / {total:,} 项：已清理 {states.count('done'):,} 项、"
+            f"删了一部分 {states.count('partial'):,} 项、未完成 {states.count('failed'):,} 项，"
+            f"已释放 {_format_bytes(self._live_freed)}；点「清理结果」可随时查看每一项"
+        )
+        self._status.set(f"正在清理… {self._live_status}")
+        self._progress.configure(mode="determinate", maximum=max(1, total), value=finished)
+        if len(live) == len(outcomes):
+            self._sync_buttons()  # the first outcome makes the report available
+        now = time.monotonic()
+        if now - getattr(self, "_live_report_at", 0.0) >= 1.0:
+            self._live_report_at = now
+            self._refresh_live_report()
+
+    def _refresh_live_report(self) -> None:
+        """Bring the report text (and an open report window) up to what is known."""
+
+        live: dict[str, CleanupOutcome] = getattr(self, "_live_outcomes", None) or {}
+        if not live:
+            return
+        scan_notes = getattr(getattr(self, "_session", None), "summary_notes", None)
+        self._cleanup_report = render_cleanup_report(
+            tuple(live.values()), getattr(self, "_live_freed", 0), scan_notes
+        )
+        refresh_open_cleanup_report(self)
+
     def _show_cleanup_report(self) -> None:
+        if self._busy == "deleting":
+            self._refresh_live_report()
         open_cleanup_report(self)
 
 
