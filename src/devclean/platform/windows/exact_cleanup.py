@@ -15,6 +15,7 @@ the selected tree.
 from __future__ import annotations
 
 import ctypes
+import errno
 import os
 from collections.abc import Callable
 from ctypes import wintypes
@@ -115,6 +116,11 @@ class DirectoryPurgeResult:
     bytes_removed: int
     root_absent: bool
     completed: bool
+    # Entries left because another program held them open or this account may
+    # not delete them (purge_directory_tree_skipping_in_use only).
+    in_use: int = 0
+    denied: int = 0
+    examples: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -446,6 +452,415 @@ def purge_exact_directory_tree(
         root_absent=not os.path.lexists(root_path),
         completed=completed,
     )
+
+
+# Errors that mean "leave this entry and carry on" while emptying a temp
+# folder: another program holds it open (32 sharing, 33 lock), this account may
+# not delete it (5), or a folder still holds something (145).
+_IN_USE_WINERRORS: Final = frozenset({32, 33})
+_DENIED_WINERRORS: Final = frozenset({5})
+_NOT_EMPTY_WINERRORS: Final = frozenset({145})
+_GONE_WINERRORS: Final = frozenset({2, 3})
+_IN_USE_ERRNOS: Final = frozenset({errno.EBUSY, errno.ETXTBSY})
+_DENIED_ERRNOS: Final = frozenset({errno.EACCES, errno.EPERM, errno.EROFS})
+_EXAMPLES_KEPT: Final = 20
+
+# (path, is_directory, size, last_write_ns) -> why the entry stays, or None.
+TempEntryGuard = Callable[[str, bool, int, int | None], str | None]
+
+
+@dataclass(frozen=True, slots=True)
+class TempFolderPurgeResult:
+    """What emptying one temp folder removed and what it had to leave."""
+
+    root_path: str
+    files_removed: int
+    links_removed: int
+    directories_removed: int
+    bytes_removed: int
+    in_use: int
+    denied: int
+    kept: int
+    completed: bool
+    # A few left entries with the reason, for the report.
+    examples: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def skipped(self) -> int:
+        return self.in_use + self.denied + self.kept
+
+
+class _TempPurgeState:
+    def __init__(self) -> None:
+        self.files_removed = 0
+        self.links_removed = 0
+        self.directories_removed = 0
+        self.bytes_removed = 0
+        self.in_use = 0
+        self.denied = 0
+        self.kept = 0
+        self.examples: list[tuple[str, str]] = []
+
+    def snapshot(self) -> DirectoryPurgeProgress:
+        return DirectoryPurgeProgress(
+            files_removed=self.files_removed,
+            links_removed=self.links_removed,
+            directories_removed=self.directories_removed,
+            bytes_removed=self.bytes_removed,
+        )
+
+    def note(self, path: str, reason: str) -> None:
+        if len(self.examples) < _EXAMPLES_KEPT:
+            self.examples.append((path, reason))
+
+    def skip(self, path: str, error: OSError) -> bool:
+        """Count *error* as a left entry; False means it must stop the cleanup."""
+
+        if isinstance(error, ExactCleanupError):
+            return False
+        winerror = getattr(error, "winerror", None)
+        code = error.errno
+        if winerror in _GONE_WINERRORS or (winerror is None and code == errno.ENOENT):
+            return True
+        if winerror in _IN_USE_WINERRORS or (winerror is None and code in _IN_USE_ERRNOS):
+            self.in_use += 1
+            self.note(path, "正被程序使用")
+            return True
+        if (
+            winerror in _DENIED_WINERRORS
+            or (winerror is None and code in _DENIED_ERRNOS)
+            or isinstance(error, PermissionError)
+        ):
+            self.denied += 1
+            self.note(path, "当前账户没有删除权限（可能需要管理员）")  # noqa: RUF001
+            return True
+        if winerror in _NOT_EMPTY_WINERRORS or (winerror is None and code == errno.ENOTEMPTY):
+            self.in_use += 1
+            self.note(path, "清理期间有程序写入了新内容")
+            return True
+        return False
+
+    def result(self, root_path: str, completed: bool) -> TempFolderPurgeResult:
+        return TempFolderPurgeResult(
+            root_path=root_path,
+            files_removed=self.files_removed,
+            links_removed=self.links_removed,
+            directories_removed=self.directories_removed,
+            bytes_removed=self.bytes_removed,
+            in_use=self.in_use,
+            denied=self.denied,
+            kept=self.kept,
+            completed=completed,
+            examples=tuple(self.examples),
+        )
+
+
+def purge_temp_folder_contents(
+    root: Path,
+    expected: ExactDirectorySnapshot,
+    boundary: ExactRootBoundary,
+    *,
+    keep: TempEntryGuard,
+    on_progress: Callable[[DirectoryPurgeProgress], None] | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
+) -> TempFolderPurgeResult:
+    """Empty a temp folder and keep the folder itself (a user decision).
+
+    The folder is verified once -- same directory object as scanned, no link
+    in its place, inside its approved boundary -- and stays pinned while its
+    contents go, one verified handle at a time as in
+    :func:`purge_exact_directory_tree`.  Unlike a whole-tree purge, an entry
+    another program holds open, or that this account may not delete, is left
+    and counted instead of stopping the rest; so is anything *keep* names.
+    A link swapped in or an escape from the folder still stops the cleanup.
+    """
+
+    root_path = _ordinary_absolute_path(root, "temp folder")
+    if os.name != "nt":
+        return _purge_temp_folder_contents_posix(
+            root_path, expected, boundary, keep, on_progress, is_cancelled
+        )
+    boundary_handle, boundary_final = _open_boundary(boundary)
+    try:
+        handle = _open_exact_directory(root_path)
+        try:
+            _require_handle_in_boundary(handle, boundary_final, allow_equal=True)
+            _require_directory_snapshot(read_file_metadata_handle(handle), expected)
+            _require_final_path(handle, root_path)
+            state = _TempPurgeState()
+            completed = _empty_temp_folder(
+                root_path, _final_path(handle), state, keep, on_progress, is_cancelled
+            )
+        finally:
+            _close_handle(handle)
+    finally:
+        _close_handle(boundary_handle)
+    return state.result(root_path, completed)
+
+
+def _empty_temp_folder(
+    root_path: str,
+    root_final: str,
+    state: _TempPurgeState,
+    keep: TempEntryGuard,
+    on_progress: Callable[[DirectoryPurgeProgress], None] | None,
+    is_cancelled: Callable[[], bool] | None,
+    retained: set[str] | None = None,
+) -> bool:
+    pending: list[tuple[str, bool]] = [(root_path, False)]
+    pinned: dict[str, wintypes.HANDLE] = {}
+    # Folders that keep something, and therefore stay along with their parents.
+    if retained is None:
+        retained = set()
+    try:
+        while pending:
+            if is_cancelled is not None and is_cancelled():
+                return False
+            current, children_done = pending.pop()
+            if children_done:
+                if current != root_path:
+                    handle = pinned.pop(current)
+                    try:
+                        if current in retained:
+                            retained.add(os.path.dirname(current))
+                        else:
+                            try:
+                                _delete_empty_directory(
+                                    current, root_final, pinned_handle=handle
+                                )
+                            except OSError as error:
+                                if not state.skip(current, error):
+                                    raise
+                                retained.add(os.path.dirname(current))
+                            else:
+                                state.directories_removed += 1
+                    finally:
+                        _close_handle(handle)
+                    if on_progress is not None:
+                        on_progress(state.snapshot())
+                continue
+            if current != root_path:
+                try:
+                    handle = _open_exact_directory_for_mutation(current)
+                except OSError as error:
+                    if not state.skip(current, error):
+                        raise
+                    retained.add(os.path.dirname(current))
+                    continue
+                pinned[current] = handle
+                _require_purge_directory(handle, current, root_final)
+            children = _list_purge_entries(current, root_final, already_pinned=True)
+            pending.append((current, True))
+            for child_path, kind, size in children:
+                reason = keep(child_path, kind is _EntryKind.DIRECTORY, size, None)
+                if reason is not None:
+                    state.kept += 1
+                    state.note(child_path, reason)
+                    retained.add(current)
+                    continue
+                if kind is _EntryKind.DIRECTORY:
+                    pending.append((child_path, False))
+                    continue
+                try:
+                    _delete_leaf(child_path, root_final)
+                except OSError as error:
+                    if not state.skip(child_path, error):
+                        raise
+                    retained.add(current)
+                    continue
+                if kind is _EntryKind.REPARSE_POINT:
+                    state.links_removed += 1
+                else:
+                    state.files_removed += 1
+                    state.bytes_removed += size
+            if on_progress is not None:
+                on_progress(state.snapshot())
+        return True
+    finally:
+        for handle in reversed(tuple(pinned.values())):
+            _close_handle(handle)
+
+
+def purge_directory_tree_skipping_in_use(
+    root: Path,
+    expected: ExactDirectorySnapshot,
+    boundary: ExactRootBoundary,
+    *,
+    on_progress: Callable[[DirectoryPurgeProgress], None] | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
+) -> DirectoryPurgeResult:
+    """Remove a selected tree like :func:`purge_exact_directory_tree`, around what is in use.
+
+    The same checks guard every step.  What another program holds open, or
+    this account may not delete, is left and counted instead of stopping the
+    rest; the selected folder itself goes once nothing is left in it.
+    """
+
+    root_path = _ordinary_absolute_path(root, "tree root")
+    if os.name != "nt":
+        emptied = _purge_temp_folder_contents_posix(
+            root_path, expected, boundary, lambda *_entry: None, on_progress, is_cancelled,
+            remove_root=True,
+        )
+        return _tree_result(root_path, emptied)
+    boundary_handle, boundary_final = _open_boundary(boundary)
+    try:
+        handle = _open_exact_directory_for_mutation(root_path)
+        try:
+            _require_handle_in_boundary(handle, boundary_final, allow_equal=False)
+            _require_directory_snapshot(read_file_metadata_handle(handle), expected)
+            _require_final_path(handle, root_path)
+            state = _TempPurgeState()
+            retained: set[str] = set()
+            completed = _empty_temp_folder(
+                root_path,
+                _final_path(handle),
+                state,
+                lambda *_entry: None,
+                on_progress,
+                is_cancelled,
+                retained,
+            )
+            if completed and root_path not in retained:
+                try:
+                    _set_delete_disposition(handle, root_path)
+                except OSError as error:
+                    if not state.skip(root_path, error):
+                        raise
+                else:
+                    state.directories_removed += 1
+        finally:
+            _close_handle(handle)
+    finally:
+        _close_handle(boundary_handle)
+    return _tree_result(root_path, state.result(root_path, completed))
+
+
+def _tree_result(root_path: str, emptied: TempFolderPurgeResult) -> DirectoryPurgeResult:
+    return DirectoryPurgeResult(
+        root_path=root_path,
+        files_removed=emptied.files_removed,
+        links_removed=emptied.links_removed,
+        directories_removed=emptied.directories_removed,
+        bytes_removed=emptied.bytes_removed,
+        root_absent=not os.path.lexists(root_path),
+        completed=emptied.completed,
+        in_use=emptied.in_use,
+        denied=emptied.denied,
+        examples=emptied.examples,
+    )
+
+
+def _purge_temp_folder_contents_posix(
+    root_path: str,
+    expected: ExactDirectorySnapshot,
+    boundary: ExactRootBoundary,
+    keep: TempEntryGuard,
+    on_progress: Callable[[DirectoryPurgeProgress], None] | None,
+    is_cancelled: Callable[[], bool] | None,
+    *,
+    remove_root: bool = False,
+) -> TempFolderPurgeResult:
+    """Non-Windows counterpart with the same rules, used on Linux test fixtures."""
+
+    if not _directory_metadata_matches(read_file_metadata(root_path), expected):
+        raise ExactCleanupError("temp folder identity changed since the completed scan")
+    real_root = os.path.realpath(root_path)
+    if real_root != os.path.normpath(root_path):
+        raise ExactCleanupError("a link in the path would redirect the deletion")
+    real_boundary = os.path.realpath(os.fspath(boundary.path))
+    if os.path.commonpath((real_root, real_boundary)) != real_boundary or (
+        remove_root and real_root == real_boundary
+    ):
+        raise ExactCleanupError("temp folder is outside the approved root")
+    directory_flag = getattr(os, "O_DIRECTORY", None)
+    no_follow_flag = getattr(os, "O_NOFOLLOW", None)
+    if directory_flag is None or no_follow_flag is None:
+        raise ExactCleanupError("cannot open the folder without following links")
+    flags = os.O_RDONLY | directory_flag | no_follow_flag
+    state = _TempPurgeState()
+
+    def empty(directory: int, path: str) -> bool:
+        emptied = True
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if is_cancelled is not None and is_cancelled():
+                    raise _Cancelled
+                child = os.path.join(path, entry.name)
+                is_directory = entry.is_dir(follow_symlinks=False)
+                status = entry.stat(follow_symlinks=False)
+                reason = keep(child, is_directory, status.st_size, None)
+                if reason is not None:
+                    state.kept += 1
+                    state.note(child, reason)
+                    emptied = False
+                    continue
+                if is_directory:
+                    try:
+                        inner = os.open(entry.name, flags, dir_fd=directory)
+                    except OSError as error:
+                        if not state.skip(child, error):
+                            raise
+                        emptied = False
+                        continue
+                    try:
+                        inner_emptied = empty(inner, child)
+                    finally:
+                        os.close(inner)
+                    if not inner_emptied:
+                        emptied = False
+                        continue
+                    try:
+                        os.rmdir(entry.name, dir_fd=directory)
+                    except OSError as error:
+                        if not state.skip(child, error):
+                            raise
+                        emptied = False
+                        continue
+                    state.directories_removed += 1
+                    continue
+                try:
+                    os.unlink(entry.name, dir_fd=directory)
+                except OSError as error:
+                    if not state.skip(child, error):
+                        raise
+                    emptied = False
+                    continue
+                if entry.is_symlink():
+                    state.links_removed += 1
+                else:
+                    state.files_removed += 1
+                    state.bytes_removed += status.st_size
+            if on_progress is not None:
+                on_progress(state.snapshot())
+        return emptied
+
+    descriptor = os.open(root_path, flags)
+    completed = True
+    emptied = False
+    try:
+        emptied = empty(descriptor, root_path)
+    except _Cancelled:
+        completed = False
+    finally:
+        os.close(descriptor)
+    if remove_root and completed and emptied:
+        parent, name = os.path.split(root_path)
+        parent_descriptor = os.open(parent, flags)
+        try:
+            os.rmdir(name, dir_fd=parent_descriptor)
+        except OSError as error:
+            if not state.skip(root_path, error):
+                raise
+        else:
+            state.directories_removed += 1
+        finally:
+            os.close(parent_descriptor)
+    return state.result(root_path, completed)
+
+
+class _Cancelled(Exception):
+    pass
 
 
 def directory_metadata_matches_snapshot(
@@ -996,9 +1411,13 @@ __all__ = [
     "ExactFileSnapshot",
     "ExactMutationResult",
     "ExactRootBoundary",
+    "TempEntryGuard",
+    "TempFolderPurgeResult",
     "directory_metadata_matches_snapshot",
     "metadata_matches_snapshot",
+    "purge_directory_tree_skipping_in_use",
     "purge_exact_directory_tree",
     "purge_exact_file",
+    "purge_temp_folder_contents",
     "recycle_exact_object",
 ]

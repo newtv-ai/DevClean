@@ -35,12 +35,14 @@ from devclean.core.cleanup_catalog import (
 )
 from devclean.core.paths import data_dir
 from devclean.core.review_routing import route_unresolved_file_to_ai
+from devclean.core.temp_folders import TempFolderScan
 from devclean.core.triage import (
     CleanupTargetKind,
     DirectorySubtreeTotals,
     TriageSession,
     triage_directory,
     triage_file,
+    triage_temp_folder,
 )
 from devclean.core.user_rules import (
     RuleConfigError,
@@ -72,6 +74,8 @@ from devclean.scanner.tree_summary import (
 from devclean.ui import app
 from devclean.ui import modern_app as modern
 from devclean.ui.modern_app import ModernDevCleanWindow
+
+_SCAN_RUNNING_TEXT = "扫描耗时：扫描进行中，完成后显示总耗时"
 
 
 class _HybridTriageSession(TriageSession):
@@ -249,7 +253,7 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
 
     def _start_scan(self) -> None:
         self._scan_started_at = time.monotonic()
-        self._scan_duration.set("扫描耗时：计时中…")
+        self._scan_duration.set(_SCAN_RUNNING_TEXT)
         try:
             self._rules = load_rules()
         except (OSError, RuleConfigError, UnicodeError) as error:
@@ -356,6 +360,14 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
         summarized_files = 0
         summarized_bytes = 0
         next_publish = time.monotonic() + app._SCAN_PREVIEW_INTERVAL_SECONDS
+        final_stats: list[ScanStats] = []
+        next_progress = 0.0
+        temp_scan = TempFolderScan(
+            active_known_roots,
+            active_rules.keep.classification,
+            active_rules,
+            now=now,
+        )
 
         try:
             for known in atomic_roots:
@@ -419,6 +431,14 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
                     self._events.put(("scan_partial", (token, buckets)))
 
             def progress(stats: ScanStats) -> None:
+                nonlocal next_progress
+                final_stats[:] = [stats]
+                moment = time.monotonic()
+                # The scanner reports every few hundred entries; the window
+                # only needs a few updates a second.
+                if moment < next_progress and not stats.completed:
+                    return
+                next_progress = moment + app._PROGRESS_INTERVAL_SECONDS
                 self._events.put(
                     (
                         "progress",
@@ -449,7 +469,11 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
                 progress,
             ):
                 try:
-                    if record.kind is ScanRecordKind.FILE:
+                    if temp_scan.take(record):
+                        # Inside a temporary folder: counted into its single
+                        # item, not classified (see devclean.core.temp_folders).
+                        pass
+                    elif record.kind is ScanRecordKind.FILE:
                         session.observe_path(
                             record.path,
                             active_rules,
@@ -486,21 +510,65 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
                     buckets = app._rows_of(session, active_rules)
                     next_publish = time.monotonic() + app._SCAN_PREVIEW_INTERVAL_SECONDS
                     self._events.put(("scan_partial", (token, buckets)))
+            for folder in temp_scan.folders:
+                if not (folder.files or folder.directories):
+                    continue
+                temp_item = triage_temp_folder(
+                    folder.record,
+                    delete_config=active_rules.delete.classification,
+                    kept_out=folder.kept_out,
+                )
+                session.add(temp_item)
+                session.record_directory_summary(
+                    temp_item.path,
+                    TreeSummary(
+                        files=folder.files,
+                        logical_bytes=folder.logical_bytes,
+                        latest_activity_time_ns=folder.latest_write_ns,
+                    ),
+                )
+            walked = final_stats[0] if final_stats else None
+            totals = app.ScanTotals(
+                files=summarized_files + (walked.files if walked else 0),
+                directories=len(atomic_roots) + (walked.directories if walked else 0),
+                logical_bytes=summarized_bytes + (walked.logical_bytes if walked else 0),
+            )
+            # Partition and sort here, not on the UI thread.
+            partition = app.published_partition(session, active_rules)
         except Exception as error:
             # Any failure is reported; a silently dead worker would leave the
             # window stuck in the scanning state.
             self._events.put(("scan_error", (token, f"{type(error).__name__}: {error}")))
             return
-        self._events.put(("scan_done", (token, session, cancel.is_cancelled())))
+        self._events.put(
+            ("scan_done", (token, session, cancel.is_cancelled(), totals, partition))
+        )
 
-    def _publish(self, session: TriageSession) -> None:
-        super()._publish(session)
+    def _scan_finished(self, cancelled: bool, totals: app.ScanTotals | None) -> None:
+        """Show the whole scan's totals and duration once its results are listed."""
+
         rendered = self._stop_scan_clock()
-        if rendered is None:
-            return
-        skipped = getattr(session, "unclassified_files", 0)
+        skipped = getattr(self._session, "unclassified_files", 0)
         note = f"；{skipped:,} 个文件无法分类，已按保护处理、不列出" if skipped else ""
-        self._scan_duration.set(f"扫描耗时：{rendered}{note}")
+        if rendered is not None:
+            label = "扫描已取消，用时" if cancelled else "扫描总耗时："
+            self._scan_duration.set(f"{label}{rendered}{note}")
+        summary = ""
+        if totals is not None:
+            summary = (
+                f"共 {totals.files:,} 个文件、{totals.directories:,} 个文件夹，"
+                f"总大小 {app._format_bytes(totals.logical_bytes)}"
+            )
+            if rendered is not None:
+                summary += f"，总耗时 {rendered}"
+            summary += "。"
+        if cancelled:
+            self._status.set(f"扫描已取消；已看过{summary}下面是已看到的部分。")
+        else:
+            self._status.set(
+                f"扫描完成：{summary}"
+                "左边是工具确定可删的；右边优先由你判断，真正未知的再交 AI。"
+            )
 
     def _scan_failed(self) -> None:
         rendered = self._stop_scan_clock()

@@ -21,7 +21,8 @@ import sys
 import threading
 import time
 import tkinter as tk
-from collections.abc import Iterable, Mapping, Sequence
+import weakref
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -75,6 +76,7 @@ from devclean.core.postscan_cleanup import (
 from devclean.core.triage import (
     Actionability,
     CleanupTargetKind,
+    DirectoryScope,
     DirectorySubtreeTotals,
     ExecutionPolicy,
     ReviewLane,
@@ -99,7 +101,7 @@ from devclean.core.user_rules import (
     read_rule_documents,
     reusable_path_pattern,
 )
-from devclean.platform.windows.exact_cleanup import ExactCleanupError
+from devclean.platform.windows.exact_cleanup import ExactCleanupError, TempFolderPurgeResult
 from devclean.platform.windows.volumes import fixed_volume_roots
 from devclean.scanner import (
     CancellationToken,
@@ -130,6 +132,8 @@ _ROWS_DRAWN = 2_000
 # configured review sample.
 _LIVE_ROWS_DRAWN = 300
 _SCAN_PREVIEW_INTERVAL_SECONDS = 1.5
+# The progress line is a snapshot; a few updates a second are all a person reads.
+_PROGRESS_INTERVAL_SECONDS = 0.25
 _EVENTS_PER_TICK = 64
 _EVENT_POLL_MS = 120
 
@@ -350,6 +354,8 @@ def _configured_delete_eligible(item: TriageItem) -> bool:
         and item.actionability is Actionability.REPORT_ONLY
         and item.execution_policy is ExecutionPolicy.NONE
         and bool(_LEARNED_FILE_OVERRIDE_TAGS.intersection(item.tags))
+        # The deletion step refuses deny-listed system folders whatever a rule says.
+        and "system_location" not in item.tags
     )
 
 
@@ -374,15 +380,91 @@ def _effective_deletable_item(item: TriageItem, rules: UserRules) -> TriageItem:
     return item
 
 
+# What a live preview already worked out about each retained file row, per scan
+# session: {id(item): (item, bucket, normalised path)} under one pinned rule set.
+_PREVIEW_MEMO: weakref.WeakKeyDictionary[
+    TriageSession, tuple[UserRules, dict[int, tuple[TriageItem, int, str]]]
+] = weakref.WeakKeyDictionary()
+
+
+@dataclass(frozen=True, slots=True)
+class ScanTotals:
+    """Everything one scan walked, kept on screen once it has finished."""
+
+    files: int
+    directories: int
+    logical_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class PublishedPartition:
+    """The final partition, worked out by the scan worker instead of the UI thread."""
+
+    rules: UserRules
+    deletable: tuple[TriageItem, ...]
+    unsure: tuple[TriageItem, ...]
+
+
+def item_size(session: TriageSession | None, item: TriageItem) -> int:
+    """Bytes one row stands for: a file's size or a whole directory's total."""
+
+    if item.target_kind is not CleanupTargetKind.DIRECTORY:
+        return item.logical_size
+    if session is None:
+        return 0
+    return session.subtree_totals(item.path).logical_bytes
+
+
+def published_partition(session: TriageSession, rules: UserRules) -> PublishedPartition:
+    """Partition and order a finished scan, largest first, off the UI thread."""
+
+    deletable, unsure = _partition_items(session, rules)
+
+    def size(item: TriageItem) -> int:
+        return item_size(session, item)
+
+    return PublishedPartition(
+        rules=rules,
+        deletable=tuple(sorted(deletable, key=size, reverse=True)),
+        unsure=tuple(sorted(unsure, key=size, reverse=True)),
+    )
+
+
 def _rows_of(session: TriageSession, rules: UserRules) -> tuple[PartialBucket, PartialBucket]:
-    """Build bounded live previews without repeatedly sorting the full scan."""
+    """Build bounded live previews without repeatedly sorting the full scan.
+
+    A scan pins its rules, so a file row's bucket and normalised path never
+    change: each retained file is classified once, not again on every preview.
+    Only whole-directory rows, which depend on KEEP paths found later, are
+    re-evaluated each time.
+    """
 
     kept_paths = session.configured_keep_paths(rules)
-    bucketed = tuple((item, _item_bucket(item, rules, kept_paths)) for item in session.iter_items())
+    memo_rules, memo = _PREVIEW_MEMO.get(session, (rules, {}))
+    if memo_rules is not rules:
+        memo = {}
+    current: dict[int, tuple[TriageItem, int, str]] = {}
+    bucketed: list[tuple[TriageItem, int]] = []
+    for item in session.iter_items():
+        if item.target_kind is CleanupTargetKind.FILE:
+            known = memo.get(id(item))
+            if known is None or known[0] is not item:
+                known = (item, _item_bucket(item, rules, kept_paths), normalise_path(item.path))
+            current[id(item)] = known
+            bucketed.append((item, known[1]))
+        else:
+            bucketed.append((item, _item_bucket(item, rules, kept_paths)))
+    _PREVIEW_MEMO[session] = (rules, current)
+
+    def normalized(item: TriageItem) -> str:
+        known = current.get(id(item))
+        return known[2] if known is not None else normalise_path(item.path)
+
     effective_deletable = {
         id(item)
         for item in _drop_targets_covered_by_directory(
-            tuple(item for item, bucket in bucketed if bucket == _DELETE_BUCKET)
+            tuple(item for item, bucket in bucketed if bucket == _DELETE_BUCKET),
+            normalized,
         )
     }
     heaps: dict[int, list[tuple[int, int, Row]]] = {
@@ -455,8 +537,11 @@ def _item_bucket(
     )
     if decision is RuleDecision.KEEP:
         return _HIDDEN
-    if item.target_kind is CleanupTargetKind.DIRECTORY and _directory_contains_kept_path(
-        item.path, kept_paths
+    if (
+        item.target_kind is CleanupTargetKind.DIRECTORY
+        # A temp folder's cleanup leaves kept entries in place (temp_folders).
+        and item.directory_scope is not DirectoryScope.TEMP_FOLDER
+        and _directory_contains_kept_path(item.path, kept_paths)
     ):
         return _HIDDEN
     if is_direct_cleanup_eligible(item) or (
@@ -479,17 +564,26 @@ def _directory_contains_kept_path(
 
 def _drop_targets_covered_by_directory(
     items: Sequence[TriageItem],
+    normalized_of: Callable[[TriageItem], str] | None = None,
 ) -> tuple[TriageItem, ...]:
     """Return the effective actions represented by a checkbox selection."""
 
+    def normalized(item: TriageItem) -> str:
+        return normalized_of(item) if normalized_of is not None else normalise_path(item.path)
+
+    # Emptying a temp folder leaves entries other rules claim, so it does not
+    # stand in for rows inside it.
     directories = sorted(
         {
-            normalise_path(item.path).rstrip(os.sep) + os.sep
+            normalized(item).rstrip(os.sep) + os.sep
             for item in items
             if item.target_kind is CleanupTargetKind.DIRECTORY
+            and item.directory_scope is not DirectoryScope.TEMP_FOLDER
         },
         key=len,
     )
+    if not directories:
+        return tuple(items)
     outer_directories = [
         prefix
         for prefix in directories
@@ -497,10 +591,13 @@ def _drop_targets_covered_by_directory(
     ]
 
     def is_effective(item: TriageItem) -> bool:
-        normalized = normalise_path(item.path)
-        if item.target_kind is CleanupTargetKind.DIRECTORY:
-            return normalized.rstrip(os.sep) + os.sep in outer_directories
-        return not any(normalized.startswith(prefix) for prefix in outer_directories)
+        path = normalized(item)
+        if (
+            item.target_kind is CleanupTargetKind.DIRECTORY
+            and item.directory_scope is not DirectoryScope.TEMP_FOLDER
+        ):
+            return path.rstrip(os.sep) + os.sep in outer_directories
+        return not any(path.startswith(prefix) for prefix in outer_directories)
 
     return tuple(item for item in items if is_effective(item))
 
@@ -616,6 +713,29 @@ def _reason_of(error: BaseException) -> str:
                 return reason
         return f"安全检查拒绝（{message[:120]}）"
     return f"其他（{type(error).__name__}：{str(error)[:120]}）"
+
+
+def _temp_folder_note(outcome: TempFolderPurgeResult) -> str:
+    """What emptying a folder could not remove, in the user's terms."""
+
+    parts = []
+    if outcome.in_use:
+        parts.append(f"正被程序使用 {outcome.in_use:,} 项")
+    if outcome.denied:
+        parts.append(f"当前账户没有删除权限 {outcome.denied:,} 项（可能需要管理员）")
+    if outcome.kept:
+        parts.append(f"由应用规则或你的保留设置单独处理 {outcome.kept:,} 项")
+    return (
+        f"已清理 {outcome.files_removed:,} 个文件"
+        f"（{_format_bytes(outcome.bytes_removed)}），留下：" + "、".join(parts)
+    )
+
+
+def forget_live_rows(window: object, tree: object) -> None:
+    """Drop what a scan preview remembered of *tree* before it is redrawn whole."""
+
+    live: dict[str, object] = getattr(window, "_live_rows", {})
+    live.pop(str(tree), None)
 
 
 def _grouped_reasons(failures: Iterable[tuple[str, str]]) -> list[tuple[str, int]]:
@@ -1276,13 +1396,36 @@ class DevCleanWindow:
     def _scan_failed(self) -> None:
         """Reset scan-only indicators after a failed scan; nothing to do here."""
 
-    def _publish(self, session: TriageSession) -> None:
+    def _scan_finished(self, cancelled: bool, totals: ScanTotals | None) -> None:
+        """Say the scan is over, once its results are on screen."""
+
+        del totals
+        self._status.set(
+            "扫描已取消，下面是已看到的部分。"
+            if cancelled
+            else "扫描完成。左边是工具确定可删的；右边优先由你判断，真正未知的再交 AI。"
+        )
+
+    def _publish(
+        self,
+        session: TriageSession,
+        precomputed: PublishedPartition | None = None,
+    ) -> None:
         self._session = session
         previous_deletable = {item.path for item in self._deletable}
         previous_checked = set(self._checked)
-        deletable, unsure = _partition_items(session, self._rules)
-        self._deletable = sorted(deletable, key=self._size_of, reverse=True)
-        self._unsure = sorted(unsure, key=self._size_of, reverse=True)
+        if (
+            precomputed is not None
+            and precomputed.rules.delete is self._rules.delete
+            and precomputed.rules.keep is self._rules.keep
+        ):
+            # Partitioned and sorted by the scan worker with these same rules.
+            self._deletable = list(precomputed.deletable)
+            self._unsure = list(precomputed.unsure)
+        else:
+            deletable, unsure = _partition_items(session, self._rules)
+            self._deletable = sorted(deletable, key=self._size_of, reverse=True)
+            self._unsure = sorted(unsure, key=self._size_of, reverse=True)
         current_deletable = {item.path for item in self._deletable}
         # Reclassification must not silently re-check rows the user unticked.
         # Newly promoted rows are selected, matching the existing AI-import UX.
@@ -1334,6 +1477,7 @@ class DevCleanWindow:
     ) -> None:
         """Draw rows; *details* maps a row to its (action, reason) texts."""
 
+        forget_live_rows(self, tree)
         tree.delete(*tree.get_children())
         pending = tree is not self._deletable_tree
         for index, (item_path, size, is_directory) in enumerate(rows[:_ROWS_DRAWN]):
@@ -1354,6 +1498,48 @@ class DevCleanWindow:
                 values=(mark, _format_bytes(size), action, item_path, reason),
                 tags=("odd",) if index % 2 else (),
             )
+
+    def _update_live_rows(self, tree: ttk.Treeview, rows: Sequence[Row]) -> None:
+        """Bring a scan preview to *rows* with as few Tk calls as possible.
+
+        A preview arrives every few seconds and mostly repeats the last one, so
+        only rows that appeared, moved, changed or left are touched: one call
+        removes the rows that left, and each kept row is rewritten only when its
+        text changed. Rebuilding the whole table each time kept the UI thread
+        busy for seconds while the scan held the interpreter.
+        """
+
+        live: dict[str, tuple[list[str], dict[str, tuple[str, ...]]]] = getattr(
+            self, "_live_rows", {}
+        )
+        self._live_rows = live
+        shown, texts = live.setdefault(str(tree), ([], {}))
+        wanted = list(rows[:_LIVE_ROWS_DRAWN])
+        keep = {path for path, _size, _is_directory in wanted}
+        leaving = [path for path in shown if path not in keep]
+        if leaving:
+            tree.delete(*leaving)
+            for path in leaving:
+                texts.pop(path, None)
+            shown[:] = [path for path in shown if path in keep]
+        pending = tree is not self._deletable_tree
+        for index, (path, size, is_directory) in enumerate(wanted):
+            mark = "" if pending else (self._TICKED if path in self._checked else self._UNTICKED)
+            action = _row_action(is_directory, pending=pending)
+            values = (mark, _format_bytes(size), action, path, "")
+            if index < len(shown) and shown[index] == path:
+                if texts.get(path) != values:
+                    tree.item(path, values=values)
+            elif path in texts:
+                tree.move(path, "", index)
+                shown.remove(path)
+                shown.insert(index, path)
+                if texts.get(path) != values:
+                    tree.item(path, values=values)
+            else:
+                tree.insert("", index, iid=path, values=values)
+                shown.insert(index, path)
+            texts[path] = values
 
     def _on_row_click(self, event: tk.Event) -> str | None:
         tree = self._deletable_tree
@@ -1399,12 +1585,7 @@ class DevCleanWindow:
         self._sync_buttons()
 
     def _size_of(self, item: TriageItem) -> int:
-        if item.target_kind is not CleanupTargetKind.DIRECTORY:
-            return item.logical_size
-        session = self._session
-        if session is None:
-            return 0
-        return session.subtree_totals(item.path).logical_bytes
+        return item_size(self._session, item)
 
     def _refresh_totals(self) -> None:
         effective = _drop_targets_covered_by_directory(self._deletable)
@@ -1553,6 +1734,7 @@ class DevCleanWindow:
                         delete_config=self._scan_rules.delete.classification,
                         keep_config=self._scan_rules.keep.classification,
                         on_progress=report,
+                        user_rules=self._rules,
                     )
                 )
             except Exception as error:
@@ -2047,8 +2229,8 @@ class DevCleanWindow:
                     partial_deletable, partial_unsure = buckets
                     deletable_rows, deletable_count, deletable_bytes = partial_deletable
                     unsure_rows, unsure_count, unsure_bytes = partial_unsure
-                    self._fill_rows(self._deletable_tree, deletable_rows)
-                    self._fill_rows(self._unsure_tree, unsure_rows)
+                    self._update_live_rows(self._deletable_tree, deletable_rows)
+                    self._update_live_rows(self._unsure_tree, unsure_rows)
                     self._deletable_total.set(
                         f"{_format_bytes(deletable_bytes)}（{deletable_count:,} 项，扫描中）"
                     )
@@ -2056,17 +2238,17 @@ class DevCleanWindow:
                         f"{_format_bytes(unsure_bytes)}（{unsure_count:,} 项，扫描中）"
                     )
                 elif kind == "scan_done":
-                    token, session, cancelled = cast(tuple[str, TriageSession, bool], payload)
+                    token, session, cancelled, *finished = cast(tuple[Any, ...], payload)
                     if token != self._scan_token:
                         continue
+                    totals = cast(ScanTotals | None, finished[0] if finished else None)
+                    precomputed = cast(
+                        PublishedPartition | None, finished[1] if len(finished) > 1 else None
+                    )
                     self._progress.stop()
                     self._busy = None
-                    self._publish(session)
-                    self._status.set(
-                        "扫描已取消，下面是已看到的部分。"
-                        if cancelled
-                        else "扫描完成。左边是工具确定可删的；右边优先由你判断，真正未知的再交 AI。"
-                    )
+                    self._publish(session, precomputed)
+                    self._scan_finished(bool(cancelled), totals)
                 elif kind == "scan_error":
                     token, detail = cast(tuple[str, str], payload)
                     if token != self._scan_token:
@@ -2249,6 +2431,8 @@ class DevCleanWindow:
         for result in results:
             for path, error in result.failures:
                 notes[path] = _reason_of(error)
+            for path, outcome in result.partial:
+                notes[path] = _temp_folder_note(outcome)
         gone = {path for result in results for path in result.completed_paths}
         self._cleanup_failures = {
             path: reason
@@ -2299,9 +2483,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 __all__ = [
     "DevCleanWindow",
+    "PublishedPartition",
+    "ScanTotals",
     "is_ai_review_eligible",
     "is_direct_cleanup_eligible",
     "is_user_review_eligible",
+    "item_size",
     "main",
+    "published_partition",
     "scan_targets",
 ]

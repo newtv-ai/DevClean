@@ -447,7 +447,7 @@ def match_cursor_rule(
     matches: list[tuple[int, int, ApplicationCleanupRule]] = []
     for index, rule in enumerate(CURSOR_RULES):
         root = roots.get(rule.root_key)
-        if root is None:
+        if root is None or not _impl._could_hold(root, normalized):
             continue
         for expanded in _impl._expand_braces(rule.relative_pattern):
             candidate = root + ("\\" + expanded if expanded else "")

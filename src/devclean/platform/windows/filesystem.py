@@ -161,6 +161,10 @@ def _portable_metadata(path: str) -> FileSystemMetadata:
     file_id = f"{result.st_ino:x}" if result.st_ino else None
     volume_serial = int(result.st_dev) if file_id is not None else None
     link_count = int(result.st_nlink) if result.st_nlink else None
+    if stat.S_ISDIR(result.st_mode) and link_count is not None:
+        # A POSIX directory's link count counts its subdirectories' "..", not
+        # hard links; Windows reports 1 for a directory, as this does.
+        link_count = 1
     reparse = is_link or bool((attributes or 0) & FILE_ATTRIBUTE_REPARSE_POINT)
 
     return FileSystemMetadata(

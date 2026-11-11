@@ -354,14 +354,16 @@ def test_catalog_upgrades_only_audited_windsurf_cache_subtrees(tmp_path: Path) -
     )
 
 
-def test_windsurf_process_guard_blocks_running_cache_and_user_logs(
+def test_windsurf_process_guard_cleans_cache_but_blocks_running_user_logs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         "devclean.core.application_cleanup.windsurf_process_running",
         lambda: True,
     )
-    assert not process_guard_allows(
+    # A user decision (2026-11-10): an audited cache is cleaned while its program
+    # runs; the deletion itself skips the files the program holds open.
+    assert process_guard_allows(
         r"C:\Users\alice\AppData\Roaming\Windsurf\Cache\data_0",
         _env(),
     )

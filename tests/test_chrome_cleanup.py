@@ -259,7 +259,7 @@ def test_chrome_whole_tree_authority_is_exact_and_catalogued(tmp_path: Path) -> 
     assert not data_root.delete_root_itself
 
 
-def test_chrome_cache_process_guard_rechecks_live_browser(
+def test_chrome_cache_is_cleaned_around_a_running_browser(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -270,7 +270,9 @@ def test_chrome_cache_process_guard_rechecks_live_browser(
         r"C:\Users\alice\AppData\Local\Google\Chrome\User Data\Default"
         r"\Cache\Cache_Data\f_001"
     )
-    assert not process_guard_allows(cache_file, _env())
+    # A user decision (2026-11-10): an audited cache is cleaned while its program
+    # runs; the deletion itself skips the files the program holds open.
+    assert process_guard_allows(cache_file, _env())
 
 
 def test_chrome_scan_roots_include_user_data_and_updater_without_whole_tree_authority() -> None:

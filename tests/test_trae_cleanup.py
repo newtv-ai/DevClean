@@ -217,7 +217,7 @@ def test_trae_dynamic_whole_tree_cache_root_is_exact_only() -> None:
     assert whole_tree_application_rule(r"D:\TraeState\Crashpad\reports", env) is None
 
 
-def test_trae_process_guard_allows_user_choice_and_blocks_live_mutation(
+def test_trae_process_guard_allows_user_choice_and_cache_but_blocks_live_logs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = (
@@ -233,7 +233,9 @@ def test_trae_process_guard_allows_user_choice_and_blocks_live_mutation(
     cache = r"C:\Users\alice\AppData\Roaming\Trae\Cache\data_0"
     logs = r"C:\Users\alice\AppData\Roaming\Trae CN\logs\today.log"
     crash = r"C:\Users\alice\AppData\Roaming\Trae\Crashpad\reports\crash.dmp"
-    assert not process_guard_allows(cache, _env())
+    # A user decision (2026-11-10): an audited cache is cleaned while its program
+    # runs; the deletion itself skips the files the program holds open.
+    assert process_guard_allows(cache, _env())
     assert not process_guard_allows(logs, _env())
     assert not process_guard_allows(crash, _env())
 

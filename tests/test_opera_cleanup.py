@@ -204,7 +204,7 @@ def test_opera_catalog_grants_only_exact_cache_roots(tmp_path: Path) -> None:
     assert whole_tree_application_rule(profile, env) is None
 
 
-def test_opera_process_guard_rechecks_live_browser(
+def test_opera_cache_is_cleaned_around_a_running_browser(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -215,7 +215,9 @@ def test_opera_process_guard_rechecks_live_browser(
         r"C:\Users\alice\AppData\Local\Opera Software\Opera GX Stable"
         r"\Default\Cache\Cache_Data\f_001"
     )
-    assert not process_guard_allows(cache, _env())
+    # A user decision (2026-11-10): an audited cache is cleaned while its program
+    # runs; the deletion itself skips the files the program holds open.
+    assert process_guard_allows(cache, _env())
 
 
 def test_opera_scan_roots_include_roaming_and_local_without_parent_authority() -> None:

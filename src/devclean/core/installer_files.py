@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
-from devclean.core._application_cleanup_impl import snapshot_roots
+from devclean.core._application_cleanup_impl import in_scan_snapshot, run_cached, snapshot_roots
 from devclean.platform.windows.command_paths import normalize_path, program_and_paths
 from devclean.platform.windows.registry import UninstallEntry, uninstall_entries
 
@@ -62,6 +62,7 @@ _VERSION_KEYS = ("FileDescription", "ProductName", "OriginalFilename", "Internal
 _SETUP_WORDS = re.compile(r"\b(?:setup|installer)\b|安装程序|安装向导", re.IGNORECASE)
 _UNINSTALL_WORDS = re.compile(r"uninstall|卸载", re.IGNORECASE)
 _UNINSTALLER_NAME = re.compile(r"^(?:unins\d{3}|uninstall.*|uninst)$", re.IGNORECASE)
+_INNO_UNINSTALL_DATA = re.compile(r"unins\d{3}\.dat")
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,13 +285,27 @@ def looks_like_uninstaller(path: Path) -> bool:
 
 
 def has_installed_program_markers(folder: Path) -> bool:
-    """An Inno Setup or NSIS uninstaller next to a file marks an installed program."""
+    """An Inno Setup or NSIS uninstaller next to a file marks an installed program.
 
+    Within one scan or cleanup run each folder is listed once: a folder holding
+    thousands of downloads used to be listed again for every program in it.
+    """
+
+    if not in_scan_snapshot():
+        return _folder_has_installed_program_markers(folder)
+    known: dict[str, bool] = run_cached("installed_program_marker_folders", dict)
+    key = os.path.normcase(os.path.abspath(folder))
+    if key not in known:
+        known[key] = _folder_has_installed_program_markers(folder)
+    return known[key]
+
+
+def _folder_has_installed_program_markers(folder: Path) -> bool:
     try:
         names = {entry.name.casefold() for entry in os.scandir(folder)}
     except OSError:
         return False
-    if any(re.fullmatch(r"unins\d{3}\.dat", name) for name in names):
+    if any(_INNO_UNINSTALL_DATA.fullmatch(name) for name in names):
         return True
     return bool(names & {"uninstall.exe", "uninst.exe"})
 

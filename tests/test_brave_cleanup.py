@@ -184,7 +184,7 @@ def test_brave_whole_tree_roots_are_catalogued_precisely(tmp_path: Path) -> None
     assert not updater_root.delete_root_itself
 
 
-def test_brave_process_guard_blocks_browser_cache_while_running(
+def test_brave_cache_is_cleaned_around_a_running_browser(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -195,7 +195,9 @@ def test_brave_process_guard_blocks_browser_cache_while_running(
         r"C:\Users\alice\AppData\Local\BraveSoftware\Brave-Browser\User Data"
         r"\Default\Cache\Cache_Data\f_001"
     )
-    assert not process_guard_allows(cache, _env())
+    # A user decision (2026-11-10): an audited cache is cleaned while its program
+    # runs; the deletion itself skips the files the program holds open.
+    assert process_guard_allows(cache, _env())
 
 
 def test_brave_scan_roots_do_not_grant_parent_deletion_authority() -> None:

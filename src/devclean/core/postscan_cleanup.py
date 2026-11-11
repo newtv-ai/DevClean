@@ -34,8 +34,15 @@ from devclean.core.cleanup_journal import (
     CleanupMode,
     JournalTargetKind,
 )
-from devclean.core.live_owners import live_owner_refusal
+from devclean.core.live_owners import (
+    HIDDEN_RELATED_REFUSAL,
+    LIVE_CHECK_UNAVAILABLE_REFUSAL,
+    LIVE_OWNER_REFUSAL,
+    live_owner_refusal,
+)
 from devclean.core.paths import data_dir
+from devclean.core.system_anchor import system_anchor_refusal
+from devclean.core.temp_folders import temp_entry_guard
 from devclean.core.triage import (
     Actionability,
     CleanupTargetKind,
@@ -47,7 +54,7 @@ from devclean.core.triage import (
     directory_cleanup_scope,
     installer_ownership,
 )
-from devclean.core.user_rules import DeleteClassification, KeepClassification
+from devclean.core.user_rules import DeleteClassification, KeepClassification, UserRules
 from devclean.core.whole_tree_policy import (
     WholeTreePolicyEvidence,
     WholeTreePolicyRefusal,
@@ -60,10 +67,12 @@ from devclean.platform.windows.exact_cleanup import (
     ExactFileSnapshot,
     ExactMutationResult,
     ExactRootBoundary,
+    TempFolderPurgeResult,
     directory_metadata_matches_snapshot,
     metadata_matches_snapshot,
-    purge_exact_directory_tree,
+    purge_directory_tree_skipping_in_use,
     purge_exact_file,
+    purge_temp_folder_contents,
     recycle_exact_object,
 )
 from devclean.platform.windows.filesystem import (
@@ -90,6 +99,7 @@ _CAPABILITY_KEY = secrets.token_bytes(32)
 type Recycler = Callable[[Path, ExactFileSnapshot, ExactRootBoundary], ExactMutationResult]
 type PermanentPurger = Callable[[Path, ExactFileSnapshot, ExactRootBoundary], ExactMutationResult]
 type DirectoryTreePurger = Callable[..., DirectoryPurgeResult]
+type TempFolderPurger = Callable[..., TempFolderPurgeResult]
 
 
 class CleanupRefusal(ValueError):
@@ -194,6 +204,9 @@ class CleanupExecutionResult:
     unverified_recycle_paths: tuple[str, ...] = ()
     # Why each failed action did not complete, for display next to its row.
     failures: tuple[tuple[str, BaseException], ...] = ()
+    # Folders emptied except for entries that had to stay (in use, no
+    # permission, claimed by another rule); they are not in completed_paths.
+    partial: tuple[tuple[str, TempFolderPurgeResult], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,19 +305,26 @@ def candidate_from_directory_item(
     if record.kind is not ScanRecordKind.DIRECTORY or item.path != record.path:
         raise CleanupRefusal("candidate must be an exact directory item from the scan")
     path = _absolute_local_path(Path(record.path), "candidate directory")
-    scan_root = _directory_execution_boundary(
-        path,
-        _absolute_local_path(Path(record.root), "scan root"),
-        known_roots,
-    )
-    _require_strict_descendant(path, scan_root)
+    scope = _require_directory_scope(path, known_roots, delete_config, keep_config)
+    original_root = _absolute_local_path(Path(record.root), "scan root")
+    if scope is DirectoryScope.TEMP_FOLDER:
+        # Only the contents go; a temp folder that is itself a scan root (the
+        # Windows Temp folder) is its own boundary.
+        scan_root = original_root if _normalized(path) != _normalized(original_root) else path
+        _require_descendant_or_self(path, scan_root)
+    else:
+        scan_root = _directory_execution_boundary(path, original_root, known_roots)
+        _require_strict_descendant(path, scan_root)
     _reject_protected_path(path, known_roots, keep_config)
     if not is_local_fixed_path(path) or not is_local_fixed_path(scan_root):
         raise CleanupRefusal("candidate and original scan root must be on a local fixed volume")
-    scope = _require_directory_scope(path, known_roots, delete_config, keep_config)
     if totals.files < 0 or totals.logical_bytes < 0:
         raise CleanupRefusal("directory subtree totals must be non-negative")
-    policy_evidence = _application_whole_tree_policy(path, known_roots)
+    policy_evidence = (
+        None
+        if scope is DirectoryScope.TEMP_FOLDER
+        else _application_whole_tree_policy(path, known_roots)
+    )
     subtree_files = totals.files
     subtree_bytes = totals.logical_bytes
     if policy_evidence is not None:
@@ -359,11 +379,14 @@ def _reject_overlapping_candidates(candidates: Sequence[ScanCleanupCandidate]) -
     execution list and reclaimed-byte total unambiguous.
     """
 
+    # Emptying a temp folder leaves what other rules claim, so selecting a row
+    # inside it as well is not redundant.
     directories = sorted(
         (
             _normalized(candidate.path)
             for candidate in candidates
             if candidate.target_kind is CleanupTargetKind.DIRECTORY
+            and candidate.directory_scope is not DirectoryScope.TEMP_FOLDER
         ),
         key=len,
     )
@@ -477,9 +500,11 @@ def execute_cleanup_batch(
     journal: CleanupJournal | None = None,
     recycler: Recycler = recycle_exact_object,
     purger: PermanentPurger = purge_exact_file,
-    directory_purger: DirectoryTreePurger = purge_exact_directory_tree,
+    directory_purger: DirectoryTreePurger = purge_directory_tree_skipping_in_use,
+    temp_folder_purger: TempFolderPurger = purge_temp_folder_contents,
     on_progress: CleanupProgressReporter | None = None,
     known_roots: tuple[KnownCleanupRoot, ...] = (),
+    user_rules: UserRules | None = None,
 ) -> CleanupExecutionResult:
     """Execute a durable, post-scan batch once; there is no replay path.
 
@@ -498,6 +523,7 @@ def execute_cleanup_batch(
     purged_directory_bytes: dict[str, int] = {}
     unverified_recycle_paths: list[str] = []
     failures: list[tuple[str, BaseException]] = []
+    partial: list[tuple[str, TempFolderPurgeResult]] = []
     for action_index, action in enumerate(batch.actions):
         candidate = action.candidate
         _report_cleanup_progress(
@@ -535,6 +561,11 @@ def execute_cleanup_batch(
             )
             boundary = _execution_boundary(candidate)
             is_directory = candidate.target_kind is CleanupTargetKind.DIRECTORY
+            is_temp_folder = candidate.directory_scope is DirectoryScope.TEMP_FOLDER
+            if is_temp_folder and mode is CleanupMode.RECYCLE:
+                raise CleanupRefusal(
+                    "a temp folder is emptied permanently; the Recycle Bin would free no space"
+                )
             if mode is CleanupMode.RECYCLE:
                 outcome = recycler(candidate.path, candidate.snapshot, boundary)
                 if not outcome.recycled:
@@ -562,7 +593,27 @@ def execute_cleanup_batch(
                     new_state=ActionState.PURGE_PENDING,
                     detail="durable irreversible intent recorded before deletion",
                 )
-                if is_directory:
+                if is_temp_folder:
+                    emptied = temp_folder_purger(
+                        candidate.path,
+                        _directory_identity(candidate.snapshot),
+                        boundary,
+                        keep=temp_entry_guard(
+                            candidate.path,
+                            known_roots,
+                            user_rules,
+                            in_use=_entry_in_use,
+                        ),
+                        on_progress=_temp_folder_reporter(
+                            on_progress, action_index, len(batch.actions), candidate
+                        ),
+                    )
+                    if not emptied.completed:
+                        raise CleanupRefusal("temp folder cleanup stopped before it finished")
+                    purged_directory_bytes[action.action_id] = emptied.bytes_removed
+                    if emptied.skipped:
+                        partial.append((str(candidate.path), emptied))
+                elif is_directory:
                     identity = _directory_identity(candidate.snapshot)
 
                     def report_directory(
@@ -586,11 +637,31 @@ def execute_cleanup_batch(
                         boundary,
                         on_progress=report_directory,
                     )
-                    if not tree.completed or not tree.root_absent:
+                    left_in_use = tree.in_use + tree.denied
+                    if not tree.completed or (not tree.root_absent and not left_in_use):
                         raise CleanupRefusal(
                             "tree deletion stopped before the whole tree was removed"
                         )
                     purged_directory_bytes[action.action_id] = tree.bytes_removed
+                    if not tree.root_absent:
+                        # What a running program held open stays; the rest went.
+                        partial.append(
+                            (
+                                str(candidate.path),
+                                TempFolderPurgeResult(
+                                    root_path=tree.root_path,
+                                    files_removed=tree.files_removed,
+                                    links_removed=tree.links_removed,
+                                    directories_removed=tree.directories_removed,
+                                    bytes_removed=tree.bytes_removed,
+                                    in_use=tree.in_use,
+                                    denied=tree.denied,
+                                    kept=0,
+                                    completed=tree.completed,
+                                    examples=tree.examples,
+                                ),
+                            )
+                        )
                 else:
                     purger(candidate.path, candidate.snapshot, boundary)
                     if metadata_matches_snapshot(
@@ -635,17 +706,55 @@ def execute_cleanup_batch(
         for action_id, state in action_states
         if state in {ActionState.PURGED, ActionState.RECYCLED}
     }
+    left_behind = {path for path, _outcome in partial}
     return CleanupExecutionResult(
         action_states=action_states,
         purged_logical_bytes=purged_bytes,
         completed_paths=tuple(
             str(action.candidate.path)
             for action in batch.actions
-            if action.action_id in completed_ids
+            if action.action_id in completed_ids and str(action.candidate.path) not in left_behind
         ),
         unverified_recycle_paths=tuple(unverified_recycle_paths),
         failures=tuple(failures),
+        partial=tuple(partial),
     )
+
+
+
+def _entry_in_use(path: str, is_directory: bool) -> str | None:
+    """Why a running program or service may use an entry inside a temp folder."""
+
+    refusal = live_owner_refusal(Path(path), directory=is_directory, rule_proven=True)
+    if refusal is None:
+        return None
+    if refusal.startswith(LIVE_OWNER_REFUSAL):
+        return f"{refusal[len(LIVE_OWNER_REFUSAL) :].lstrip(': ')} 在使用"
+    if refusal.startswith(HIDDEN_RELATED_REFUSAL):
+        name = refusal[len(HIDDEN_RELATED_REFUSAL) :].lstrip(": ").partition(": ")[0]
+        return f"可能正被运行中的 {name} 使用"
+    if refusal.startswith(LIVE_CHECK_UNAVAILABLE_REFUSAL):
+        return "无法确认运行中的程序是否在使用"
+    return "可能正被运行中的程序使用"
+
+
+def _temp_folder_reporter(
+    reporter: CleanupProgressReporter | None,
+    action_index: int,
+    action_count: int,
+    candidate: ScanCleanupCandidate,
+) -> Callable[[DirectoryPurgeProgress], None]:
+    def report(progress: DirectoryPurgeProgress) -> None:
+        _report_cleanup_progress(
+            reporter,
+            action_index=action_index,
+            action_count=action_count,
+            candidate=candidate,
+            files_processed=progress.files_removed + progress.links_removed,
+            completed=False,
+        )
+
+    return report
 
 
 def _report_cleanup_progress(
@@ -789,18 +898,24 @@ def _preflight_candidate(
     keep_config: KeepClassification,
     known_roots: tuple[KnownCleanupRoot, ...] = (),
 ) -> None:
+    temp_folder = candidate.directory_scope is DirectoryScope.TEMP_FOLDER
     refusal = process_guard_refusal(candidate.path)
     if refusal is not None:
         raise CleanupRefusal(refusal)
     refusal = live_owner_refusal(
         candidate.path,
-        directory=candidate.target_kind is CleanupTargetKind.DIRECTORY,
+        # A temp folder is checked entry by entry while it is emptied; what a
+        # running program uses inside it stays, the rest still goes.
+        directory=candidate.target_kind is CleanupTargetKind.DIRECTORY and not temp_folder,
         rule_proven=candidate.rule_proven,
     )
     if refusal is not None:
         raise CleanupRefusal(refusal)
     _reject_protected_path(candidate.path, known_roots, keep_config)
-    _require_strict_descendant(candidate.path, candidate.scan_root)
+    if temp_folder:
+        _require_descendant_or_self(candidate.path, candidate.scan_root)
+    else:
+        _require_strict_descendant(candidate.path, candidate.scan_root)
     if not is_local_fixed_path(candidate.path) or not is_local_fixed_path(candidate.scan_root):
         raise CleanupRefusal("execution target escaped the local fixed-volume boundary")
     root = read_file_metadata(candidate.scan_root)
@@ -822,7 +937,8 @@ def _preflight_candidate(
             metadata, _directory_identity(candidate.snapshot)
         ):
             raise CleanupRefusal("candidate directory changed since the completed scan")
-        _application_whole_tree_policy(candidate.path, known_roots)
+        if not temp_folder:
+            _application_whole_tree_policy(candidate.path, known_roots)
         return
     if not metadata_matches_snapshot(metadata, candidate.snapshot):
         raise CleanupRefusal("candidate changed since the completed scan")
@@ -986,6 +1102,17 @@ def _absolute_local_path(path: Path, label: str) -> Path:
     return Path(text)
 
 
+def _require_descendant_or_self(path: Path, root: Path) -> None:
+    normalized_path = _normalized(path)
+    normalized_root = _normalized(root)
+    try:
+        common = os.path.commonpath((normalized_path, normalized_root))
+    except ValueError as error:
+        raise CleanupRefusal("candidate is on a different volume from its scan root") from error
+    if common != normalized_root:
+        raise CleanupRefusal("candidate must stay inside its original scan root")
+
+
 def _require_strict_descendant(path: Path, root: Path) -> None:
     normalized_path = _normalized(path)
     normalized_root = _normalized(root)
@@ -1064,23 +1191,9 @@ def _reject_system_anchor(
     known_roots: tuple[KnownCleanupRoot, ...],
     keep_config: KeepClassification,
 ) -> None:
-    anchor = Path(path.anchor)
-    if any(
-        root.allow_inside_system_anchor and _is_descendant(path, root.path) for root in known_roots
-    ):
-        return
-    protected_roots = tuple(anchor / name for name in keep_config.protected_system_root_names)
-    normalized = _normalized(path)
-    for protected in protected_roots:
-        protected_normalized = _normalized(protected)
-        try:
-            common = os.path.commonpath((normalized, protected_normalized))
-        except ValueError:
-            continue
-        if common == protected_normalized:
-            raise CleanupRefusal("anchored Windows system-root deny-list blocked the path")
-    if path.parent == anchor and path.name.casefold() in keep_config.protected_system_file_names:
-        raise CleanupRefusal("anchored Windows system-file deny-list blocked the path")
+    refusal = system_anchor_refusal(path, known_roots, keep_config)
+    if refusal is not None:
+        raise CleanupRefusal(refusal)
 
 
 def _directory_execution_boundary(

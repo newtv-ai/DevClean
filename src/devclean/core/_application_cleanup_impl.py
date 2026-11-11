@@ -141,6 +141,12 @@ def scan_root_snapshot() -> Iterator[None]:
         _scan_roots.reset(token)
 
 
+def in_scan_snapshot() -> bool:
+    """Whether root discovery is pinned for the current scan (see above)."""
+
+    return _scan_roots.get() is not None
+
+
 def snapshot_roots[T](builder: RootBuilder[T]) -> RootBuilder[T]:
     """Let *builder* reuse its live-environment result inside a scan snapshot."""
 
@@ -941,6 +947,22 @@ def _matches(path: str, candidate: str, kind: MatchKind) -> bool:
     return False
 
 
+def _could_hold(normalized_root: str, normalized_path: str) -> bool:
+    """Whether a rule anchored at *normalized_root* could match *normalized_path*.
+
+    Every candidate is the root itself or the root, a backslash and a relative
+    pattern, so :func:`_matches` can only succeed for the root or a path below
+    it -- unless the root itself contains wildcard characters.
+    """
+
+    return (
+        normalized_path == normalized_root
+        or normalized_path.startswith(normalized_root.rstrip("\\") + "\\")
+        or any(char in normalized_root for char in "*?[")
+    )
+
+
+@lru_cache(maxsize=4096)
 def _expand_braces(pattern: str) -> tuple[str, ...]:
     start = pattern.find("{")
     if start < 0:

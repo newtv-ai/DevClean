@@ -201,7 +201,11 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
             known_roots,
         )
 
-    def _publish(self, session: TriageSession) -> None:
+    def _publish(
+        self,
+        session: TriageSession,
+        precomputed: app.PublishedPartition | None = None,
+    ) -> None:
         pending = self._vendor_scan_candidates.pop(self._scan_token, None)
         new_vendor_rows: set[str] = set()
         if pending is not None:
@@ -209,7 +213,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
                 _vendor_row_id(candidate): candidate for candidate in pending
             }
             new_vendor_rows = set(self._vendor_candidates)
-        super()._publish(session)
+        super()._publish(session, precomputed)
         # Scan-produced deterministic rows are selected by default exactly like
         # direct filesystem safe rows. Later republishing (AI import/rule edit)
         # does not re-check a vendor row the user explicitly unticked.
@@ -224,6 +228,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
             super()._fill(tree, items)
             return
 
+        app.forget_live_rows(self, tree)
         tree.delete(*tree.get_children())
         # (size, row id, action, location, reason)
         rows: list[tuple[int, str, str, str, str]] = []
@@ -405,6 +410,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
                                 known_roots=self._known_roots,
                                 delete_config=self._scan_rules.delete.classification,
                                 keep_config=self._scan_rules.keep.classification,
+                                user_rules=self._rules,
                             )
                         )
                     except Exception as error:

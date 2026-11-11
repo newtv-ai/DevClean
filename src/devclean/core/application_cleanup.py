@@ -8,12 +8,51 @@ real user-preference decision, and KEEP remains non-deletable.
 
 from __future__ import annotations
 
+import dataclasses
+import fnmatch
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from datetime import datetime
-from pathlib import PureWindowsPath
+from functools import lru_cache
+from pathlib import PurePath, PureWindowsPath
 
 from devclean.core import _application_cleanup_impl as _impl
+from devclean.core import android_avd_cleanup as _android_avd
+from devclean.core import android_sdk_cleanup as _android_sdk
+from devclean.core import android_studio_cleanup as _android_studio
+from devclean.core import brave_cleanup as _brave_cleanup
+from devclean.core import bun_cleanup as _bun
+from devclean.core import cargo_cleanup as _cargo
+from devclean.core import chrome_cleanup as _chrome_cleanup
+from devclean.core import conda_cleanup as _conda
+from devclean.core import cursor_cleanup as _cursor
+from devclean.core import cypress_cleanup as _cypress
+from devclean.core import docker_cleanup as _docker
+from devclean.core import edge_cleanup as _edge_cleanup
+from devclean.core import electron_cleanup as _electron
+from devclean.core import firefox_cleanup as _firefox_cleanup
+from devclean.core import go_cleanup as _go
+from devclean.core import gradle_cleanup as _gradle
+from devclean.core import huggingface_cleanup as _huggingface
+from devclean.core import jetbrains_cleanup as _jetbrains
+from devclean.core import maven_cleanup as _maven
+from devclean.core import npm_cleanup as _npm
+from devclean.core import nuget_cleanup as _nuget
+from devclean.core import ollama_cleanup as _ollama
+from devclean.core import opera_cleanup as _opera_cleanup
+from devclean.core import pip_cleanup as _pip
+from devclean.core import playwright_cleanup as _playwright
+from devclean.core import pnpm_cleanup as _pnpm
+from devclean.core import puppeteer_cleanup as _puppeteer
+from devclean.core import toolbox_cleanup as _toolbox
+from devclean.core import trae_cleanup as _trae_cleanup
+from devclean.core import uv_cleanup as _uv
+from devclean.core import visual_studio_cleanup as _visual_studio
+from devclean.core import visual_studio_installer_cleanup as _visual_studio_installer
+from devclean.core import vivaldi_cleanup as _vivaldi_cleanup
+from devclean.core import vscode_cleanup as _vscode_cleanup
+from devclean.core import windsurf_cleanup as _windsurf_cleanup
+from devclean.core import yarn_cleanup as _yarn
 from devclean.core._application_cleanup_impl import (
     CODEX_RULES,
     ApplicationCleanupRule,
@@ -645,16 +684,52 @@ def evaluate_application_path(
     ``USER_DECISION`` for the review lane, and KEEP remains protected.
     """
 
-    decision = evaluate_android_avd_path(
-        path,
-        logical_size=logical_size,
-        last_used=last_used,
-        now=now,
-        process_running=process_running,
-        environment=environment,
+    # Tried in this order; the first application with a decision wins.
+    evaluators: tuple[tuple[str, Callable[..., ApplicationPolicyDecision | None]], ...] = (
+        ("android_avd", evaluate_android_avd_path),
+        ("android_sdk", evaluate_android_sdk_path),
+        ("gradle", evaluate_gradle_path),
+        ("android_studio", evaluate_android_studio_path),
+        ("toolbox", evaluate_toolbox_path),
+        ("jetbrains", evaluate_jetbrains_path),
+        ("firefox", evaluate_firefox_path),
+        ("opera", evaluate_opera_path),
+        ("vivaldi", evaluate_vivaldi_path),
+        ("brave", evaluate_brave_path),
+        ("edge", evaluate_edge_path),
+        ("chrome", evaluate_chrome_path),
+        ("windsurf", evaluate_windsurf_path),
+        ("trae", evaluate_trae_path),
+        ("vscode", evaluate_vscode_path),
+        ("cursor", evaluate_cursor_path),
+        ("claude", evaluate_claude_path),
+        ("visual_studio", evaluate_visual_studio_path),
+        ("visual_studio_installer", evaluate_visual_studio_installer_path),
+        ("electron", evaluate_electron_path),
+        ("cypress", evaluate_cypress_path),
+        ("puppeteer", evaluate_puppeteer_path),
+        ("playwright", evaluate_playwright_path),
+        ("docker", evaluate_docker_path),
+        ("ollama", evaluate_ollama_path),
+        ("huggingface", evaluate_huggingface_path),
+        ("maven", evaluate_maven_path),
+        ("cargo", evaluate_cargo_path),
+        ("go", evaluate_go_path),
+        ("nuget", evaluate_nuget_path),
+        ("conda", evaluate_conda_path),
+        ("uv", evaluate_uv_path),
+        ("pip", evaluate_pip_path),
+        ("bun", evaluate_bun_path),
+        ("yarn", evaluate_yarn_path),
+        ("pnpm", evaluate_pnpm_path),
+        ("npm", evaluate_npm_path),
+        ("codex", _ORIGINAL_EVALUATE_APPLICATION_PATH),
     )
-    if decision is None:
-        decision = evaluate_android_sdk_path(
+    outside = _applications_not_holding(path) if environment is None else frozenset()
+    for name, evaluate in evaluators:
+        if name in outside:
+            continue
+        decision = evaluate(
             path,
             logical_size=logical_size,
             last_used=last_used,
@@ -662,331 +737,192 @@ def evaluate_application_path(
             process_running=process_running,
             environment=environment,
         )
-    if decision is None:
-        decision = evaluate_gradle_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_android_studio_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_toolbox_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_jetbrains_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_firefox_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_opera_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_vivaldi_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_brave_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_edge_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_chrome_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_windsurf_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_trae_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_vscode_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_cursor_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_claude_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_visual_studio_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_visual_studio_installer_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_electron_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_cypress_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_puppeteer_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_playwright_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_docker_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_ollama_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_huggingface_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_maven_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_cargo_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_go_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_nuget_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_conda_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_uv_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_pip_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_bun_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_yarn_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_pnpm_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = evaluate_npm_path(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    if decision is None:
-        decision = _ORIGINAL_EVALUATE_APPLICATION_PATH(
-            path,
-            logical_size=logical_size,
-            last_used=last_used,
-            now=now,
-            process_running=process_running,
-            environment=environment,
-        )
-    return decision
+        if decision is not None:
+            return decision
+    return None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _ApplicationScope:
+    """Where one application's matcher can ever find a rule for a path.
+
+    *roots* returns the object(s) the matcher anchors its rules at; every path
+    in it counts.  A few applications also recognise project files anywhere
+    (``package.json``, ``Cargo.toml``...): those file names, path segments and
+    file-name patterns make the application always be asked.
+    """
+
+    name: str
+    roots: Callable[[], object]
+    names: frozenset[str] = frozenset()
+    parts: frozenset[str] = frozenset()
+    globs: tuple[str, ...] = ()
+
+
+# Every application except Claude, whose rules also anchor at the whole user
+# profile.  Each matcher was read to confirm that, apart from the listed names,
+# it only matches at or below the folders its root function returns; the
+# evaluator equivalence test compares every decision with and without this.
+_SCOPED_APPLICATIONS: tuple[_ApplicationScope, ...] = (
+    _ApplicationScope("android_avd", lambda: _android_avd.android_avd_roots()),
+    _ApplicationScope("android_sdk", lambda: _android_sdk.android_sdk_roots()),
+    _ApplicationScope("gradle", lambda: _gradle.gradle_roots()),
+    _ApplicationScope("android_studio", lambda: _android_studio.android_studio_roots()),
+    _ApplicationScope("toolbox", lambda: _toolbox.toolbox_root()),
+    _ApplicationScope("jetbrains", lambda: _jetbrains.jetbrains_roots()),
+    _ApplicationScope("firefox", lambda: _firefox_cleanup.firefox_roots()),
+    _ApplicationScope("opera", lambda: _opera_cleanup.opera_roots()),
+    _ApplicationScope("vivaldi", lambda: _vivaldi_cleanup.vivaldi_roots()),
+    _ApplicationScope("brave", lambda: _brave_cleanup.brave_roots()),
+    _ApplicationScope("edge", lambda: _edge_cleanup.edge_roots()),
+    _ApplicationScope("chrome", lambda: _chrome_cleanup.chrome_roots()),
+    _ApplicationScope("windsurf", lambda: _windsurf_cleanup.windsurf_roots()),
+    _ApplicationScope("trae", lambda: _trae_cleanup.trae_roots()),
+    _ApplicationScope("vscode", lambda: _vscode_cleanup.vscode_roots()),
+    _ApplicationScope("cursor", lambda: (_cursor.cursor_application_roots(), _cursor_temp_roots())),
+    _ApplicationScope("visual_studio", lambda: _visual_studio.visual_studio_roots()),
+    _ApplicationScope(
+        "visual_studio_installer",
+        lambda: _visual_studio_installer.visual_studio_installer_roots(),
+    ),
+    _ApplicationScope("electron", lambda: _electron.electron_roots()),
+    _ApplicationScope("cypress", lambda: _cypress.cypress_roots()),
+    _ApplicationScope("puppeteer", lambda: _puppeteer.puppeteer_roots()),
+    _ApplicationScope("playwright", lambda: _playwright.playwright_roots()),
+    _ApplicationScope("docker", lambda: _docker.docker_roots()),
+    _ApplicationScope("ollama", lambda: _ollama.ollama_roots()),
+    _ApplicationScope("huggingface", lambda: _huggingface.huggingface_roots()),
+    _ApplicationScope(
+        "maven",
+        lambda: _maven.maven_roots(),
+        names=_maven._PROJECT_METADATA_NAMES | _maven._PROJECT_MVN_FILES,
+        parts=frozenset({".mvn"}),
+    ),
+    _ApplicationScope(
+        "cargo",
+        lambda: _cargo.cargo_roots(),
+        names=_cargo._PROJECT_METADATA_NAMES | _cargo._PROJECT_CONFIG_NAMES,
+    ),
+    _ApplicationScope("go", lambda: _go.go_roots(), names=_go._PROJECT_METADATA_NAMES),
+    _ApplicationScope("nuget", lambda: _nuget.nuget_roots(), names=_nuget._PROJECT_METADATA_NAMES),
+    _ApplicationScope(
+        "conda",
+        lambda: _conda.conda_roots(),
+        names=frozenset({".condarc", "condarc"}),
+        parts=frozenset({"conda-meta"}),
+    ),
+    _ApplicationScope("uv", lambda: _uv.uv_roots()),
+    _ApplicationScope("pip", lambda: _pip.pip_roots()),
+    _ApplicationScope(
+        "bun",
+        lambda: _bun.bun_roots(),
+        names=_bun._PROJECT_METADATA_NAMES,
+        parts=frozenset({".bun"}),
+    ),
+    _ApplicationScope(
+        "yarn",
+        lambda: _yarn.yarn_roots(),
+        names=_yarn._PROJECT_METADATA_NAMES,
+        parts=frozenset({".yarn"}),
+    ),
+    _ApplicationScope(
+        "pnpm", lambda: _pnpm.pnpm_roots(), names=_pnpm._PNPM_METADATA_FILENAMES
+    ),
+    _ApplicationScope(
+        "npm",
+        lambda: _npm.npm_roots(),
+        names=_npm._NPM_KEEP_FILENAMES | frozenset({"npm-debug.log"}),
+    ),
+    _ApplicationScope("codex", lambda: _ORIGINAL_APPLICATION_ROOTS()),
+)
+
+
+def _cursor_temp_roots() -> object:
+    # Imported here: the updater module patches this one while it loads.
+    from devclean.core import cursor_updater_cleanup
+
+    return cursor_updater_cleanup._temp_roots()
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _ScopeIndex:
+    by_folder: dict[str, frozenset[str]]
+    by_name: dict[str, frozenset[str]]
+    by_part: dict[str, frozenset[str]]
+    globs: tuple[tuple[str, str], ...]
+    unbounded: frozenset[str]
+
+
+def _applications_not_holding(path: str | os.PathLike[str]) -> frozenset[str]:
+    """Scoped applications that cannot have a rule for *path*.
+
+    Only inside a scan snapshot, where each root set is computed once and is
+    the very object the matcher itself reads; elsewhere nothing is skipped.
+    """
+
+    if not _impl.in_scan_snapshot():
+        return frozenset()
+    index = _impl.run_cached("application_scope_index", _application_scope_index)
+    normalized = _impl._normalize(path)
+    holding = set(index.unbounded)
+    end = normalized.find("\\")
+    while True:
+        prefix = normalized if end < 0 else normalized[:end]
+        holding.update(index.by_folder.get(prefix, ()))
+        if end < 0:
+            break
+        end = normalized.find("\\", end + 1)
+    parts = normalized.split("\\")
+    name = parts[-1]
+    holding.update(index.by_name.get(name, ()))
+    for part in parts:
+        holding.update(index.by_part.get(part, ()))
+    holding.update(app for pattern, app in index.globs if fnmatch.fnmatchcase(name, pattern))
+    return frozenset(scope.name for scope in _SCOPED_APPLICATIONS if scope.name not in holding)
+
+
+def _application_scope_index() -> _ScopeIndex:
+    by_folder: dict[str, set[str]] = {}
+    by_name: dict[str, set[str]] = {}
+    by_part: dict[str, set[str]] = {}
+    globs: list[tuple[str, str]] = []
+    unbounded: set[str] = set()
+    for scope in _SCOPED_APPLICATIONS:
+        for root in _paths_within(scope.roots()):
+            folder = _impl._normalize(root)
+            if not folder or any(char in folder for char in "*?["):
+                # A wildcard in the folder itself makes matching not a plain
+                # prefix test; such an application is always asked.
+                unbounded.add(scope.name)
+            else:
+                by_folder.setdefault(folder, set()).add(scope.name)
+        for file_name in scope.names:
+            by_name.setdefault(file_name.casefold(), set()).add(scope.name)
+        for part in scope.parts:
+            by_part.setdefault(part.casefold(), set()).add(scope.name)
+        globs.extend((pattern.casefold(), scope.name) for pattern in scope.globs)
+    return _ScopeIndex(
+        by_folder={folder: frozenset(names) for folder, names in by_folder.items()},
+        by_name={key: frozenset(names) for key, names in by_name.items()},
+        by_part={key: frozenset(names) for key, names in by_part.items()},
+        globs=tuple(globs),
+        unbounded=frozenset(unbounded),
+    )
+
+
+def _paths_within(value: object) -> Iterator[str]:
+    """Every path inside a root object: dataclass fields, tuples and lists."""
+
+    if value is None or isinstance(value, (str, bytes, int, float, bool)):
+        return
+    if isinstance(value, PurePath):
+        yield str(value)
+    elif isinstance(value, (tuple, list, set, frozenset)):
+        for member in value:
+            yield from _paths_within(member)
+    elif dataclasses.is_dataclass(value) and not isinstance(value, type):
+        for field in dataclasses.fields(value):
+            yield from _paths_within(getattr(value, field.name))
 
 
 PROTECTED_OWNER_REFUSAL = "the target now belongs to protected application data"
@@ -1117,9 +1053,66 @@ def process_guard_refusal(
         return PROTECTED_OWNER_REFUSAL
     if refreshed is None or not refreshed.requires_process_closed:
         return None
+    if refreshed.rule_id in cleanable_while_running():
+        # An audited regenerable cache: while its program runs, the files it
+        # holds open are skipped at deletion and the rest still goes.
+        return None
     if application_process_running(refreshed.app_id):
         return RUNNING_OWNER_REFUSAL
     return None
+
+
+@lru_cache(maxsize=1)
+def cleanable_while_running() -> frozenset[str]:
+    """Rules whose files a running program merely re-creates when they are gone.
+
+    The browsers' and editors' audited caches (HTTP, code, GPU, shader...) and
+    Claude's plugin clones nothing references any more.  Not here: IDE index
+    caches, which an IDE keeps maintaining while it runs, and the downloads an
+    editor may be installing from right now (extension VSIX packages, the WSL
+    server); for those the program is closed first.
+    """
+
+    # Imported here: these modules patch this one while they load.
+    from devclean.core import (
+        brave_cache_semantics,
+        chrome_cache_semantics,
+        claude_plugin_cache_cleanup,
+        edge_cache_semantics,
+        firefox_cache_semantics,
+        opera_cache_semantics,
+        trae_windsurf_cache_semantics,
+        vivaldi_cache_semantics,
+        vscode_cache_semantics,
+    )
+
+    return frozenset(
+        {
+            *brave_cache_semantics._SAFE_CACHE_RULE_IDS,
+            *chrome_cache_semantics._SAFE_CACHE_RULE_IDS,
+            *edge_cache_semantics._SAFE_CACHE_RULE_IDS,
+            *firefox_cache_semantics._SAFE_CACHE_RULE_IDS,
+            *opera_cache_semantics._SAFE_CACHE_RULE_IDS,
+            *vivaldi_cache_semantics._SAFE_CACHE_RULE_IDS,
+            *vscode_cache_semantics._SAFE_CACHE_RULE_IDS,
+            *trae_windsurf_cache_semantics._TRAE_SAFE_CACHE_RULE_IDS,
+            *trae_windsurf_cache_semantics._WINDSURF_SAFE_CACHE_RULE_IDS,
+            claude_plugin_cache_cleanup._STAGING_RULE.rule_id,
+            claude_plugin_cache_cleanup._ORPHAN_RULE.rule_id,
+        }
+        - _INSTALLING_FROM
+    )
+
+
+# Editor downloads that an install in progress may be reading.
+_INSTALLING_FROM = frozenset(
+    {
+        "vscode-extension-vsix-cache",
+        "vscode-wsl-server-download-cache",
+        "trae-cached-extension-vsix",
+        "windsurf-extension-vsix-cache",
+    }
+)
 
 
 def whole_tree_application_rule(

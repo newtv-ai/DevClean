@@ -306,7 +306,9 @@ def test_vscode_process_guard_allows_user_choice_but_not_keep_or_running_tool(
         "devclean.core.application_cleanup.vscode_process_running",
         lambda: True,
     )
-    assert not process_guard_allows(
+    # A user decision (2026-11-10): an audited cache is cleaned while its program
+    # runs; the deletion itself skips the files the program holds open.
+    assert process_guard_allows(
         r"C:\Users\alice\AppData\Roaming\Code\Cache\data_0",
         _env(),
     )

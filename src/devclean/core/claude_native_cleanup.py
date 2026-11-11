@@ -112,8 +112,9 @@ def _casefold_env(environment: Mapping[str, str] | None) -> dict[str, str]:
     return {key.casefold(): value for key, value in source.items() if value}
 
 
+@_impl.snapshot_roots
 def _native_paths(
-    environment: Mapping[str, str] | None,
+    environment: Mapping[str, str] | None = None,
 ) -> tuple[PureWindowsPath | None, PureWindowsPath | None]:
     profile = _casefold_env(environment).get("userprofile")
     if not profile:
@@ -122,6 +123,7 @@ def _native_paths(
     return home / ".local" / "share" / "claude" / "versions", home / ".local" / "bin"
 
 
+@_impl.snapshot_roots
 def claude_application_roots(
     environment: Mapping[str, str] | None = None,
 ) -> tuple[ApplicationRoot, ...]:

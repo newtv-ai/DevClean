@@ -165,7 +165,7 @@ def test_vivaldi_whole_tree_roots_are_catalogued_precisely(tmp_path: Path) -> No
     assert whole_tree_application_rule(profile, env) is None
 
 
-def test_vivaldi_process_guard_rechecks_live_browser(
+def test_vivaldi_cache_is_cleaned_around_a_running_browser(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -176,7 +176,9 @@ def test_vivaldi_process_guard_rechecks_live_browser(
         r"C:\Users\alice\AppData\Local\Vivaldi\User Data"
         r"\Default\Cache\Cache_Data\f_001"
     )
-    assert not process_guard_allows(cache, _env())
+    # A user decision (2026-11-10): an audited cache is cleaned while its program
+    # runs; the deletion itself skips the files the program holds open.
+    assert process_guard_allows(cache, _env())
 
 
 def test_vivaldi_scan_root_does_not_grant_parent_delete_authority() -> None:

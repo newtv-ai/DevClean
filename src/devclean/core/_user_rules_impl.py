@@ -413,11 +413,29 @@ class UserRules:
     def is_within_kept_directory(self, path: str | Path) -> bool:
         """Return whether *path* is inside an explicitly kept directory."""
 
+        matcher = self._keep_directory_matcher
+        if not (
+            matcher.path_prefixes
+            or matcher.path_globs
+            or matcher.filename_globs
+            or matcher.path_regexes
+            or matcher.filename_regexes
+        ):
+            # Directory decisions are exact paths only (see __post_init__), so
+            # one normalisation and a set lookup per ancestor give the same answer
+            # as running the whole matcher on every ancestor.
+            if not matcher.exact_paths:
+                return False
+            current = normalise_path(path)
+            while True:
+                if current.casefold() in matcher.exact_paths:
+                    return True
+                parent = os.path.dirname(current)
+                if parent == current:
+                    return False
+                current = parent
         candidate = Path(normalise_path(path))
-        return any(
-            self._keep_directory_matcher.matches(parent)
-            for parent in (candidate, *candidate.parents)
-        )
+        return any(matcher.matches(parent) for parent in (candidate, *candidate.parents))
 
     @property
     def ai_rule_count(self) -> int:

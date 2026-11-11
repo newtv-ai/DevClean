@@ -15,7 +15,7 @@ import sys
 import tempfile
 from collections.abc import Iterator, Mapping
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from functools import lru_cache
@@ -46,6 +46,8 @@ from devclean.core.installer_files import (
     program_location,
     system_installer_cache,
 )
+from devclean.core.system_anchor import system_anchor_refusal
+from devclean.core.temp_folders import temp_folder_kind
 from devclean.core.user_rules import (
     DeleteClassification,
     KeepClassification,
@@ -71,6 +73,8 @@ class DirectoryScope(StrEnum):
     REGENERABLE_TOOL_OUTPUT = "REGENERABLE_TOOL_OUTPUT"
     STALE_VERSION = "STALE_VERSION"
     AGED_TEMP_ITEM = "AGED_TEMP_ITEM"
+    # A temporary folder emptied as one item (see devclean.core.temp_folders).
+    TEMP_FOLDER = "TEMP_FOLDER"
     NOT_ELIGIBLE = "NOT_ELIGIBLE"
 
 
@@ -345,6 +349,8 @@ def triage_file(
         delete_config=delete_config,
         keep_config=keep_config,
     )
+    if system_anchor_refusal(Path(record.path), known_roots, keep_config) is not None:
+        classification = _inside_system_location(classification)
     tags = list(classification.tags)
     if record.logical_size >= delete_config.large_file_bytes:
         tags.append("large_file")
@@ -466,6 +472,17 @@ def triage_directory(
         execution_policy = ExecutionPolicy.NONE
         reason = f"{path.name}：名称像可重建工具产物，但项目语义未经证明，工具直接保护"
         tags = ("whole_directory", "regenerable_tool_output", "report_only")
+    if (
+        lane is not ReviewLane.REPORT_ONLY
+        and system_anchor_refusal(path, known_roots, keep_config) is not None
+    ):
+        lane = ReviewLane.REPORT_ONLY
+        risk_tier = RiskTier.PROTECTED
+        evidence_kind = EvidenceKind.FILESYSTEM_OBSERVATION
+        actionability = Actionability.REPORT_ONLY
+        execution_policy = ExecutionPolicy.NONE
+        reason = f"{known.label if known is not None else path.name}：{_SYSTEM_LOCATION_REASON}"
+        tags = ("whole_directory", "system_location", "report_only")
     return TriageItem(
         record=record,
         path=record.path,
@@ -483,6 +500,72 @@ def triage_directory(
         tags=tags,
         target_kind=CleanupTargetKind.DIRECTORY,
         directory_scope=scope,
+    )
+
+
+def triage_temp_folder(
+    record: ScanRecord,
+    *,
+    delete_config: DeleteClassification,
+    kept_out: int = 0,
+) -> TriageItem:
+    """One temporary folder as a single "safe to clean" item (a user decision).
+
+    Its size comes from the scan listing; its files were not classified.
+    Cleaning empties it and keeps the folder itself.
+    """
+
+    if record.kind is not ScanRecordKind.DIRECTORY:
+        raise ValueError("a temp folder item needs the folder's directory observation")
+    reason = (
+        "临时文件夹：按你的决定整体清理其中内容，保留文件夹本身；"
+        "清理时正被程序使用的文件会跳过并说明"
+    )
+    if kept_out:
+        reason += f"；其中 {kept_out:,} 项由应用规则或你的保留设置单独处理，不随文件夹清理"
+    category = CleanupCategory.USER_TEMP
+    return TriageItem(
+        record=record,
+        path=record.path,
+        logical_size=0,
+        allocated_size=None,
+        category=category,
+        source_domain=source_domain_for_category(category, delete_config.category_source_domains),
+        lane=ReviewLane.DETERMINISTIC_CANDIDATE,
+        risk_tier=RiskTier.LOW,
+        evidence_kind=EvidenceKind.FILESYSTEM_OBSERVATION,
+        actionability=Actionability.REVIEW_PLAN,
+        execution_policy=ExecutionPolicy.USER_CHOICE_DELETE,
+        recovery=RecoveryCapability.NONE,
+        reason=reason,
+        tags=("whole_directory", "temp_folder", "user_decision_temp_folder"),
+        target_kind=CleanupTargetKind.DIRECTORY,
+        directory_scope=DirectoryScope.TEMP_FOLDER,
+    )
+
+
+_SYSTEM_LOCATION_REASON = (
+    "位于 Windows 系统保护位置（Windows、Program Files、ProgramData 等），"
+    "删除前的系统目录检查不允许在这里删除，所以不列为可清理"
+)
+
+
+def _inside_system_location(classification: _Classification) -> _Classification:
+    """Offer nothing that the deletion step's system-root deny-list would refuse."""
+
+    if classification.lane is ReviewLane.REPORT_ONLY:
+        # Already protected; the tag keeps AI routing and learned rules away too.
+        return replace(classification, tags=(*classification.tags, "system_location"))
+    return _Classification(
+        classification.category,
+        ReviewLane.REPORT_ONLY,
+        RiskTier.PROTECTED,
+        EvidenceKind.FILESYSTEM_OBSERVATION,
+        Actionability.REPORT_ONLY,
+        ExecutionPolicy.NONE,
+        RecoveryCapability.NONE,
+        _SYSTEM_LOCATION_REASON,
+        ("system_location", "report_only"),
     )
 
 
@@ -1048,6 +1131,8 @@ def directory_cleanup_scope(
     delete_config: DeleteClassification,
     keep_config: KeepClassification,
 ) -> DirectoryScope:
+    if temp_folder_kind(path, known_roots, keep_config) is not None:
+        return DirectoryScope.TEMP_FOLDER
     is_known_root = _normalized_path(path) in _whole_tree_known_roots(known_roots)
     is_tool_output = is_regenerable_tool_directory(path, delete_config)
     if not is_known_root and not is_tool_output:
@@ -1140,5 +1225,6 @@ __all__ = [
     "is_stale_version_directory",
     "triage_directory",
     "triage_file",
+    "triage_temp_folder",
     "user_download_roots",
 ]

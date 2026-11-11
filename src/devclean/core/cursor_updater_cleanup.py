@@ -107,7 +107,8 @@ def _casefold_env(environment: Mapping[str, str] | None) -> dict[str, str]:
     return {key.casefold(): value for key, value in source.items() if value}
 
 
-def _temp_roots(environment: Mapping[str, str] | None) -> tuple[Path, ...]:
+@_impl.snapshot_roots
+def _temp_roots(environment: Mapping[str, str] | None = None) -> tuple[Path, ...]:
     env = _casefold_env(environment)
     candidates: list[Path] = []
     for key in ("temp", "tmp"):

@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+import time
 import zipfile
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -912,3 +913,103 @@ def test_a_reviewed_item_cannot_be_relabelled_as_rule_proven(ws: Workspace) -> N
     with pytest.raises(CleanupRefusal, match="altered"):
         dataclasses.replace(candidate, rule_proven=True)
     assert installer.exists() and reviewed.exists()
+
+
+# ---- temporary folders: one item, emptied around what other rules claim ----------------
+
+
+def test_temp_folders_are_one_safe_item_emptied_around_what_others_claim(ws: Workspace) -> None:
+    from devclean.core.triage import DirectoryScope
+
+    temp = ws.home / "AppData" / "Local" / "Temp"
+    junk = [
+        _write(temp / "a.tmp", b"x" * 100),
+        _write(temp / "_MEI1234" / "python.dll", b"y" * 100),
+        _write(temp / "deep" / "er" / "c.log", b"z" * 50),
+    ]
+    claimed = _write(temp / "proj" / "package.json", b"{}")  # npm project metadata: KEEP
+    user_decides = _write(temp / "npm-debug.log", b"log")  # npm debug log: the user decides
+    running = _write(temp / "setup-run" / "setup.exe", b"MZ")
+    payload = _write(temp / "setup-run" / "payload.bin", b"p" * 10)
+    app_tmp = ws.home / "AppData" / "Local" / "Vendor" / "Product" / "tmp"
+    app_junk = _write(app_tmp / "cache.bin", b"q" * 30)
+    project_note = _write(ws.root / "Projects" / "app" / "tmp" / "notes.txt", b"mine")
+    window, session = _scan(ws, ws.root / "Projects")
+    deletable, unsure = _partition(window)
+
+    # Each temp folder is one ticked "safe" row sized from the listing; what an
+    # application rule claims is not part of it and keeps its own classification.
+    folders = {item.path: item for item in deletable.values() if item.directory_scope}
+    assert set(folders) == {str(temp), str(app_tmp)}
+    assert all(item.directory_scope is DirectoryScope.TEMP_FOLDER for item in folders.values())
+    assert all(app.is_direct_cleanup_eligible(item) for item in folders.values())
+    assert session.subtree_totals(str(temp)).files == 5
+    assert session.subtree_totals(str(temp)).logical_bytes == 100 + 100 + 50 + 2 + 10
+    assert session.subtree_totals(str(app_tmp)).logical_bytes == 30
+    assert "npm-debug.log" in unsure
+    # A tmp folder in a project is not a temporary folder: its files stay per file.
+    assert "notes.txt" in unsure
+    assert not any(item.path == str(project_note.parent) for item in deletable.values())
+
+    # A program now runs from Temp: its folder is left, everything else goes.
+    ws.launches.clear()  # the scan asks package managers where caches live
+    ws.processes.append(ProcessInfo("setup.exe", str(running), f'"{running}"'))
+    results, failures = _clean(window, [folders[str(temp)], folders[str(app_tmp)]])
+
+    assert failures == () and not any(result.failures for result in results)
+    assert temp.is_dir() and app_tmp.is_dir()  # the folders themselves stay
+    assert not any(path.exists() for path in junk) and not app_junk.exists()
+    assert not (temp / "deep").exists() and not (temp / "_MEI1234").exists()
+    assert claimed.exists() and user_decides.exists()
+    assert running.exists() and payload.exists()
+    assert project_note.exists()
+    partial = {path: outcome for result in results for path, outcome in result.partial}
+    assert set(partial) == {str(temp)}  # the application's tmp was emptied completely
+    outcome = partial[str(temp)]
+    assert (outcome.files_removed, outcome.bytes_removed) == (3, 250)
+    assert outcome.kept == 3 and outcome.in_use == 0 and outcome.denied == 0
+    reasons = dict(outcome.examples)
+    assert reasons[str(temp / "setup-run")] == "正在运行的程序 setup.exe 在使用"
+    completed = {path for result in results for path in result.completed_paths}
+    assert completed == {str(app_tmp)}  # the partly emptied folder stays listed
+    assert app._temp_folder_note(outcome).startswith("已清理 3 个文件")
+    assert ws.launches == []
+
+
+def test_the_scan_worker_hands_over_totals_and_the_finished_partition(
+    ws: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    files = [_nsis(ws.downloads / f"pkg{index}" / "setup.exe") for index in range(3)]
+    files.append(_write(ws.downloads / "notes" / "todo.txt", b"later"))
+    clock = [0.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+    window: Any = object.__new__(product_vendor_app.ProductDevCleanWindow)
+    window._events = Queue()
+    window._vendor_candidates = {}
+    window._vendor_scan_candidates = {}
+    window._active_scan_drives = ()
+    rules = default_rules()
+    known = discover_known_cleanup_roots(rules.scan)
+    roots = app.scan_targets(known, (), rules)
+
+    product_vendor_app.ProductDevCleanWindow._scan_worker(
+        window, "scan", roots, CancellationToken(), rules, known
+    )
+
+    events: list[tuple[str, Any]] = []
+    while not window._events.empty():
+        events.append(window._events.get_nowait())
+    kinds = [kind for kind, _payload in events]
+    assert kinds[-1] == "scan_done"
+    # The clock never moved, so only the final progress report got through.
+    assert kinds.count("progress") == 1
+    _token, session, cancelled, totals, partition = events[-1][1]
+    assert not cancelled
+    walked = [path for path in ws.home.rglob("*") if path.is_file()]
+    assert totals.files == len(walked) == len(files)
+    assert totals.logical_bytes == sum(path.stat().st_size for path in walked)
+    assert totals.directories == len([path for path in ws.home.rglob("*") if path.is_dir()]) + 1
+    expected = app.published_partition(session, rules)
+    assert [item.path for item in partition.deletable] == [item.path for item in expected.deletable]
+    assert [item.path for item in partition.unsure] == [item.path for item in expected.unsure]
+    assert {Path(item.path).name for item in partition.deletable} == {"setup.exe"}

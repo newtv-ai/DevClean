@@ -582,6 +582,8 @@ def match_claude_rule(
     for index, rule in enumerate(CLAUDE_RULES):
         roots = application_roots.get(rule.root_key, ())
         for root in roots:
+            if not _impl._could_hold(root, normalized):
+                continue
             for expanded in _impl._expand_braces(rule.relative_pattern):
                 candidate = root + ("\\" + expanded if expanded else "")
                 if _impl._matches(normalized, candidate, rule.match_kind):
