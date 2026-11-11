@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -142,3 +144,21 @@ def test_root_override_set_contains_only_selected_specific_roots(tmp_path: Path)
 
     assert normalise_path(explicit) in overrides
     assert normalise_path(unrelated) not in overrides
+
+
+def test_scan_roots_keep_the_spelling_the_user_sees(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Windows compares paths lower-cased (normcase); every path the scan
+    # reports must still be spelled the way the folders are.
+    profile = tmp_path / "Home"
+    project = tmp_path / "Work" / "Project"
+    for folder in (profile, project):
+        folder.mkdir(parents=True)
+    folding = SimpleNamespace(**{**vars(os.path), "normcase": str.lower})
+    monkeypatch.setattr(app, "os", SimpleNamespace(**{**vars(os), "path": folding}))
+    monkeypatch.setenv("USERPROFILE", str(profile))
+
+    roots = app.scan_targets((), rules=_rules_with_additional(project))
+
+    assert [str(root) for root in roots] == [str(profile), str(project)]

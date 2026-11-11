@@ -171,6 +171,12 @@ def live_owner_refusal(
     target = normalize_path(str(path))
     if target is None:
         return f"{LIVE_CHECK_UNAVAILABLE_REFUSAL}: not an absolute path"
+    # Checks compare the normalised (on Windows lower-case) form; a reason names
+    # folders as the user knows them. Should expansion have changed the path's
+    # shape, the checked form is shown instead.
+    written = os.path.normpath(os.path.abspath(os.fspath(path)))
+    if len(_parts(written)) != len(_parts(target)):
+        written = target
     index = run_cached("live_owner_index", _build_owner_index)
     owner = index.files.get(target) or next(
         (name for folder, name in index.folders if is_within(target, folder)), None
@@ -187,7 +193,7 @@ def live_owner_refusal(
     if owner is not None:
         return f"{LIVE_OWNER_REFUSAL}: {owner}"
     for process in state.hidden:
-        why = _relation(process, target, directory=directory)
+        why = _relation(process, target, written, directory=directory)
         if why is not None:
             return f"{HIDDEN_RELATED_REFUSAL}: {process.name}: {why}"
     unplaced = frozenset(process.name.casefold() for process in state.hidden if not process.program)
@@ -276,8 +282,18 @@ def _hidden(process: ProcessInfo) -> HiddenProcess:
     return HiddenProcess(process.name, program, folder, usable_stem)
 
 
-def _relation(process: HiddenProcess, target: str, *, directory: bool) -> str | None:
-    """How *target* relates to a hidden process, in the user's terms, or ``None``."""
+def _relation(
+    process: HiddenProcess,
+    target: str,
+    written: str,
+    *,
+    directory: bool,
+) -> str | None:
+    """How *target* relates to a hidden process, in the user's terms, or ``None``.
+
+    *target* is normalised and used for every comparison; *written* is the same
+    path as the user knows it and only supplies the folder names shown.
+    """
 
     if process.program is not None:
         if target == process.program or (directory and is_within(process.program, target)):
@@ -293,16 +309,32 @@ def _relation(process: HiddenProcess, target: str, *, directory: bool) -> str | 
         start = target if directory else os.path.dirname(target)
         for folder in _ancestors(start):
             if _program_file_exists(folder, process.name):
-                return f"同一文件夹（{folder}）里有同名程序，它可能正从那里运行"
+                shown = os.path.join(*_parts(written)[: len(_parts(folder))])
+                return f"同一文件夹（{shown}）里有同名程序，它可能正从那里运行"
     if process.stem is not None:
-        for part in Path(target).parts:
+        for part, shown in zip(_parts(target), _parts(written), strict=True):
             text = part.casefold()
             tokens = re.split(r"[^0-9a-z]+", text)
             if process.stem in tokens or (len(process.stem) >= 5 and process.stem in text):
-                return f"路径中含有它的名称（{part}）"
+                return f"路径中含有它的名称（{shown}）"
     if process.name.casefold() == "msiexec.exe" and target.endswith(_INSTALLER_PACKAGES):
         return "Windows Installer 正在运行，可能正在使用这个安装包"
     return None
+
+
+def _parts(path: str) -> list[str]:
+    """*path*'s drive or root, then each folder and name, like ``Path.parts``."""
+
+    parts: list[str] = []
+    while True:
+        head, tail = os.path.split(path)
+        if not tail:
+            if head:
+                parts.append(head)
+            break
+        parts.append(tail)
+        path = head
+    return parts[::-1]
 
 
 def _programs_inside(directory: str, names: frozenset[str]) -> tuple[str, str] | None | tuple[()]:

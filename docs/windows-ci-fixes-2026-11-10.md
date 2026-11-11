@@ -141,3 +141,81 @@ runner 上 pytest 临时目录在 `C:\Users\runneradmin\AppData\Local\Temp\pytes
 | `tests/test_exact_cleanup_safety.py` | 新增回归测试 | §2.2 |
 | `tests/test_rules.py` | 新增回归测试 | §2.1 |
 | `docs/windows-ci-fixes-2026-11-10.md` | 文档 | 本文件 |
+
+## 8. 第二轮：`d9ffe54` 的 CI 失败（2026-11-10）
+
+上一轮改动已提交为 `d9ffe54`。Windows CI [run 42937136079](https://github.com/newtv-ai/DevClean/actions/runs/42937136079)：1189 通过 / 1 失败，整套测试耗时 79.8 秒（上一轮约 15 分钟），可见 §3.1 的宿主隔离已在 Windows 上生效。剩下的失败是 `test_deletion_workflow.py::test_unrelated_hidden_program_does_not_block_junk_but_guards_its_own_places`（第 636 行，比较拒绝原因文本）。本轮仍未改动审计原文（SHA-256 不变），未 commit、未 push。
+
+### 8.1 根因（生产代码，两层）
+
+| 层 | 位置 | 问题 |
+| --- | --- | --- |
+| 1 | `core/live_owners.py` `_relation` | `live_owner_refusal` 先把目标路径归一化（`normalize_path`：展开变量、还原 8.3 短名、`normcase`，Windows 上即全部小写），再用它做比较。这没问题，但 `_relation` 把归一化路径的片段直接写进给用户看的原因：“同一文件夹（{folder}）”和“路径中含有它的名称（{part}）”。所以在 Windows 上 Plugin-Setup.exe 的原因显示 `c:\users\…\home\downloads\portable`，runtime.msi 的原因显示 `（ollama-cache）`，而期望是 `（Ollama-cache）`。日志里 runtime.msi 那行被截断，这是从代码推出的结果，并用下面的回归测试在 ntpath 语义下复现确认 |
+| 2 | `ui/app.py` `scan_targets` | 扫描根在返回前就被 `normcase` 过，扫描器又按原样用根路径拼出每条记录的路径，所以 Windows 上界面里每个条目的路径都是“小写的根 + 原始大小写的子路径”。只修第 1 层的话，原因文本会变成 `c:\users\…\home\Downloads\Portable`，仍与用户在列表或资源管理器里看到的不一致，这个测试仍会失败 |
+
+### 8.2 修复
+
+- **`core/live_owners.py:177-180`、`:285-319`、`:325`**：所有比较（`_ancestors`、`_program_file_exists`、`_usable`、`is_within`、名称匹配）仍然用归一化路径。另外记下调用方传入的原始路径 `written`，原因文本里的文件夹和路径片段按层级从 `written` 中取，保留原始写法。如果变量展开让两者层级数不同（扫描得到的路径不会出现这种情况），就退回显示归一化路径，保证显示的仍是真正检查过的那个位置。拆路径改用 `os.path.split`（新增 `_parts`），不再用 `pathlib.Path(...).parts`，与这个模块其余部分一致，也使 Linux 上能用 ntpath 语义复现。
+- **`ui/app.py:722-765`**：比较、去重、可达性判断仍然用归一化路径。每个根记下第一次出现时的写法（`os.path.normpath(os.path.abspath(...))`，不改大小写），最后返回这些写法。
+
+**下游影响核查。** 扫描根和记录路径的下游比较全部先归一化再比，包括：
+
+- `postscan_cleanup._normalized` 和 `_require_strict_descendant`；
+- 完整性哈希；
+- `cleanup_catalog.known_root_for_path`；
+- 扫描器的 `_is_skipped_path` 和 `root_skip_name_overrides`；
+- `product_app._is_reachable`；
+- `app._scan_path_excluded` 和 `_scan_root_skip_name_overrides`；
+- `triage` 内的查找键；
+- 用户规则 `normalise_path`。
+
+已知根本来就是原始大小写，所以这些代码原本就在处理大小写混合。现有调用 `scan_targets` 的测试（`test_scan_pruning_boundaries.py`、`test_product_boundary.py`、`test_gui_runtime_refresh.py`）都用 `Path(...) in roots` 判断，而 `WindowsPath` 的相等比较不区分大小写，改前改后都成立。`_cleanup_failures` 每次扫描都清空，不受影响。
+
+### 8.3 同类原因文本排查
+
+逐条查看了删除流程中所有带插值的中文原因文本：`live_owners`、`installer_files`、`triage`、`postscan_cleanup`、`review_routing`、`application_cleanup`、`ui/app._reason_of`。
+
+| 位置 | 插入的内容 | 结论 |
+| --- | --- | --- |
+| `live_owners` “同一文件夹（…）”“路径中含有它的名称（…）” | 归一化路径片段 | **已修**（§8.2） |
+| `live_owners` “这个文件夹里有同名程序（{relative}）” | 由 `scandir` 的真实条目名拼出的相对路径 | 原始大小写，无需改 |
+| `live_owners` 程序名、服务名，`LIVE_OWNER_REFUSAL: {owner}` | `process.name`、`service.name` | 原样 |
+| `triage` / `installer_files`：`{cache}`、`位于{location}`、`已安装程序「{owner}」` | 固定标签和注册表里的程序名 | 不含路径 |
+| `exact_cleanup` “Shell delete … for {path}”（经 `_reason_of` 兜底显示） | `os.path.abspath(原始路径)` | 原始大小写 |
+| 界面中所有条目路径（表格、AI 导出、“在资源管理器中打开”） | 扫描记录路径 | 原来带小写的根前缀，**已随 §8.2 修复** |
+
+各维护模块的报错（uv、pnpm、Unity UPM、JetBrains、Delivery Optimization、Windows.old 等）显示的都是未归一化的 `root`/`candidate`，归一化值只用于比较，无需修改。
+
+### 8.3.1 回归测试
+
+| 测试 | 内容 | 旧代码下 |
+| --- | --- | --- |
+| `tests/test_command_paths.py:364` `test_hidden_program_reasons_name_folders_as_the_user_knows_them` | 用 ntpath 语义（`normcase` 转小写）运行 `live_owner_refusal`，断言两条原因分别显示 `C:\Users\Ann\Downloads\Portable` 和 `Ollama-cache`，且所有文件夹检查都用的是小写的归一化路径。Linux 和 Windows 都执行 | 换回 `d9ffe54` 的 `live_owners.py` 后失败，输出 `c:\users\ann\downloads\portable`，与 CI 症状一致 |
+| `tests/test_scan_pruning_boundaries.py:149` `test_scan_roots_keep_the_spelling_the_user_sees` | 把 `normcase` 换成转小写（模拟 Windows），断言 `scan_targets` 返回的根保留 `Home`、`Work\Project` 的原始写法 | 换回 `d9ffe54` 的 `app.py` 后失败（返回 `…/home`、`…/work/project`） |
+
+`test_deletion_workflow.py` 中原有的断言未改动。
+
+### 8.4 验证结果（Linux）
+
+| 检查 | 结果 |
+| --- | --- |
+| `ruff check src scripts tests` | 通过 |
+| `python -m mypy --platform win32`（357 个文件） | 通过 |
+| 全量 pytest，`d9ffe54` 副本 | 232 失败 / 928 通过 / 30 跳过 |
+| 全量 pytest，本轮工作树 | 232 失败 / 930 通过 / 30 跳过 |
+| 失败集合对比 | 完全相同，失败信息逐字一致；多出的 2 个通过是 §8.3.1 的新测试。232 个均为既有的 Windows 路径语义测试（见 §4） |
+
+### 8.5 未在 Windows 上实跑
+
+1. `test_unrelated_hidden_program_…` 在 Windows 上是否转绿。它需要第 1、2 层同时生效：Plugin-Setup.exe 的扫描根是夹具的 `USERPROFILE`（原始写法 `C:\Users\runneradmin\…\home`），文件夹 `Downloads\Portable` 来自 `scandir` 的真实名称，拼出的路径应与测试期望的 `ws.downloads / "Portable"` 逐字相同。这一点是推断，未在 Windows 上实跑。
+2. 扫描根改为原始写法后，在真实 Windows 文件系统上不出现新的大小写比较问题。下游比较已逐处核查（§8.2），但 Linux 的 `normcase` 不改大小写，测不出遗漏，以 Windows CI 为准。
+
+### 8.6 本轮改动文件
+
+| 文件 | 类型 | 说明 |
+| --- | --- | --- |
+| `src/devclean/core/live_owners.py` | 生产 | §8.2 第 1 层 |
+| `src/devclean/ui/app.py` | 生产 | §8.2 第 2 层 |
+| `tests/test_command_paths.py` | 新增回归测试 | §8.3.1 |
+| `tests/test_scan_pruning_boundaries.py` | 新增回归测试 | §8.3.1 |
+| `docs/windows-ci-fixes-2026-11-10.md` | 文档 | 追加本节 |

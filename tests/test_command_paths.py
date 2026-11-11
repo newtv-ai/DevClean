@@ -8,6 +8,7 @@ import re
 import subprocess
 import winreg
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -358,6 +359,54 @@ def test_hidden_programs_guard_related_directories_and_installer_packages(
         assert refusal(tmp_path / "pkgs" / "tool.zip", rule_proven=True) is None
         # an unrelated reviewed item is not
         assert refusal(tmp_path / "pkgs" / "tool.zip") is not None
+
+
+def test_hidden_program_reasons_name_folders_as_the_user_knows_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Windows rules: paths are compared lower-cased (normcase), but a refusal
+    # must name the folder the way the user sees it in the list.
+    windows_os = SimpleNamespace(**{**vars(os), "path": ntpath, "sep": "\\"})
+    monkeypatch.setattr(live_owners, "os", windows_os)
+    monkeypatch.setattr(
+        live_owners, "normalize_path", lambda text: normalize_path(text, {}, pathmod=ntpath)
+    )
+    monkeypatch.setattr(
+        live_owners,
+        "is_within",
+        lambda target, folder: target.startswith(folder.rstrip("\\") + "\\"),
+    )
+    shared = {"c:\\", r"c:\users\ann", r"c:\users\ann\downloads", "d:\\"}
+    monkeypatch.setattr(live_owners, "_usable", lambda folder: folder not in shared)
+    looked_in: list[str] = []
+
+    def program_file_exists(folder: str, name: str) -> bool:
+        looked_in.append(folder)
+        return (folder, name.casefold()) == (r"c:\users\ann\downloads\portable", "porta.exe")
+
+    monkeypatch.setattr(live_owners, "_program_file_exists", program_file_exists)
+    hidden = (
+        ProcessInfo("porta.exe", "", "", session_id=1),
+        ProcessInfo("ollama.exe", "", "", session_id=1),
+    )
+    monkeypatch.setattr(live_owners, "list_processes", lambda: hidden)
+
+    with scan_root_snapshot():
+        beside = live_owners.live_owner_refusal(
+            Path(r"C:\Users\Ann\Downloads\Portable\data\Plugin-Setup.exe"), rule_proven=True
+        )
+        named = live_owners.live_owner_refusal(
+            Path(r"D:\Models\Ollama-cache\runtime.msi"), rule_proven=True
+        )
+
+    prefix = live_owners.HIDDEN_RELATED_REFUSAL
+    assert beside == (
+        f"{prefix}: porta.exe: 同一文件夹（C:\\Users\\Ann\\Downloads\\Portable）"  # noqa: RUF001
+        "里有同名程序，它可能正从那里运行"  # noqa: RUF001
+    )
+    assert named == f"{prefix}: ollama.exe: 路径中含有它的名称（Ollama-cache）"  # noqa: RUF001
+    # The checks themselves still ran on the normalised path.
+    assert looked_in and all(folder == folder.casefold() for folder in looked_in)
 
 
 def test_process_session_is_read_when_windows_gives_it() -> None:

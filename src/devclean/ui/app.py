@@ -720,6 +720,9 @@ def scan_targets(
         normalise_path(path) for path in expanded_scan_paths(active_rules.scan.excluded_paths)
     )
     allowed = {str(drive)[:2].casefold() for drive in drives} if drives else None
+    # Roots are compared in normalised (on Windows lower-case) form but scanned
+    # as first written, so every path the user later sees keeps its spelling.
+    written: dict[Path, Path] = {}
 
     def usable(path: Path) -> Path | None:
         if allowed is not None and str(path)[:2].casefold() not in allowed:
@@ -731,7 +734,10 @@ def scan_targets(
                 return None
         except OSError:
             return None
-        return Path(os.path.normcase(os.path.normpath(os.path.abspath(path))))
+        absolute = os.path.normpath(os.path.abspath(path))
+        normalized = Path(os.path.normcase(absolute))
+        written.setdefault(normalized, Path(absolute))
+        return normalized
 
     resolved: list[Path] = []
     for path in candidates:
@@ -756,7 +762,7 @@ def scan_targets(
         if any(_scan_root_can_reach(root, specific, skip_names) for root in resolved):
             continue
         resolved.append(specific)
-    return tuple(dict.fromkeys(resolved))
+    return tuple(written[root] for root in dict.fromkeys(resolved))
 
 
 class DevCleanWindow:
