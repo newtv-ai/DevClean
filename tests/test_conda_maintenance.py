@@ -90,6 +90,7 @@ def test_conda_clean_confirms_exact_vendor_root_then_cleans_safe_targets(
         encoding: str,
         errors: str,
         timeout: int,
+        stdin: int,
         env: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
         calls.append(command)

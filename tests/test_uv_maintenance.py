@@ -84,6 +84,7 @@ def test_uv_prune_confirms_cache_then_uses_same_vendor_binary(
         encoding: str,
         errors: str,
         timeout: int,
+        stdin: int,
         env: dict[str, str],
     ) -> subprocess.CompletedProcess[str]:
         calls.append(command)

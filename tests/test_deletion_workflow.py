@@ -1197,8 +1197,15 @@ def test_every_row_is_reported_as_it_ends_and_temp_folders_go_last(
     monkeypatch.setattr(live_owners, "is_within", counting("is_within", installer_files.is_within))
     relative_to = PureWindowsPath.relative_to
 
+    # Only Edge's own PureWindowsPath lookups below this Temp folder count.  On
+    # Windows every pathlib.Path is a PureWindowsPath too, and pytest's own
+    # folder lies in %TEMP%, so a bare "\\temp\\" test would count every path.
+    temp_below = str(temp).casefold().replace("/", "\\").rstrip("\\") + "\\"
+
     def edge_walk(self: PureWindowsPath, *args: Any, **kwargs: Any) -> PureWindowsPath:
-        if "\\temp\\" in str(self).casefold().replace("/", "\\"):
+        if type(self) is PureWindowsPath and (
+            str(self).casefold().replace("/", "\\").startswith(temp_below)
+        ):
             counts["edge_walks"] += 1
         return relative_to(self, *args, **kwargs)
 
