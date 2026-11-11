@@ -1026,19 +1026,42 @@ def _portable_path_value(path: str) -> str | None:
             )
     if not candidates:
         return None
-    _length, variable, tail, source_username = max(candidates, key=lambda item: item[0])
+    # The most specific root wins, but a decision about something on this
+    # computer must still name that thing here. A conventional-profile mapping
+    # that this computer's variables expand elsewhere (a moved profile, another
+    # account's folder, redirected AppData) is kept only for paths that are not
+    # on this computer; otherwise the exact path is stored.
+    exists_here: bool | None = None
+    for _length, variable, tail, source_username in sorted(
+        candidates, key=lambda item: item[0], reverse=True
+    ):
+        portable = variable + _username_as_variable(tail, source_username)
+        if normalise_path(expand_path(portable)).casefold() == normalized.casefold():
+            return portable
+        if exists_here is None:
+            exists_here = _exists_here(normalized)
+        if not exists_here:
+            return portable
+    return None
+
+
+def _username_as_variable(tail: str, source_username: str) -> str:
     username = source_username or os.environ.get("USERNAME")
     if not username:
         profile = os.environ.get("USERPROFILE")
         username = Path(profile).name if profile else ""
-    if username:
-        tail = re.sub(
-            rf"(?<![0-9A-Za-z]){re.escape(username)}(?![0-9A-Za-z])",
-            "%USERNAME%",
-            tail,
-            flags=re.IGNORECASE,
-        )
-    return variable + tail
+    if not username:
+        return tail
+    return re.sub(
+        rf"(?<![0-9A-Za-z]){re.escape(username)}(?![0-9A-Za-z])",
+        "%USERNAME%",
+        tail,
+        flags=re.IGNORECASE,
+    )
+
+
+def _exists_here(path: str) -> bool:
+    return os.path.lexists(path)
 
 
 def _volatile_path_glob(portable_path: str) -> str | None:

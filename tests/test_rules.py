@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
+import devclean.core._user_rules_impl as rules_impl
 from devclean.core.user_rules import (
     RuleDecision,
     UserRules,
@@ -239,3 +241,37 @@ def test_generic_ai_shape_conflicts_still_collapse_to_exact_answers(
     assert rebuilt.decision_for(first) is RuleDecision.DELETE
     assert rebuilt.decision_for(second) is RuleDecision.KEEP
     assert rebuilt.decision_for(third) is None
+
+
+def test_a_decision_about_a_file_on_this_computer_keeps_naming_that_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The profile moved to D:, but the old C:\Users\alice folder is still on
+    # disk. By naming convention its paths would be stored as %LOCALAPPDATA% or
+    # %USERPROFILE%, which on this computer mean D:\ -- other files than the
+    # ones that were approved.
+    monkeypatch.setenv("DEVCLEAN_DATA_DIR", str(tmp_path / "DevClean-data"))
+    monkeypatch.setenv("USERPROFILE", r"D:\Profiles\alice")
+    monkeypatch.setenv("USERNAME", "alice")
+    monkeypatch.setenv("LOCALAPPDATA", r"D:\Profiles\alice\AppData\Local")
+    monkeypatch.setenv("APPDATA", r"D:\Profiles\alice\AppData\Roaming")
+    monkeypatch.setenv("TEMP", r"D:\Profiles\alice\AppData\Local\Temp")
+    approved = r"C:\Users\alice\AppData\Local\Temp\old\tool.exe"
+    reviewed = r"C:\Users\alice\Downloads\old-archive.zip"
+    on_disk = {os.path.normcase(approved), os.path.normcase(reviewed)}
+    monkeypatch.setattr(
+        rules_impl, "_exists_here", lambda path: os.path.normcase(path) in on_disk
+    )
+
+    updated = add_user_verdicts(
+        load_rules(), [(approved, RuleDecision.DELETE, "user confirmed it is not needed")]
+    )
+    updated = add_ai_verdicts(
+        updated, [(reviewed, RuleDecision.DELETE, "AI: stale download archive")]
+    )
+
+    assert updated.decision_for(approved) is RuleDecision.DELETE
+    assert updated.decision_for(reviewed) is RuleDecision.DELETE
+    assert updated.decision_for(r"D:\Profiles\alice\AppData\Local\Temp\old\tool.exe") is None
+    assert updated.decision_for(r"D:\Profiles\alice\Downloads\old-archive.zip") is None

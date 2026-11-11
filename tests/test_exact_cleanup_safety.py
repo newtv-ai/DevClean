@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import os
+import types
+from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
 import devclean.platform.windows.exact_cleanup as cleanup
 from devclean.platform.windows.exact_cleanup import ExactCleanupError
 from devclean.platform.windows.filesystem import FileSystemMetadata
+from devclean.ui import app
 
 
 def _metadata(*, directory: bool = False, reparse: bool = False) -> FileSystemMetadata:
@@ -125,3 +129,63 @@ def test_empty_directory_delete_revalidates_boundary_and_final_path(
     cleanup._delete_empty_directory(r"C:\cache\nested", r"C:\cache")
 
     assert calls == ["boundary:False", "final", "delete"]
+
+
+def _purge_file(path: Path, root: Path) -> object:
+    snapshot = cleanup.ExactFileSnapshot(0, 1, "a" * 32, "file_id_128", 1, 0, None, 1, 1)
+    return cleanup.purge_exact_file(path, snapshot, cleanup.ExactRootBoundary(root, 1, "r", "k"))
+
+
+def _recycle_file(path: Path, root: Path) -> object:
+    snapshot = cleanup.ExactFileSnapshot(0, 1, "a" * 32, "file_id_128", 1, 0, None, 1, 1)
+    boundary = cleanup.ExactRootBoundary(root, 1, "r", "k")
+    return cleanup.recycle_exact_object(path, snapshot, boundary)
+
+
+def _purge_tree(path: Path, root: Path) -> object:
+    snapshot = cleanup.ExactDirectorySnapshot(1, "a" * 32, "file_id_128", 1)
+    boundary = cleanup.ExactRootBoundary(root, 1, "r", "k")
+    return cleanup.purge_exact_directory_tree(path, snapshot, boundary)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "directory"),
+    [(_purge_file, False), (_recycle_file, False), (_purge_tree, True)],
+    ids=["permanent-file", "recycle-file", "directory-tree"],
+)
+def test_a_link_swapped_into_the_path_is_reported_as_a_boundary_escape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutate: Callable[[Path, Path], object],
+    directory: bool,
+) -> None:
+    # After every earlier check, a parent folder became a link: the handle opens
+    # a different object (other file id) outside the approved root. Both checks
+    # refuse it; the reason must name the link, not "content changed".
+    root = tmp_path / "approved"
+    victim = os.path.normcase(str(tmp_path / "elsewhere" / "Setup.exe"))
+    mutations: list[str] = []
+    monkeypatch.setattr(cleanup, "os", types.SimpleNamespace(**{**vars(os), "name": "nt"}))
+    monkeypatch.setattr(
+        cleanup, "_open_boundary", lambda _boundary: ("root", os.path.normcase(str(root)))
+    )
+    monkeypatch.setattr(cleanup, "_open_exact_file", lambda _path: "opened")
+    monkeypatch.setattr(cleanup, "_open_exact_directory_for_mutation", lambda _path: "opened")
+    monkeypatch.setattr(
+        cleanup, "read_file_metadata_handle", lambda _handle: _metadata(directory=directory)
+    )
+    monkeypatch.setattr(
+        cleanup, "_final_path", lambda handle: victim if handle == "opened" else handle
+    )
+    monkeypatch.setattr(cleanup, "_close_handle", lambda _handle: None)
+    monkeypatch.setattr(
+        cleanup, "_set_delete_disposition", lambda _handle, path: mutations.append(path)
+    )
+    monkeypatch.setattr(cleanup, "_shell_delete_to_recycle_bin", mutations.append)
+    monkeypatch.setattr(cleanup, "_recycle_bin_item_count", lambda _path: None)
+
+    with pytest.raises(ExactCleanupError, match="escaped") as refused:
+        mutate(root / "c" / "Setup.exe", root)
+
+    assert app._reason_of(refused.value) == "路径被替换成链接或离开了扫描范围，安全检查拒绝"  # noqa: RUF001
+    assert mutations == []

@@ -193,8 +193,11 @@ def purge_exact_file(
     try:
         handle = _open_exact_file(source_path)
         try:
-            _require_snapshot(read_file_metadata_handle(handle), expected)
+            # Where the opened object really is comes first: a link swapped into
+            # the path opens a different file, which is a boundary escape, not
+            # merely a changed file.
             _require_handle_in_boundary(handle, root_final, allow_equal=False)
+            _require_snapshot(read_file_metadata_handle(handle), expected)
             _set_delete_disposition(handle, source_path)
         finally:
             _close_handle(handle)
@@ -301,6 +304,7 @@ def recycle_exact_object(
             else _open_exact_file(source_path)
         )
         try:
+            _require_handle_in_boundary(handle, root_final, allow_equal=False)
             metadata = read_file_metadata_handle(handle)
             if is_directory:
                 _require_directory_snapshot(
@@ -310,7 +314,6 @@ def recycle_exact_object(
                 _require_final_path(handle, source_path)
             else:
                 _require_snapshot(metadata, expected)
-            _require_handle_in_boundary(handle, root_final, allow_equal=False)
         finally:
             _close_handle(handle)
     finally:
@@ -420,8 +423,8 @@ def purge_exact_directory_tree(
         # every descendant operation to the selected root itself.
         handle = _open_exact_directory_for_mutation(root_path)
         try:
-            _require_directory_snapshot(read_file_metadata_handle(handle), expected)
             _require_handle_in_boundary(handle, root_final, allow_equal=False)
+            _require_directory_snapshot(read_file_metadata_handle(handle), expected)
             _require_final_path(handle, root_path)
             state = _TreePurgeState()
             completed = _purge_tree_contents(

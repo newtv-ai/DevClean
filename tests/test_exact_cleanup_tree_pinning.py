@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -119,6 +118,30 @@ def test_windows_blocks_rename_after_enumeration_until_child_deletion(
     assert victim.read_bytes() == b"protected"
 
 
+def _junction_inside(tmp_path: Path, link: Path, target: Path) -> None:
+    """Make *link* a directory junction to *target*, both inside *tmp_path*.
+
+    The junction is created in this process; no program is started (tests may
+    not start any, see conftest.py), and neither end may leave the test folder.
+    """
+
+    base = os.path.normcase(os.path.abspath(tmp_path))
+    for end in (link, target):
+        folded = os.path.normcase(os.path.abspath(end))
+        assert folded != base and os.path.commonpath((base, folded)) == base, end
+    import _winapi  # Windows only; the calling test is skipped elsewhere
+
+    try:
+        _winapi.CreateJunction(str(target), str(link))
+    except OSError as error:
+        # Without SeRestorePrivilege (a non-admin account) CPython reports the
+        # ERROR_NOT_ALL_ASSIGNED left by its privilege step even though the
+        # junction was created.
+        if getattr(error, "winerror", None) != 1300 or not os.path.isjunction(link):
+            raise
+    assert os.path.isjunction(link) and os.path.samefile(link, target)
+
+
 @pytest.mark.skipif(os.name != "nt", reason="requires Windows junctions and handle deletion")
 def test_windows_refuses_junction_inserted_before_nested_directory_open(
     tmp_path: Path,
@@ -139,11 +162,7 @@ def test_windows_refuses_junction_inserted_before_nested_directory_open(
         entries = original_list(directory, boundary, already_pinned=already_pinned)
         if Path(directory) == root:
             nested.rename(root / "old-nested")
-            subprocess.run(
-                ["cmd.exe", "/d", "/c", "mklink", "/J", str(nested), str(victim)],
-                check=True,
-                capture_output=True,
-            )
+            _junction_inside(tmp_path, nested, victim)
         return entries
 
     monkeypatch.setattr(cleanup, "_list_purge_entries", list_then_swap)

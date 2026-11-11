@@ -24,9 +24,12 @@ from typing import Any
 
 import pytest
 
+import devclean.core.edge_cleanup as edge_cleanup
 import devclean.core.installer_files as installer_files
 import devclean.core.live_owners as live_owners
 import devclean.core.postscan_cleanup as postscan_cleanup
+import devclean.core.triage as triage
+import devclean.core.visual_studio_installer_cleanup as visual_studio_installer_cleanup
 import devclean.platform.windows.command_paths as command_paths
 import devclean.platform.windows.exact_cleanup as exact_cleanup
 from devclean.core.cleanup_catalog import discover_known_cleanup_roots
@@ -46,7 +49,7 @@ from devclean.core.user_rules import (
     load_rules,
 )
 from devclean.platform.windows.processes import ProcessInfo, ProcessListError
-from devclean.platform.windows.registry import ServiceEntry, UninstallEntry
+from devclean.platform.windows.registry import RegistryStringLookup, ServiceEntry, UninstallEntry
 from devclean.scanner import CancellationToken
 from devclean.ui import app, product_app, product_vendor_app
 from tests import pe_samples
@@ -65,25 +68,49 @@ class Workspace:
     process_reads: list[int]
 
 
+# Environment variables a test keeps from the host: DevClean's data folder,
+# which conftest.py already points into tmp_path, and pytest's own marker.
+_KEPT_ENVIRONMENT = frozenset({"DEVCLEAN_DATA_DIR", "PYTEST_CURRENT_TEST"})
+
+
 @pytest.fixture
 def ws(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Workspace:
     home = tmp_path / "home"
     downloads = home / "Downloads"
     temp = home / "AppData" / "Local" / "Temp"
-    for folder in (downloads, temp, tmp_path / "Windows", tmp_path / "ProgramData"):
+    windows = tmp_path / "Windows"
+    for folder in (downloads, temp, windows, tmp_path / "ProgramData"):
         folder.mkdir(parents=True, exist_ok=True)
+    # The scan finds program and tool folders through environment variables
+    # (PROGRAMFILES(X86), ANDROID_HOME, UV_CACHE_DIR, ...). On a CI runner they
+    # name real folders, so start from an empty environment and point only the
+    # profile and Windows folders into tmp_path.
+    for name in list(os.environ):
+        if name.upper() not in _KEPT_ENVIRONMENT:
+            monkeypatch.delenv(name)
     for name, value in {
         "USERPROFILE": home,
+        "HOME": home,
         "APPDATA": home / "AppData" / "Roaming",
         "LOCALAPPDATA": home / "AppData" / "Local",
         "TEMP": temp,
         "TMP": temp,
         "PROGRAMDATA": tmp_path / "ProgramData",
-        "SYSTEMROOT": tmp_path / "Windows",
+        "SYSTEMROOT": windows,
+        "WINDIR": windows,
     }.items():
         monkeypatch.setenv(name, str(value))
     monkeypatch.setenv("PATH", "")
     monkeypatch.setattr(tempfile, "tempdir", str(temp))
+    # Windows answers that do not come from the environment: the Downloads
+    # Known Folder, and folder locations stored in the registry.
+    monkeypatch.setattr(triage, "downloads_path", lambda: downloads)
+    monkeypatch.setattr(edge_cleanup, "_edge_policy_paths", lambda _environment: (None, None))
+    monkeypatch.setattr(
+        visual_studio_installer_cleanup,
+        "first_hklm_string_value",
+        lambda _keys, _name: RegistryStringLookup(None, True),
+    )
     workspace = Workspace(tmp_path, home, downloads, [], [], [], [], [], [])
 
     def entries() -> tuple[UninstallEntry, ...]:
@@ -157,6 +184,9 @@ def _scan(ws: Workspace, *extra_roots: Path) -> tuple[Any, TriageSession]:
         )
     known = discover_known_cleanup_roots(rules.scan)
     roots = app.scan_targets(known, (), rules)
+    # Every folder the scan knows about or walks must be a test folder.
+    host = [str(path) for path in (*roots, *(root.path for root in known)) if not _inside(path, ws)]
+    assert not host, f"the scan would read folders outside the test: {host}"
     window: Any = object.__new__(product_vendor_app.ProductDevCleanWindow)
     window._events = Queue()
     product_app.ProductDevCleanWindow._scan_worker(
@@ -175,6 +205,12 @@ def _scan(ws: Workspace, *extra_roots: Path) -> tuple[Any, TriageSession]:
     window._review_approvals = set()
     window._session = session
     return window, session
+
+
+def _inside(path: Path, ws: Workspace) -> bool:
+    folded = os.path.normcase(os.path.abspath(path))
+    root = os.path.normcase(os.path.abspath(ws.root))
+    return folded == root or folded.startswith(root.rstrip(os.sep) + os.sep)
 
 
 def _partition(window: Any) -> tuple[dict[str, TriageItem], dict[str, TriageItem]]:

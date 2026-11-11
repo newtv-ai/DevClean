@@ -49,6 +49,7 @@ from devclean.scanner.filesystem import ScanRecord, ScanRecordKind
 from devclean.ui import app, product_app
 
 _RECENT_NS = 1_700_000_000 * 1_000_000_000
+_WINDOWS_DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD"
 _UNREPRESENTABLE_NS = 400_000_000_000 * 1_000_000_000  # about year 14645
 
 
@@ -135,7 +136,17 @@ def _classify(path: Path, root: Path, home: Path, *, mtime_ns: int = 200) -> Tri
 
 
 def _executable(path: Path, marker: Path) -> Path:
+    """A program that would leave *marker* behind if it were ever started.
+
+    Windows starts a bare name only through a PATHEXT extension (npm is
+    ``npm.cmd``), so there the file gets one; elsewhere it is a shell script.
+    """
+
     path.parent.mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        path = path.with_name(path.name + ".cmd")
+        path.write_text(f'@echo planted > "{marker}"\r\n', encoding="utf-8")
+        return path
     path.write_text(f"#!/bin/sh\necho planted > '{marker}'\n", encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
     return path
@@ -169,6 +180,7 @@ def test_path_tool_never_picks_a_program_planted_in_the_current_directory(
     planted = tmp_path / "Downloads"
     _executable(planted / "npm", marker)
     monkeypatch.chdir(planted)
+    monkeypatch.setenv("PATHEXT", _WINDOWS_DEFAULT_PATHEXT)
 
     assert path_tool("npm", search_path=os.pathsep.join([".", "", "Downloads"])) is None
     assert path_tool("./npm") is None
@@ -196,6 +208,7 @@ def test_gui_process_policy_starts_programs_by_absolute_path_only(
     _executable(planted / "go", marker)
     monkeypatch.chdir(planted)
     monkeypatch.setenv("PATH", "")
+    monkeypatch.setenv("PATHEXT", _WINDOWS_DEFAULT_PATHEXT)
 
     with pytest.raises(FileNotFoundError):
         _absolute_program_arguments([["go", "env"]], {})
