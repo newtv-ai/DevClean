@@ -19,6 +19,7 @@ import os
 import threading
 import time
 import tkinter as tk
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from tkinter import messagebox, ttk
@@ -68,6 +69,7 @@ from devclean.scanner import (
     scan_roots,
 )
 from devclean.scanner.tree_summary import (
+    SkipReason,
     TreeSummary,
     TreeSummaryIncomplete,
     summarize_tree,
@@ -90,11 +92,68 @@ def _live_elapsed_text(elapsed: float) -> str:
     return f"扫描耗时：{minutes} 分 {seconds:02d} 秒"
 
 
+_SKIP_REASON_TEXT = {
+    SkipReason.IN_USE: "正被程序使用",
+    SkipReason.DENIED: "没有读取权限",
+    SkipReason.CHANGED: "扫描时被换成了链接或其他对象",
+    SkipReason.UNREADABLE: "读取出错",
+}
+
+
+def skipped_entries_note(summary: TreeSummary) -> str:
+    """What a whole-tree summary could not read, in the user's terms (or "")."""
+
+    if not summary.skipped:
+        return ""
+    reasons = "、".join(
+        f"{_SKIP_REASON_TEXT[reason]} {count:,} 项" for reason, count in summary.skipped_by_reason
+    )
+    examples = "；".join(
+        f"{path}（{_SKIP_REASON_TEXT[reason]}）" for path, reason in summary.skipped_examples[:3]
+    )
+    return (
+        f"扫描时其中 {summary.skipped:,} 项读不到，已跳过、未计入大小（{reasons}）；"
+        f"例：{examples}"
+    )
+
+
+def _left_out_note(session: object) -> str:
+    """What the scan could not look at, so nobody takes it for everything (or "")."""
+
+    notes: dict[str, str] = getattr(session, "summary_notes", None) or {}
+    unlisted: list[str] = getattr(session, "unlisted_roots", None) or []
+    text = ""
+    if notes:
+        skipped = getattr(session, "summary_skipped", 0)
+        shown = "、".join(list(notes)[:3]) + ("等" if len(notes) > 3 else "")
+        text += (
+            f"其中 {len(notes):,} 个应用缓存目录里有 {skipped:,} 项读不到，已跳过、未计入大小，"
+            f"这些目录的其余部分照常列出（{shown}；清理后见「清理结果」）。"
+        )
+    if unlisted:
+        shown = "、".join(unlisted[:3]) + ("等" if len(unlisted) > 3 else "")
+        text += (
+            f"{len(unlisted):,} 个应用缓存目录本身无法读取或无法确认是同一个目录，"
+            f"整项未列出，里面的文件也没有逐个列出（{shown}）。"
+        )
+    return text
+
+
 class _HybridTriageSession(TriageSession):
     """Triage session that can accept an aggregate for a known directory."""
 
     # Files skipped because classifying them raised; they are never offered.
     unclassified_files: int = 0
+
+    def __init__(self, *, review_sample_per_category: int) -> None:
+        super().__init__(review_sample_per_category=review_sample_per_category)
+        # Whole-tree cache rows listed although some entries in them could not
+        # be read: the note shown for each, by path.
+        self.summary_notes: dict[str, str] = {}
+        self.summary_skipped = 0
+        # Whole-tree cache roots whose own folder could not be read (or whose
+        # identity could not be pinned): not listed at all.
+        self.unlisted_roots: list[str] = []
 
     def record_directory_summary(self, path: str, summary: TreeSummary) -> None:
         key = os.path.normcase(os.path.normpath(path))
@@ -392,6 +451,11 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
                 try:
                     summary, metadata = _identified_tree_summary(known.path, cancel)
                 except TreeSummaryIncomplete:
+                    # The root itself: the whole item stays out.  Said once the
+                    # scan is over, so nobody thinks it was looked at (a root
+                    # that has meanwhile gone holds nothing to say about).
+                    if not cancel.is_cancelled() and os.path.lexists(known.path):
+                        session.unlisted_roots.append(str(known.path))
                     continue
                 summarized_files += summary.files
                 summarized_bytes += summary.logical_bytes
@@ -439,6 +503,17 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
                     keep_config=active_rules.keep.classification,
                 )
                 if item is not None:
+                    note = skipped_entries_note(summary)
+                    if note:
+                        # What could not be read is left out; the rest is listed
+                        # and cleaned as usual, and the row says what was left out.
+                        item = replace(
+                            item,
+                            reason=f"{item.reason}；{note}",
+                            tags=(*item.tags, "scan_skipped_entries"),
+                        )
+                        session.summary_notes[item.path] = note
+                        session.summary_skipped += summary.skipped
                     session.add(item)
                     session.record_directory_summary(item.path, summary)
                 if time.monotonic() >= next_publish:
@@ -578,6 +653,7 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
             if rendered is not None:
                 summary += f"，总耗时 {rendered}"
             summary += "。"
+        summary += _left_out_note(self._session)
         if cancelled:
             self._status.set(f"扫描已取消；已看过{summary}下面是已看到的部分。")
         else:

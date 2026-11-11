@@ -856,8 +856,22 @@ def cleanup_outcomes(
     return tuple(outcomes.values())
 
 
-def render_cleanup_report(outcomes: Sequence[CleanupOutcome], freed: int) -> str:
-    """The whole result of one cleanup, item by item, nothing cut off."""
+def render_cleanup_report(
+    outcomes: Sequence[CleanupOutcome],
+    freed: int,
+    scan_notes: Mapping[str, str] | None = None,
+) -> str:
+    """The whole result of one cleanup, item by item, nothing cut off.
+
+    *scan_notes* says, by path, what the scan itself could not read inside a
+    whole-tree row; it is repeated under that row so it is not taken for all.
+    """
+
+    notes = scan_notes or {}
+
+    def scanned(outcome: CleanupOutcome) -> list[str]:
+        note = notes.get(outcome.path)
+        return [f"    扫描时：{note}"] if note else []
 
     done = [outcome for outcome in outcomes if outcome.state == "done"]
     partial = [outcome for outcome in outcomes if outcome.state == "partial"]
@@ -872,6 +886,7 @@ def render_cleanup_report(outcomes: Sequence[CleanupOutcome], freed: int) -> str
         for outcome in partial:
             lines.append(f"• {outcome.path}")
             lines.append(f"    {outcome.note}")
+            lines += scanned(outcome)
             examples = outcome.left.examples if outcome.left is not None else ()
             if examples:
                 lines.append("    留下的例子：")
@@ -881,12 +896,14 @@ def render_cleanup_report(outcomes: Sequence[CleanupOutcome], freed: int) -> str
         for outcome in failed:
             lines.append(f"• {outcome.path}")
             lines.append(f"    原因：{outcome.note}")
+            lines += scanned(outcome)
     if done:
         lines += ["", f"全部删除（{len(done):,} 项）："]
         for outcome in done:
             amount = _format_bytes(outcome.bytes_removed)
             files = f"{outcome.files_removed:,} 个文件，" if outcome.files_removed else ""
             lines.append(f"• {outcome.path} —— {files}{amount}")
+            lines += scanned(outcome)
     return "\n".join(lines)
 
 
@@ -2639,7 +2656,9 @@ class DevCleanWindow:
         self._fill(self._deletable_tree, self._deletable)
         self._fill(self._unsure_tree, self._unsure)
         self._refresh_totals()
-        self._cleanup_report = render_cleanup_report(outcomes, freed)
+        # What the scan could not read inside a whole-tree row (product scan).
+        scan_notes = getattr(getattr(self, "_session", None), "summary_notes", None)
+        self._cleanup_report = render_cleanup_report(outcomes, freed, scan_notes)
         self._sync_buttons()
         # An item with nothing removed is not "cleaned": it counts as not done.
         parts = [f"已删除 {finished:,} 项"]
