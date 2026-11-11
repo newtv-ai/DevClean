@@ -175,7 +175,7 @@ def test_pnpm_update_state_is_deterministic_exact_tool_state(
     assert decision.action is PolicyAction.TOOL_DELETE
 
 
-def test_pnpm_update_state_is_blocked_while_pnpm_is_running() -> None:
+def test_pnpm_update_state_is_offered_while_pnpm_is_running() -> None:
     path = r"C:\Users\alice\AppData\Local\pnpm-state\pnpm-state.json"
     decision = evaluate_application_path(
         path,
@@ -186,8 +186,11 @@ def test_pnpm_update_state_is_blocked_while_pnpm_is_running() -> None:
         environment=_env(),
     )
 
+    # User decision 2026-11-10/11: cleaned while the program runs; what it holds
+    # open is skipped one by one at deletion.  Only what a running program would be
+    # damaged by losing waits (application_cleanup._MUST_CLOSE_REASONS).
     assert decision is not None
-    assert decision.action is PolicyAction.TOOL_KEEP_IN_USE
+    assert decision.action is PolicyAction.TOOL_DELETE
 
 
 def test_pnpm_store_home_and_global_installs_are_protected() -> None:
@@ -335,18 +338,22 @@ def test_project_node_modules_remains_regenerable() -> None:
     assert scope is DirectoryScope.REGENERABLE_TOOL_OUTPUT
 
 
-def test_pnpm_user_cache_mutation_is_blocked_when_process_is_running(
+def test_pnpm_dlx_waits_for_pnpm_but_its_metadata_mirror_does_not(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         "devclean.core.application_cleanup.pnpm_process_running",
         lambda: True,
     )
+    # A running `pnpm dlx` loads its program from here.
     assert not process_guard_allows(
         r"C:\Users\alice\AppData\Local\pnpm-cache\dlx\hash\pkg\index.js",
         _env(),
     )
-    assert not process_guard_allows(
+    # User decision 2026-11-10/11: cleaned while the program runs; what it holds
+    # open is skipped one by one at deletion.  Only what a running program would be
+    # damaged by losing waits (application_cleanup._MUST_CLOSE_REASONS).
+    assert process_guard_allows(
         r"C:\Users\alice\AppData\Local\pnpm-cache\v11\metadata\react.json",
         _env(),
     )

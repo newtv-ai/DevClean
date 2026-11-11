@@ -368,7 +368,7 @@ def test_catalog_upgrades_only_audited_windsurf_cache_subtrees(tmp_path: Path) -
     )
 
 
-def test_windsurf_process_guard_cleans_cache_but_blocks_running_user_logs(
+def test_windsurf_process_guard_cleans_cache_and_user_logs_while_it_runs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
@@ -381,10 +381,14 @@ def test_windsurf_process_guard_cleans_cache_but_blocks_running_user_logs(
         r"C:\Users\alice\AppData\Roaming\Windsurf\Cache\data_0",
         _env(),
     )
-    assert not process_guard_allows(
+    # User decision 2026-11-10/11: cleaned while the program runs; what it holds
+    # open is skipped one by one at deletion.  Only what a running program would be
+    # damaged by losing waits (application_cleanup._MUST_CLOSE_REASONS).
+    assert process_guard_allows(
         r"C:\Users\alice\AppData\Roaming\Windsurf\logs\today.log",
         _env(),
     )
+    # Crash reports are protected data (KEEP), running or not.
     assert not process_guard_allows(
         r"C:\Users\alice\AppData\Roaming\Windsurf\Crashpad\reports\crash.dmp",
         _env(),

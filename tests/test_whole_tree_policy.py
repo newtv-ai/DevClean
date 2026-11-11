@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -164,26 +165,35 @@ def test_small_application_tree_does_not_lose_audited_safety(
     assert evidence.logical_bytes == 2 * _MIB
 
 
-def test_incomplete_fresh_scan_fails_closed(
+def test_an_unreadable_entry_no_longer_refuses_the_tree_but_an_unreadable_root_does(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # User decision 2026-11-11: one entry that cannot be read right before the
+    # deletion (a running program just removed or swapped it, or it may not be
+    # listed) leaves only that entry; the deletion checks each entry on its own.
     import devclean.core.whole_tree_policy as policy
 
     root = tmp_path / "Cache"
-    records = (
-        *_records(root, size=64 * _MIB, age_days=90),
-        ScanRecord(
-            root=str(root),
-            path=str(root / "locked"),
-            kind=ScanRecordKind.ERROR,
-            depth=1,
-            error="access denied",
-        ),
+    locked = ScanRecord(
+        root=str(root),
+        path=str(root / "locked"),
+        kind=ScanRecordKind.ERROR,
+        depth=1,
+        error="access denied",
     )
+    records = (*_records(root, size=64 * _MIB, age_days=90), locked)
     monkeypatch.setattr(policy, "scan_roots", _fake_scan(records))
 
-    with pytest.raises(WholeTreePolicyRefusal, match="incomplete"):
+    evidence = require_application_whole_tree_policy(root, (_known(root, _rule()),))
+
+    assert evidence is not None
+    assert (evidence.files, evidence.logical_bytes) == (1, 64 * _MIB)
+
+    # The selected folder itself unreadable is still a refusal of the item.
+    unreadable_root = replace(locked, path=str(root), depth=0, error="identity changed")
+    monkeypatch.setattr(policy, "scan_roots", _fake_scan((*records, unreadable_root)))
+    with pytest.raises(WholeTreePolicyRefusal, match="could not be read again"):
         require_application_whole_tree_policy(root, (_known(root, _rule()),))
 
 

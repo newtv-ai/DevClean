@@ -20,7 +20,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from devclean.core.application_cleanup import DecisionOwner, process_guard_refusal
+from devclean.core.application_cleanup import DecisionOwner, process_guard_detail
 from devclean.core.cleanup_catalog import (
     CleanupCategory,
     CleanupPolicy,
@@ -207,6 +207,8 @@ class CleanupExecutionResult:
     # Folders emptied except for entries that had to stay (in use, no
     # permission, claimed by another rule); they are not in completed_paths.
     partial: tuple[tuple[str, TempFolderPurgeResult], ...] = ()
+    # What each finished or partly finished action removed: (path, files, bytes).
+    removed: tuple[tuple[str, int, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -524,6 +526,7 @@ def execute_cleanup_batch(
     unverified_recycle_paths: list[str] = []
     failures: list[tuple[str, BaseException]] = []
     partial: list[tuple[str, TempFolderPurgeResult]] = []
+    removed_files: dict[str, int] = {}
     for action_index, action in enumerate(batch.actions):
         candidate = action.candidate
         _report_cleanup_progress(
@@ -611,6 +614,7 @@ def execute_cleanup_batch(
                     if not emptied.completed:
                         raise CleanupRefusal("temp folder cleanup stopped before it finished")
                     purged_directory_bytes[action.action_id] = emptied.bytes_removed
+                    removed_files[action.action_id] = emptied.files_removed
                     if emptied.skipped:
                         partial.append((str(candidate.path), emptied))
                 elif is_directory:
@@ -637,12 +641,13 @@ def execute_cleanup_batch(
                         boundary,
                         on_progress=report_directory,
                     )
-                    left_in_use = tree.in_use + tree.denied
+                    left_in_use = tree.in_use + tree.denied + tree.unsafe
                     if not tree.completed or (not tree.root_absent and not left_in_use):
                         raise CleanupRefusal(
                             "tree deletion stopped before the whole tree was removed"
                         )
                     purged_directory_bytes[action.action_id] = tree.bytes_removed
+                    removed_files[action.action_id] = tree.files_removed
                     if not tree.root_absent:
                         # What a running program held open stays; the rest went.
                         partial.append(
@@ -659,6 +664,7 @@ def execute_cleanup_batch(
                                     kept=0,
                                     completed=tree.completed,
                                     examples=tree.examples,
+                                    unsafe=tree.unsafe,
                                 ),
                             )
                         )
@@ -707,6 +713,20 @@ def execute_cleanup_batch(
         if state in {ActionState.PURGED, ActionState.RECYCLED}
     }
     left_behind = {path for path, _outcome in partial}
+    removed = tuple(
+        (
+            str(action.candidate.path),
+            removed_files.get(
+                action.action_id,
+                max(1, action.candidate.subtree_files)
+                if action.candidate.target_kind is CleanupTargetKind.DIRECTORY
+                else 1,
+            ),
+            sizes[action.action_id],
+        )
+        for action in batch.actions
+        if action.action_id in completed_ids
+    )
     return CleanupExecutionResult(
         action_states=action_states,
         purged_logical_bytes=purged_bytes,
@@ -718,6 +738,7 @@ def execute_cleanup_batch(
         unverified_recycle_paths=tuple(unverified_recycle_paths),
         failures=tuple(failures),
         partial=tuple(partial),
+        removed=removed,
     )
 
 
@@ -899,7 +920,7 @@ def _preflight_candidate(
     known_roots: tuple[KnownCleanupRoot, ...] = (),
 ) -> None:
     temp_folder = candidate.directory_scope is DirectoryScope.TEMP_FOLDER
-    refusal = process_guard_refusal(candidate.path)
+    refusal = process_guard_detail(candidate.path)
     if refusal is not None:
         raise CleanupRefusal(refusal)
     refusal = live_owner_refusal(

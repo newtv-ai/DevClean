@@ -105,7 +105,7 @@ def test_servicehub_process_state_is_execution_guard_not_review_classification(
     assert decision.action is PolicyAction.USER_DECISION
 
 
-def test_servicehub_user_approved_mutation_requires_visual_studio_closed(
+def test_servicehub_user_approved_mutation_runs_while_visual_studio_runs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -115,7 +115,10 @@ def test_servicehub_user_approved_mutation_requires_visual_studio_closed(
         "devclean.core.application_cleanup.visual_studio_process_running",
         lambda: True,
     )
-    assert not process_guard_allows(logs, env)
+    # User decision 2026-11-10/11: cleaned while the program runs; what it holds
+    # open is skipped one by one at deletion.  Only what a running program would be
+    # damaged by losing waits (application_cleanup._MUST_CLOSE_REASONS).
+    assert process_guard_allows(logs, env)
 
     monkeypatch.setattr(
         "devclean.core.application_cleanup.visual_studio_process_running",

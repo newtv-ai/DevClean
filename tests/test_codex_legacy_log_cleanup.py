@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -59,7 +59,7 @@ def test_fresh_tiny_legacy_tui_log_is_safe_without_benefit_gate(tmp_path: Path) 
     assert decision.action is PolicyAction.TOOL_DELETE
 
 
-def test_live_codex_process_blocks_legacy_tui_log_execution(tmp_path: Path) -> None:
+def test_legacy_tui_log_is_offered_while_codex_runs_but_its_locks_wait(tmp_path: Path) -> None:
     env = _env(tmp_path)
     path = tmp_path / "home" / ".codex" / "log" / "codex-tui.log"
     path.parent.mkdir(parents=True)
@@ -75,8 +75,23 @@ def test_live_codex_process_blocks_legacy_tui_log_execution(tmp_path: Path) -> N
         environment=env,
     )
 
+    # User decision 2026-11-10/11: cleaned while the program runs; what it holds
+    # open is skipped one by one at deletion.  Only what a running program would be
+    # damaged by losing waits (application_cleanup._MUST_CLOSE_REASONS).
     assert decision is not None
-    assert decision.action is PolicyAction.TOOL_KEEP_IN_USE
+    assert decision.action is PolicyAction.TOOL_DELETE
+
+    lock = tmp_path / "home" / ".codex" / ".tmp" / "plugins.sync.lock"
+    held = evaluate_application_path(
+        lock,
+        logical_size=1,
+        last_used=now - timedelta(days=3),
+        now=now,
+        process_running=True,
+        environment=env,
+    )
+    assert held is not None and held.rule.rule_id == "codex-plugin-sync-lock"
+    assert held.action is PolicyAction.TOOL_KEEP_IN_USE
 
 
 def test_process_guard_rechecks_codex_before_legacy_log_cleanup(
@@ -87,12 +102,20 @@ def test_process_guard_rechecks_codex_before_legacy_log_cleanup(
     path = tmp_path / "home" / ".codex" / "log" / "codex-tui.log"
     path.parent.mkdir(parents=True)
     path.write_bytes(b"x")
+    lock = tmp_path / "home" / ".codex" / ".tmp" / "plugins.sync.lock"
+    lock.parent.mkdir(parents=True)
+    lock.write_bytes(b"")
 
+    # User decision 2026-11-10/11: cleaned while the program runs; what it holds
+    # open is skipped one by one at deletion.  Only what a running program would be
+    # damaged by losing waits (application_cleanup._MUST_CLOSE_REASONS).
     monkeypatch.setattr(application_cleanup, "application_process_running", lambda _app: True)
-    assert not process_guard_allows(path, env)
+    assert process_guard_allows(path, env)
+    assert not process_guard_allows(lock, env)
 
     monkeypatch.setattr(application_cleanup, "application_process_running", lambda _app: False)
     assert process_guard_allows(path, env)
+    assert process_guard_allows(lock, env)
 
 
 def test_codex_log_rule_does_not_broaden_other_state(tmp_path: Path) -> None:

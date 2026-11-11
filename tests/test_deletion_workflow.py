@@ -976,6 +976,108 @@ def test_temp_folders_are_one_safe_item_emptied_around_what_others_claim(ws: Wor
     assert ws.launches == []
 
 
+class _RowTree:
+    """The few Treeview calls the safe list makes when it is redrawn."""
+
+    def __init__(self) -> None:
+        self.rows: dict[str, tuple[str, ...]] = {}
+
+    def __str__(self) -> str:
+        return ".rows"
+
+    def get_children(self) -> tuple[str, ...]:
+        return tuple(self.rows)
+
+    def delete(self, *rows: str) -> None:
+        for row in rows:
+            del self.rows[row]
+
+    def insert(
+        self, _parent: str, _index: object, *, iid: str, values: tuple[str, ...], tags: object
+    ) -> None:
+        self.rows[iid] = values
+
+
+class _Text:
+    def __init__(self) -> None:
+        self.value = ""
+
+    def set(self, value: str) -> None:
+        self.value = value
+
+    def get(self) -> str:
+        return self.value
+
+
+def test_a_temp_folder_row_is_ticked_by_default_and_stays_ticked(ws: Workspace) -> None:
+    # User decision 2026-11-10: temporary folders are ticked by default.  On the
+    # c20d81a run the AppData\Local\Temp row showed unticked; this follows the
+    # row through what the window does with it: publish, a cleanup that leaves
+    # files in use, and a republish (rules saved, AI answer imported).
+    from devclean.core.cleanup_journal import ActionState
+    from devclean.core.triage import DirectoryScope
+
+    temp = ws.home / "AppData" / "Local" / "Temp"
+    _write(temp / "a.tmp", b"x" * 100)
+    _write(temp / "sub" / "b.tmp", b"y" * 100)
+    _nsis(ws.downloads / "old-setup.exe")
+    window, session = _scan(ws)
+    window._deletable = []
+    window._unsure = []
+    window._checked = set()
+    window._cleanup_failures = {}
+    window._deletable_tree = _RowTree()
+    window._unsure_tree = _RowTree()
+    window._deletable_total = _Text()
+    window._unsure_total = _Text()
+    window._status = _Text()
+    window._vendor_candidates = {}
+    window._vendor_scan_candidates = {}
+    window._scan_token = "scan"
+    window._sync_buttons = lambda: None
+
+    window._publish(session, app.published_partition(session, window._rules))
+
+    temp_rows = [
+        item.path
+        for item in window._deletable
+        if item.directory_scope is DirectoryScope.TEMP_FOLDER
+    ]
+    assert temp_rows == [str(temp)]
+    assert window._checked == {item.path for item in window._deletable}
+    assert window._deletable_tree.rows[str(temp)][0] == window._TICKED
+
+    left = exact_cleanup.TempFolderPurgeResult(
+        root_path=str(temp),
+        files_removed=1,
+        links_removed=0,
+        directories_removed=0,
+        bytes_removed=100,
+        in_use=1,
+        denied=0,
+        kept=0,
+        completed=True,
+    )
+    window._report_deletion(
+        (
+            postscan_cleanup.CleanupExecutionResult(
+                action_states=(("a1", ActionState.PURGED),),
+                purged_logical_bytes=100,
+                completed_paths=(),
+                partial=((str(temp), left),),
+                removed=((str(temp), 1, 100),),
+            ),
+        ),
+        (),
+    )
+    assert str(temp) in window._checked
+    assert window._deletable_tree.rows[str(temp)][0] == window._TICKED
+
+    window._publish(session)
+    assert str(temp) in window._checked
+    assert window._deletable_tree.rows[str(temp)][0] == window._TICKED
+
+
 def test_the_scan_worker_hands_over_totals_and_the_finished_partition(
     ws: Workspace, monkeypatch: pytest.MonkeyPatch
 ) -> None:

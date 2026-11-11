@@ -291,7 +291,10 @@ def test_process_guard_allows_user_choice_blocks_keep_and_rechecks_tool_process(
         "devclean.core.application_cleanup.claude_process_running",
         lambda: True,
     )
-    assert not process_guard_allows(r"D:\ClaudeState\debug\session.log", env)
+    # User decision 2026-11-10/11: cleaned while the program runs; what it holds
+    # open is skipped one by one at deletion.  Only what a running program would be
+    # damaged by losing waits (application_cleanup._MUST_CLOSE_REASONS).
+    assert process_guard_allows(r"D:\ClaudeState\debug\session.log", env)
     assert not process_guard_allows(r"D:\ClaudeState\sessions\12345.json", env)
 
 

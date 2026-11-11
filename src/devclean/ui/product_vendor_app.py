@@ -144,6 +144,16 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
         purge = self._buttons.get("purge")
         if purge is not None:
             purge.pack_forget()
+        if cleanup is not None:
+            # Reopens the last cleanup's item-by-item result.
+            report = ttk.Button(
+                cleanup.master,
+                text="清理结果",
+                style="Quiet.TButton",
+                command=self._show_cleanup_report,
+            )
+            report.pack(side=tk.LEFT, padx=(0, 8))
+            self._buttons["report"] = report
 
     def _start_scan(self) -> None:
         self._active_scan_drives = tuple(
@@ -261,7 +271,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
             return None
         row = tree.identify_row(event.y)
         candidate = self._vendor_candidates.get(row)
-        if candidate is None:
+        if candidate is None or tree.identify_column(event.x) == "#1":
             return super()._on_row_double_click(event)
         try:
             opened = app._open_path_in_explorer(str(candidate.path))
@@ -300,6 +310,7 @@ class ProductDevCleanWindow(_BaseProductDevCleanWindow):
             ("all", bool(all_rows)),
             ("none", bool(self._checked)),
             ("recycle", selected > 0),
+            ("report", bool(getattr(self, "_cleanup_report", ""))),
         ):
             button = self._buttons.get(key)
             if button is not None:

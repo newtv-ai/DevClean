@@ -6,6 +6,10 @@ paths keep their source-specific semantics: TOOL is program-decided, USER is a
 real user-preference decision, and KEEP remains non-deletable.
 """
 
+# The reasons a program has to be closed first are shown to the user, in
+# Chinese prose with fullwidth punctuation.
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import dataclasses
@@ -15,6 +19,7 @@ from collections.abc import Callable, Iterator, Mapping
 from datetime import datetime
 from functools import lru_cache
 from pathlib import PurePath, PureWindowsPath
+from typing import Final
 
 from devclean.core import _application_cleanup_impl as _impl
 from devclean.core import android_avd_cleanup as _android_avd
@@ -1058,6 +1063,44 @@ def process_guard_refusal(
     See :func:`process_guard_allows` for what is re-checked and what is not.
     """
 
+    refusal = _process_guard(path, environment)
+    return None if refusal is None else refusal[0]
+
+
+def process_guard_detail(
+    path: str | os.PathLike[str],
+    environment: Mapping[str, str] | None = None,
+) -> str | None:
+    """:func:`process_guard_refusal`, naming the rule whose program must close first.
+
+    A running owner reads ``RUNNING_OWNER_REFUSAL: <app id>: <rule id>``;
+    :func:`running_owner_reason` turns that into the application's name and
+    the documented reason it has to be closed.
+    """
+
+    refusal = _process_guard(path, environment)
+    if refusal is None:
+        return None
+    message, rule = refusal
+    if message == RUNNING_OWNER_REFUSAL:
+        return f"{RUNNING_OWNER_REFUSAL}: {rule.app_id}: {rule.rule_id}"
+    return message
+
+
+def running_owner_reason(message: str) -> tuple[str, str] | None:
+    """(application name, why it must be closed) for a ``process_guard_detail`` refusal."""
+
+    if not message.startswith(f"{RUNNING_OWNER_REFUSAL}: "):
+        return None
+    app_id, _, rule_id = message[len(RUNNING_OWNER_REFUSAL) + 2 :].partition(": ")
+    reason = _MUST_CLOSE_REASONS.get(rule_id, _UNLISTED_MUST_CLOSE_REASON)
+    return application_display_name(app_id), reason
+
+
+def _process_guard(
+    path: str | os.PathLike[str],
+    environment: Mapping[str, str] | None,
+) -> tuple[str, ApplicationCleanupRule] | None:
     clear_claude_settings_cache()
     rule = match_application_rule(path, environment)
     if rule is None:
@@ -1067,13 +1110,13 @@ def process_guard_refusal(
     if refreshed is not None and refreshed.app_id != rule.app_id:
         _refresh_application(refreshed.app_id)
     if refreshed is not None and refreshed.owner is DecisionOwner.KEEP:
-        return PROTECTED_OWNER_REFUSAL
+        return PROTECTED_OWNER_REFUSAL, refreshed
     if refreshed is None or not must_close_before_cleanup(refreshed):
-        # Includes the audited caches: while their program runs, the files it
-        # holds open are skipped at deletion and the rest still goes.
+        # A running program does not stop the rest: the files it holds open are
+        # skipped one by one at deletion and everything else still goes.
         return None
     if application_process_running(refreshed.app_id):
-        return RUNNING_OWNER_REFUSAL
+        return RUNNING_OWNER_REFUSAL, refreshed
     return None
 
 
@@ -1082,21 +1125,29 @@ def must_close_before_cleanup(rule: ApplicationCleanupRule) -> bool:
 
     The one answer for both sides: the scan (``evaluate_application_path``)
     lists the other rules' data while their program runs, and the pre-delete
-    guard (``process_guard_refusal``) lets it go.
+    guard (``process_guard_refusal``) lets it go.  A rule that asks for its
+    program to be closed and is in neither list below keeps asking (fail
+    closed); tests require every audited rule to be in one of them.
     """
 
     return rule.requires_process_closed and rule.rule_id not in cleanable_while_running()
 
 
+def must_close_reason(rule: ApplicationCleanupRule) -> str | None:
+    """Why *rule*'s program has to be closed first, or ``None`` when it does not."""
+
+    if not must_close_before_cleanup(rule):
+        return None
+    return _MUST_CLOSE_REASONS.get(rule.rule_id, _UNLISTED_MUST_CLOSE_REASON)
+
+
 @lru_cache(maxsize=1)
 def cleanable_while_running() -> frozenset[str]:
-    """Rules whose files a running program merely re-creates when they are gone.
+    """Rules cleaned while their program runs (user decision of 2026-11-10/11).
 
-    The browsers' and editors' audited caches (HTTP, code, GPU, shader...) and
-    Claude's plugin clones nothing references any more.  Not here: IDE index
-    caches, which an IDE keeps maintaining while it runs, and the downloads an
-    editor may be installing from right now (extension VSIX packages, the WSL
-    server); for those the program is closed first.
+    Deleting goes ahead and skips, one by one, the files the running program
+    holds open.  Only what the running program would be damaged by losing
+    waits for it to close: ``_MUST_CLOSE_REASONS``, each with its reason.
     """
 
     # Imported here: these modules patch this one while they load.
@@ -1125,20 +1176,137 @@ def cleanable_while_running() -> frozenset[str]:
             *trae_windsurf_cache_semantics._WINDSURF_SAFE_CACHE_RULE_IDS,
             claude_plugin_cache_cleanup._STAGING_RULE.rule_id,
             claude_plugin_cache_cleanup._ORPHAN_RULE.rule_id,
+            *_CLEANABLE_WHILE_RUNNING,
         }
-        - _INSTALLING_FROM
+        - _MUST_CLOSE_REASONS.keys()
     )
 
 
-# Editor downloads that an install in progress may be reading.
-_INSTALLING_FROM = frozenset(
+# Cleaned while their program runs, in addition to the audited browser and
+# editor caches above.  What the program has open is skipped at deletion.
+_CLEANABLE_WHILE_RUNNING: Final = frozenset(
     {
-        "vscode-extension-vsix-cache",
-        "vscode-wsl-server-download-cache",
-        "trae-cached-extension-vsix",
-        "windsurf-extension-vsix-cache",
+        # Electron/Chromium caches of the same kinds as the audited ones.
+        "claude-cache",
+        "codex-desktop-browser-cache",
+        "codex-desktop-default-browser-cache",
+        *(
+            f"cursor-{place}-{kind}"
+            for place in ("local", "roaming")
+            for kind in (
+                "cache",
+                "cached-data",
+                "cached-extensions",
+                "code-cache",
+                "dawn-cache",
+                "gpu-cache",
+                "grshader-cache",
+                "shader-cache",
+            )
+        ),
+        # Crash reports: one being written is open; finished ones are not read back.
+        "codex-desktop-crashpad-reports",
+        "cursor-local-crashpad-pending",
+        "cursor-local-crashpad-reports",
+        "cursor-roaming-crashpad-pending",
+        "cursor-roaming-crashpad-reports",
+        "vscode-crashpad-pending",
+        "vscode-crashpad-reports",
+        # Logs: the one being written is open; older ones are not read back.
+        "claude-daemon-log",
+        "claude-debug",
+        "claude-legacy-logs",
+        "codex-legacy-tui-log",
+        "cursor-local-logs",
+        "cursor-roaming-logs",
+        "jetbrains-product-logs",
+        "npm-default-logs",
+        "npm-external-debug-logs",
+        "npm-legacy-debug-log",
+        "toolbox-product-logs",
+        "trae-logs",
+        "visual-studio-servicehub-logs",
+        "vscode-logs",
+        "windsurf-logs",
+        # Leftovers the running version no longer uses.  A running old binary
+        # cannot be deleted at all; Windows refuses and it is reported.
+        "claude-config-backups",
+        "claude-legacy-statsig",
+        "claude-native-old-launcher",
+        "claude-native-stale-version",
+        "codex-orphan-rollout-temp",
+        # Copies and markers the program downloads or writes again.
+        "codex-plugin-marketplace-snapshot",
+        "codex-plugin-sync-marker",
+        "pnpm-metadata-cache",
+        "pnpm-update-state",
+        # A temporary folder, cleaned like %TEMP% (user decision 2026-11-10).
+        "vscode-portable-temp",
     }
 )
+
+_SAME_INSTALL = "编辑器可能正在从这里安装扩展，删掉会让安装失败"
+_SAME_INDEX = "IDE 运行时持续读写项目索引，删掉会让正在运行的 IDE 的索引损坏"
+_SAME_VCS_LOG = "IDE 运行时持续维护版本控制日志的索引，删掉会让索引损坏"
+_SAME_IDE_TEMP = "IDE 运行时把正在使用的解包文件和中间结果放在这里，删掉会让正在执行的功能出错"
+# What a running program would be damaged by losing: only these wait for it to
+# close.  Each reason is shown to the user and listed in
+# docs/scan-performance-ui-2026-11-10.md section 12.
+_MUST_CLOSE_REASONS: Final[Mapping[str, str]] = {
+    "android-avd-temporary-partition": (
+        "运行中的模拟器把它当作磁盘分区挂载读写，删掉会损坏模拟器里的系统"
+    ),
+    "android-sdk-install-temp": "SDK 管理器可能正在这里下载、解压要安装的包，删掉会让安装失败",
+    "toolbox-download-cache": "Toolbox 可能正在用这里下载的安装包安装或更新 IDE，删掉会让安装失败",
+    "toolbox-install-temp": "Toolbox 安装 IDE 时在这里解压，删掉会让正在进行的安装失败",
+    "vscode-extension-vsix-cache": _SAME_INSTALL,
+    "trae-cached-extension-vsix": _SAME_INSTALL,
+    "windsurf-extension-vsix-cache": _SAME_INSTALL,
+    "cursor-local-cached-extension-vsix": _SAME_INSTALL,
+    "cursor-roaming-cached-extension-vsix": _SAME_INSTALL,
+    "vscode-wsl-server-download-cache": (
+        "VS Code 可能正在把这里下载的服务器装进 WSL，删掉会让连接 WSL 失败"
+    ),
+    "cursor-superseded-windows-update-staging": (
+        "没有安装包的更新暂存目录可能就是正在下载的更新，删掉会让更新失败"
+    ),
+    "jetbrains-index-cache": _SAME_INDEX,
+    "android-studio-index-cache": _SAME_INDEX,
+    "jetbrains-vcs-log-cache": _SAME_VCS_LOG,
+    "android-studio-vcs-log-cache": _SAME_VCS_LOG,
+    "jetbrains-system-temp": _SAME_IDE_TEMP,
+    "android-studio-system-temp": _SAME_IDE_TEMP,
+    "visual-studio-component-model-cache": (
+        "Visual Studio 运行时使用并会在退出时写回这份组件缓存，删掉会让它加载扩展出错"
+    ),
+    "visual-studio-roslyn-analyzer-cache": (
+        "运行中的 Visual Studio 从这里加载代码分析器，删掉会让分析器加载失败"
+    ),
+    "claude-cwd-temp-marker": "运行中的 Claude 会话用它记录工作目录，删掉会让该会话出错",
+    "claude-session-locks": "这是运行中会话的锁，删掉后两个 Claude 可能同时操作同一个会话",
+    "claude-session-env": "运行中的会话要读取这里保存的环境信息，删掉会让它执行命令出错",
+    "claude-shell-snapshots": "运行中的会话每次执行命令都要读取这里的 shell 快照，删掉会让命令失败",
+    "claude-task-state": "运行中的会话在这里记录后台任务的状态，删掉会丢失正在进行的任务",
+    "claude-temp-scratch": "运行中的会话把正在进行的任务和临时输出放在这里",
+    "claude-plans": "运行中的会话在计划模式下读写这里的计划文件",
+    "claude-image-cache": "运行中的会话还会引用这里的图片附件",
+    "claude-legacy-todos": "运行中的会话可能还在这里记录待办事项",
+    "claude-remote-settings-cache": (
+        "运行中的 Claude 按这份服务器下发的设置运行，删掉后在重新获取前可能不按组织的设置运行"
+    ),
+    "claude-policy-limits-cache": (
+        "运行中的 Claude 按这份功能策略运行，删掉后在重新获取前可能不按组织的策略运行"
+    ),
+    "codex-plugin-sync-lock": "运行中的 Codex 用这个锁防止两次同步同时进行，删掉可能写坏插件目录",
+    "codex-rollout-maintenance-lock": (
+        "运行中的 Codex 用这个锁防止两次维护同时进行，删掉可能损坏会话记录"
+    ),
+    "codex-rollout-compression-lock": (
+        "运行中的 Codex 用这个锁防止两次压缩同时进行，删掉可能损坏会话记录"
+    ),
+    "pnpm-dlx-cache": "正在运行的 pnpm dlx 命令从这里加载程序，删掉会让它出错",
+}
+_UNLISTED_MUST_CLOSE_REASON = "这条规则要求先关闭程序"
 
 
 def whole_tree_application_rule(
@@ -1372,8 +1540,11 @@ __all__ = [
     "file_time_utc",
     "match_application_rule",
     "must_close_before_cleanup",
+    "must_close_reason",
     "process_guard_allows",
+    "process_guard_detail",
     "process_guard_refusal",
+    "running_owner_reason",
     "scan_root_snapshot",
     "snapshot_roots",
     "whole_tree_application_rule",

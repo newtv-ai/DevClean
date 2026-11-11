@@ -13,7 +13,7 @@
 | 项 | 内容 |
 | --- | --- |
 | 基线 | `b156d9b` |
-| 提交状态 | §1～§10 已随 `472364d` 提交、推送并由 Windows CI 构建；§11（`472364d` 的 CI 失败修复）未 commit、未 push、未构建 |
+| 提交状态 | §1～§10 已随 `472364d` 提交、推送并由 Windows CI 构建；§11 随 `344c101` 提交、推送；实时计时随 `c20d81a` 提交、推送；§12 未 commit、未 push、未构建 |
 | 审计原文 | `docs/cleanup-safety-audit-2026-11-07.md` 未改动 |
 | 运行环境 | Linux 6.12，uv 托管 CPython 3.13.18，pytest 8.4.2，mypy 2.2.0（`--platform win32`），ruff 0.15.21；`winreg` 为临时目录中的桩。**本轮没有在 Windows 上运行任何东西**，见 §9 |
 | 测试数据 | 只用 `tmp_path` 和会话临时目录里生成的文件；没有删除真实用户文件、没有卸载、没有清系统缓存 |
@@ -340,3 +340,253 @@ Linux 夹具上 POSIX 目录的 `st_nlink` 改报 1，与 Windows 目录一致�
 - `ui/app.py` 的 `_reason_of` 原来只看 `winerror`；`_raise_windows_error` 抛出的错误 Windows 代码在 `errno`、`winerror` 为空（32 变成 `BrokenPipeError`，3 变成 `ProcessLookupError`），会显示成“其他（…）”。
 - 现在 `winerror` 为空且错误类型是 `OSError`/`BrokenPipeError`/`ProcessLookupError` 时，按 `errno` 读 Windows 代码，与 `_TempPurgeState.skip()` 一致；其他子类不受影响。
 - 测试：`tests/test_cleanup_safety_fixes.py::test_windows_codes_carried_in_errno_are_named_like_winerror`。
+
+## 12. 一项删不掉就跳过、其余照删（`c20d81a` 用户实测，2026-11-11）
+
+| 项 | 内容 |
+| --- | --- |
+| 基线 | `c20d81a`（HEAD，已推送），在其上继续改 |
+| 用户实测 | 扫描总耗时 12 分 52 秒；勾选 21/23 项后清理，状态栏：“已清理 6 项；15 项未完成；所属程序正在运行，请关闭后再清理 14 项；已清理 0 个文件（0 B），留下：正被程序使用 2 项 2 项；已清理 0 个文件（0 B），留下：正被程序使用 5 项 2 项；安全检查拒绝（fresh whole-tree policy s…”（被截断）；`AppData\Local\Temp`（1.4 GB）未勾选 |
+| 提交状态 | 未 commit、未 push、未构建 |
+| 审计原文 | `docs/cleanup-safety-audit-2026-11-07.md` 未改动，SHA-256 仍为 `a078457ee2be031482f1f15073491b82976b4dcbf5aceeeface413794fc4ce0f` |
+| 运行环境 | 同 §8；**本轮没有在 Windows 上运行任何东西** |
+| 测试数据 | 只用 `tmp_path` 和会话临时目录；没有删除真实用户文件 |
+
+### 12.1 用户决定（原样记录）
+
+- 清理时，哪一项或哪个文件删不掉，就跳过它，继续删后面的。能删的全部删掉，最后列出删不掉的东西和原因。不要因为一项或一个文件删不掉，就停掉整项或整批。
+- 程序在运行时也要照常清理，被占用的文件逐个跳过并记录。只有删除后确实会损坏正在运行的程序的东西（例如 IDE 索引、正在下载安装的包），才可以要求先关闭，而且必须逐条写明理由。
+- 临时文件夹默认勾选（重申 §1）。
+
+### 12.2 根因
+
+#### (1) “所属程序正在运行，请关闭后再清理” 14 项
+
+- **唯一来源：** 删除前检查 `process_guard_refusal` 返回 `RUNNING_OWNER_REFUSAL`。条件是三者同时成立：
+  - 匹配到的规则 `requires_process_closed=True`；
+  - 规则不在 `cleanable_while_running()` 白名单里；
+  - 所属程序正在运行。
+- **白名单太窄：** §6 B1 只放进了 9 个浏览器/编辑器模块的审计缓存和 Claude 插件的两条规则。其余约 90 条要求关闭程序的规则（Codex 桌面版、Cursor、Claude、各类日志、崩溃报告……），程序一运行就整项拦下。默认仍是“拦”，正是用户说的“笼统地拦整项”。
+- **逐项对照截图上看得到的行**（在 Linux 上把 Chrome、Codex 的进程探测设为“运行中”，对 `c20d81a` 和本轮分别跑删除前检查）：
+
+  | 截图行 | 规则 | `c20d81a` | 本轮 |
+  | --- | --- | --- | --- |
+  | `Chrome\User Data\Default\C…`（311.1 MB，`Cache` 或 `Code Cache`） | `chrome-http-cache` / `chrome-code-cache` | 放行 | 放行 |
+  | `Chrome\User Data\GPUPersi…`（6.6 MB） | `chrome-gpu-persistent-cache` | 放行 | 放行 |
+  | `Packages\OpenAI.Codex_2p2nqsd0c7…` 三行（36.5 / 34.9 / 11.0 MB） | `codex-desktop-browser-cache`、`codex-desktop-default-browser-cache` | **拦下** | 放行 |
+  | `.codex\.tmp\plugins`（20.9 MB） | `codex-plugin-marketplace-snapshot` | **拦下** | 放行 |
+
+  - 任务说明里举的“Chrome 的 Default\Cache 和 GPU 缓存”，在 `c20d81a` 上**不会**被“程序正在运行”拦：它们都在白名单里。截图里这两行留在列表上，原因只能是 (2) 的“已清理 0 个文件…留下”或 (3) 的整树复检拒绝。
+  - 14 项里其余看不到的行，截图上没有，无法逐行确认。按代码，Codex 运行时会被拦的还有它的桌面版其他缓存目录、崩溃报告、旧 TUI 日志、孤儿临时文件；其他程序运行时被拦的见 §12.4 表二。
+
+#### (2) “已清理 0 个文件（0 B），留下：正被程序使用 N 项”
+
+查了两个问题，结论如下：
+
+- **不是“遇到第一个被占用的子项就停”：** 同一目录里，一个文件删不掉会计数后 `continue`，接着删下一个。
+- **但有四处把整个目录当成一个单位：**
+  1. 子目录打不开删除句柄时（另一个程序以不共享删除的方式开着它，比如当作工作目录或监视目录；或者有写句柄；或者权限不允许删除这个目录），整个子目录计 1 项“正被程序使用”，**里面的文件一个都不再尝试**。
+  2. 被选中的目录本身打不开删除句柄时，整项直接失败（“被程序占用或权限不足”），什么都不删。
+  3. 某个子目录列不出内容时，异常一路抛出，整项中止。
+  4. 程序自己在清理途中删掉了某个文件（文件已消失），它所在的目录仍被当作“留下了东西”，目录删不掉。如果此外没有任何计数，整项会被判为“tree deletion stopped before the whole tree was removed”。
+- **另外两处误报：**
+  - 只读属性的文件（缓存里的 git 对象包等）被报成“当前账户没有删除权限”。它们不是被占用，用户要求能删的都删掉。
+  - 状态栏的“已清理 6 项”把一个文件都没删的项也算成已清理：只删了一部分的项按“完成”计数。
+- **关于“5 项”和“2 项”：**
+  - Chromium 的块文件缓存（GPUCache、ShaderCache、GrShaderCache、Dawn*Cache 等）通常正好是 `index` 加 `data_0`～`data_3` 五个文件，浏览器运行时全部开着。这种目录“删 0 个、留 5 个”是正确结果，没有别的可删。
+  - “2 项”符合“两个子目录打不开删除句柄、里面的文件没试”的情形，例如 `Code Cache\js` 与 `Code Cache\wasm`。这是推断，截图上无法确认；上面四处无论如何都已修复。
+
+#### (3) “安全检查拒绝（fresh whole-tree policy s…”
+
+- **完整原因：** `fresh whole-tree policy scan was incomplete at <路径>`。截断处另一种可能是 `fresh whole-tree policy scan has no reliable last-use timestamp`，它只在整个目录什么都读不到时出现。
+- **触发路径：** 状态栏被窗口宽度截断，路径看不到；以下按代码说明。
+- **来源：** `whole_tree_policy._fresh_tree_evidence`。删除整目录应用缓存之前（`_preflight_candidate`，以及构造删除对象时），它把整棵树重新走一遍，任何一个条目产生错误记录，就拒绝整项。
+- **错误记录的来源：**
+  - 子目录在列出和读取之间被删掉；
+  - 子目录在遍历中被改名或替换（`directory identity changed during scan`）；
+  - 子目录没有列出权限。
+- 程序运行时，浏览器会不断新建和删除缓存子目录，这种竞争很容易出现。
+- **这条复检不是安全底线：** 同一模块明确写着年龄、大小不是安全门槛；真正的边界（链接不跟随、句柄最终路径不出界、身份不变）由删除时逐个条目检查。
+
+#### (4) Temp 没有勾选
+
+- **代码上默认是勾选的：** 扫描发布时，“安全可清理”的每一行都勾选，包括 Temp。在 Linux 上用真实扫描线程加窗口发布流程复现：Temp 行已勾选。
+- **能让它变成未勾选的路径：**
+  - 点它的方框；
+  - “清空选择”；
+  - 之后的重新发布会保留用户的取消；
+  - **双击方框（新发现）：** Tk 把双击的第一下当单击（切换勾选），第二下只交给双击处理（打开资源管理器）。结果是方框被切换了一次，还弹出一个窗口。界面提示正是“双击路径可在资源管理器中确认”。
+- **截图本身：** 清理前 25 行里已有 2 行未勾选，Temp 是其中之一；它不在这次清理的结果里，说明清理前就没勾。截图无法判断是哪种操作造成的。
+- **处理：** 双击方框是唯一一种不是有意取消的途径，已修复；**未能证实它就是原因**。
+
+#### (5) 失败原因看不全
+
+- 状态栏是单行标签，没有设置换行宽度，超出窗口宽度的部分直接被裁掉。
+- `_reason_of` 把原因截到 120 个字符。
+- 表格的“原因”列在一个会拉伸的“位置”列右边，没有横向滚动条，实际上看不到。
+- 状态栏按原因文字分组。每个“部分清理”项的说明文字都不一样，于是出现“…正被程序使用 2 项 2 项”这种重复。
+
+### 12.3 修复
+
+| 问题 | 改动 | 位置 |
+| --- | --- | --- |
+| (1) | “运行时可清理”改为逐条决定：要求关闭程序的规则，要么放进 `cleanable_while_running()`，要么放进 `_MUST_CLOSE_REASONS`（每条都有写给用户的理由，见 §12.4）。新测试要求两者覆盖全部要求关闭程序的可删规则、互不重叠、理由非空。新出现而没有归类的规则仍按“拦下”处理（保守），测试会提示归类 | `core/application_cleanup.py` |
+| (1) | 拦下时说清楚是谁、为什么：新增 `process_guard_detail` 返回 `RUNNING_OWNER_REFUSAL: <程序>: <规则>`，界面显示“Codex 正在运行，这一项要等它关闭后再清理：<理由>”。`process_guard_refusal` 返回值不变 | `core/application_cleanup.py`、`core/postscan_cleanup.py`、`ui/app.py` |
+| (1) | 扫描分类的原因文字带上同一条理由（“应用仍在运行…（理由）”“执行前必须确认 X 已关闭（理由）”）；扫描和删除前检查仍共用 `must_close_before_cleanup` | `core/triage.py` |
+| (2)-1 | 子目录打不开删除句柄：计 1 项留下后，改用只列目录、不含删除权限、仍不共享删除（钉住不被替换）的句柄进入，逐个删除里面的文件；这个子目录本身保留。连列目录的句柄都打不开，才整个留下 | `platform/windows/exact_cleanup.py` `_empty_temp_folder` |
+| (2)-2 | 被选中的目录本身打不开删除句柄：同样用只列目录的句柄清空内容、保留目录，计 1 项留下。连列目录的句柄都打不开，仍整项失败（原行为） | `_purge_tree_skipping_in_use_windows` |
+| (2)-3 | 子目录列不出内容：只留下这个子目录并计数，其余照删。POSIX 实现同样处理（含列目录失败、读条目信息失败） | `_empty_temp_folder`、`_purge_temp_folder_contents_posix` |
+| (2)-4 | 已自行消失的条目不再让上级目录“留下”，也不计数 | `_is_gone` |
+| (2) | 只读文件：整目录和临时文件夹清理时，删除请求带 `FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE`（Windows 10 1809 起支持；更早的系统返回“参数无效”，走原来的基本删除，只读文件仍报“没有删除权限”）。单文件删除和严格版整树删除不变 | `_delete_leaf`、`_set_delete_disposition` |
+| (3) | 删除前整树复检：树里某个条目读不到，不再拒绝整项，跳过它继续统计；只有被选中的目录本身读不到才拒绝（“删除前复检：这个目录本身无法再次读取（原因）”）。规则身份复检（仍是同一条可整目录删除的 TOOL 规则）不变 | `core/whole_tree_policy.py` |
+| (3) | 安全底线只作用于出问题的那一项：清理途中某个条目变成链接、最终路径出了边界、被改名或替换（`ExactCleanupError`），只跳过该条目，计入“安全检查未通过、只跳过它们自己 N 项”，其余照删。被选中目录本身的身份、边界、链接检查和系统禁删名单仍拒绝整项 | `exact_cleanup.py`（`refuse`、`unsafe` 计数）、`postscan_cleanup.py` |
+| (4) | 双击方框改为再切换一次（与连点两下一致），不再打开资源管理器；双击其他列照旧打开 | `ui/app.py`、`ui/product_vendor_app.py` `_on_row_double_click` |
+| (4) | 新测试走真实扫描线程加窗口发布：Temp 行默认勾选；清理后部分留下仍勾选；重新发布后仍勾选 | `tests/test_deletion_workflow.py` |
+| (5) | 状态栏按窗口宽度自动换行，不再裁掉 | `ui/modern_app.py`、`ui/app.py`（`wrap_to_width`） |
+| (5) | 状态栏改为：“已清理 N 项；M 项删了能删的部分，被占用等删不掉的留下；释放 X；K 项未完成；未完成原因：…；删了一部分的项共留下：正被程序使用 a 项、…；每一项删了多少、留下多少、为什么留下，见「清理结果」”。一个文件都没删的项不再算“已清理” | `ui/app.py` `_report_deletion` |
+| (5) | 新增“清理结果”窗口：清理后有留下或失败时自动打开，也可用“永久清理所选”旁的「清理结果」按钮重新打开。逐项列出：全部删除的（文件数、大小）；删了一部分的（删了多少、留下多少及原因、最多 20 个留下的例子）；未删除的（完整原因）。文字可选中复制 | `ui/app.py`（`cleanup_outcomes`、`render_cleanup_report`、`open_cleanup_report`）、`ui/product_vendor_app.py` |
+| (5) | 原因不再截断；整树复检的拒绝改为中文说明 | `ui/app.py` `_reason_of` |
+| (5) | 执行结果新增 `removed`（每项删了多少文件、多少字节），供逐项报告使用 | `core/postscan_cleanup.py` |
+
+### 12.4 程序运行时的逐条决定
+
+**表一：仍要求先关闭程序（`_MUST_CLOSE_REASONS`，界面显示同样的理由）**
+
+| 规则 | 理由 |
+| --- | --- |
+| `android-avd-temporary-partition` | 运行中的模拟器把它当作磁盘分区挂载读写，删掉会损坏模拟器里的系统 |
+| `android-sdk-install-temp` | SDK 管理器可能正在这里下载、解压要安装的包，删掉会让安装失败 |
+| `toolbox-download-cache` | Toolbox 可能正在用这里下载的安装包安装或更新 IDE |
+| `toolbox-install-temp` | Toolbox 安装 IDE 时在这里解压 |
+| `vscode-extension-vsix-cache`、`trae-cached-extension-vsix`、`windsurf-extension-vsix-cache`、`cursor-local-cached-extension-vsix`、`cursor-roaming-cached-extension-vsix` | 编辑器可能正在从这里安装扩展 |
+| `vscode-wsl-server-download-cache` | VS Code 可能正在把这里下载的服务器装进 WSL |
+| `cursor-superseded-windows-update-staging` | 规则也覆盖“没有安装包的暂存目录”，它可能就是正在下载的更新（见 `cursor_updater_cleanup` 说明） |
+| `jetbrains-index-cache`、`android-studio-index-cache` | IDE 运行时持续读写项目索引 |
+| `jetbrains-vcs-log-cache`、`android-studio-vcs-log-cache` | IDE 运行时持续维护版本控制日志的索引 |
+| `jetbrains-system-temp`、`android-studio-system-temp` | IDE 运行时把正在使用的解包文件和中间结果放在这里 |
+| `visual-studio-component-model-cache` | Visual Studio 运行时使用并会在退出时写回这份组件缓存 |
+| `visual-studio-roslyn-analyzer-cache` | 运行中的 Visual Studio 从这里加载代码分析器 |
+| `claude-cwd-temp-marker` | 运行中的会话用它记录工作目录 |
+| `claude-session-locks` | 运行中会话的锁，删掉后两个 Claude 可能同时操作同一会话 |
+| `claude-session-env` | 运行中的会话要读取这里保存的环境信息 |
+| `claude-shell-snapshots` | 运行中的会话每次执行命令都要读取 shell 快照 |
+| `claude-task-state` | 运行中的会话在这里记录后台任务状态 |
+| `claude-temp-scratch` | 运行中的会话把正在进行的任务和临时输出放在这里 |
+| `claude-plans` | 运行中的会话在计划模式下读写计划文件 |
+| `claude-image-cache` | 运行中的会话还会引用这里的图片附件 |
+| `claude-legacy-todos` | 运行中的会话可能还在这里记录待办 |
+| `claude-remote-settings-cache`、`claude-policy-limits-cache` | 运行中的 Claude 按这份服务器下发的设置/策略运行，删掉后在重新获取前可能不按组织的设置运行 |
+| `codex-plugin-sync-lock`、`codex-rollout-maintenance-lock`、`codex-rollout-compression-lock` | 运行中的 Codex 用这些锁防止两次同步或维护同时进行 |
+| `pnpm-dlx-cache` | 正在运行的 `pnpm dlx` 命令从这里加载程序 |
+
+这些文件大多不被一直开着，删除时的“被占用就跳过”保护不到，所以仍要求先关闭。
+
+**表二：本轮起程序运行时照常清理（被占用的文件逐个跳过）**
+
+| 规则 | 理由 |
+| --- | --- |
+| `codex-desktop-browser-cache`、`codex-desktop-default-browser-cache`、`cursor-{local,roaming}-{cache,cached-data,cached-extensions,code-cache,dawn-cache,gpu-cache,grshader-cache,shader-cache}`、`claude-cache` | 与已放开的 Chrome/VS Code 缓存同类，程序只会重新生成 |
+| `codex-desktop-crashpad-reports`、`cursor-{local,roaming}-crashpad-{pending,reports}`、`vscode-crashpad-{pending,reports}` | 正在写的报告开着、会跳过；写完的不会被读回 |
+| `claude-daemon-log`、`claude-debug`、`claude-legacy-logs`、`codex-legacy-tui-log`、`cursor-{local,roaming}-logs`、`vscode-logs`、`jetbrains-product-logs`、`toolbox-product-logs`、`npm-default-logs`、`npm-external-debug-logs`、`npm-legacy-debug-log`、`trae-logs`、`windsurf-logs`、`visual-studio-servicehub-logs` | 正在写的日志开着、会跳过；旧日志不会被读回 |
+| `claude-config-backups`、`claude-legacy-statsig`、`codex-orphan-rollout-temp`、`claude-native-old-launcher`、`claude-native-stale-version` | 运行中的版本不再使用。正在运行的旧程序文件 Windows 本身就不允许删除，会报告出来 |
+| `codex-plugin-marketplace-snapshot`、`codex-plugin-sync-marker`、`pnpm-metadata-cache`、`pnpm-update-state` | 程序会重新下载或重写的副本与标记 |
+| `vscode-portable-temp` | 便携版的临时文件夹，与 %TEMP% 同样处理（§1 用户决定） |
+
+- **与已有审计文档的关系：**
+  - `docs/visual-studio-servicehub-logs-audit.md` 记录了“用户批准删除 ServiceHub 日志时 Visual Studio 必须关闭”。该文档没有给出损坏的理由，微软的指引本身就是让用户删除这个日志目录。
+  - 按本次用户决定，ServiceHub 日志改为运行时照常清理；该文档未改动。
+  - USER 类日志（npm、Trae、Windsurf、ServiceHub）仍需用户或 AI 批准才会删除，只是不再因为程序在运行而拦下。
+- **存在的风险，需 Windows 实测：** `codex-plugin-marketplace-snapshot` 若恰好在 Codex 同步时被删，快照可能不完整。当时正在写的文件开着，会被跳过；Codex 之后能否自行重新同步，见 §12.7。
+
+### 12.5 改写的测试断言（逐条理由）
+
+以下 10 个文件的断言改动，理由都是 §12.1 的用户决定：程序运行时照常清理，只有表一的规则等待关闭。没有删除、跳过任何测试。
+
+| 文件 | 测试（原名 → 新名） | 改动 |
+| --- | --- | --- |
+| `test_whole_tree_policy.py` | `test_incomplete_fresh_scan_fails_closed` → `test_an_unreadable_entry_no_longer_refuses_the_tree_but_an_unreadable_root_does` | 树中一个条目读不到：原断言整项拒绝，改为返回其余部分的统计（1 个文件、64 MiB）；新增断言：被选中目录本身读不到仍拒绝。理由是 §12.1 第一条和 (3) |
+| `test_claude_cleanup.py` | `test_process_guard_allows_user_choice_blocks_keep_and_rechecks_tool_process`（未改名） | Claude 运行时 `debug\session.log`：拦下 → 放行（日志，表二）；同测试的 `sessions\*.json` 仍断言拦下 |
+| `test_codex_legacy_log_cleanup.py` | `test_live_codex_process_blocks_legacy_tui_log_execution` → `test_legacy_tui_log_is_offered_while_codex_runs_but_its_locks_wait` | 运行时旧 TUI 日志：`TOOL_KEEP_IN_USE` → `TOOL_DELETE`；新增断言 `plugins.sync.lock` 运行时仍是 `TOOL_KEEP_IN_USE` |
+| 同上 | `test_process_guard_rechecks_codex_before_legacy_log_cleanup`（未改名） | 运行时旧日志：拦下 → 放行；新增断言同步锁运行时拦下、关闭后放行 |
+| `test_cursor_cache_safety_semantics.py` | `test_cursor_process_activity_still_blocks_generated_cache_cleanup` → `test_cursor_generated_cache_is_offered_while_cursor_runs` | 运行时 GPUCache：`TOOL_KEEP_IN_USE` → `TOOL_DELETE`；新增断言 VSIX 运行时仍是 `TOOL_KEEP_IN_USE` |
+| `test_cursor_cleanup.py` | `test_cursor_known_cache_is_tool_owned_and_process_guarded` → `test_cursor_known_cache_is_tool_owned_and_offered_while_cursor_runs` | 运行时 Code Cache：`TOOL_KEEP_IN_USE` → `TOOL_DELETE`；新增 VSIX 断言同上 |
+| 同上 | `test_cursor_process_guard_allows_user_database_but_rechecks_tool_cache`（未改名） | 运行时 `Cache\data_0`：拦下 → 放行；新增断言 VSIX 拦下 |
+| `test_npm_cleanup.py` | `test_npm_process_guard_rechecks_live_npm_process_for_user_logs` → `test_npm_user_logs_are_cleaned_while_npm_runs` | 两个 npm 日志：拦下 → 放行 |
+| `test_pnpm_cleanup.py` | `test_pnpm_update_state_is_blocked_while_pnpm_is_running` → `test_pnpm_update_state_is_offered_while_pnpm_is_running` | `TOOL_KEEP_IN_USE` → `TOOL_DELETE` |
+| 同上 | `test_pnpm_user_cache_mutation_is_blocked_when_process_is_running` → `test_pnpm_dlx_waits_for_pnpm_but_its_metadata_mirror_does_not` | dlx 仍断言拦下（表一）；metadata：拦下 → 放行 |
+| `test_trae_cleanup.py` | `test_trae_process_guard_allows_user_choice_and_cache_but_blocks_live_logs` → `test_trae_process_guard_allows_user_choice_cache_and_logs_but_not_crash_reports` | 运行时日志：拦下 → 放行；崩溃报告仍断言拦下（它是 KEEP，与运行无关） |
+| `test_windsurf_cleanup.py` | `test_windsurf_process_guard_cleans_cache_but_blocks_running_user_logs` → `test_windsurf_process_guard_cleans_cache_and_user_logs_while_it_runs` | 同 Trae |
+| `test_visual_studio_servicehub_logs.py` | `test_servicehub_user_approved_mutation_requires_visual_studio_closed` → `test_servicehub_user_approved_mutation_runs_while_visual_studio_runs` | 运行时：拦下 → 放行（见 §12.4 与审计文档的关系）；关闭时放行的断言不变 |
+
+- `tests/test_temp_folders.py::test_safety_and_unknown_errors_still_stop_the_cleanup` 未改：它测的是 `_TempPurgeState.skip()` 对安全错误仍返回 False，这一点没变。遍历层现在用 `refuse()` 只跳过出问题的那一项。
+
+### 12.6 验证（Linux）
+
+| 检查 | 结果 |
+| --- | --- |
+| `ruff check src scripts tests` | 通过 |
+| `python -m mypy --platform win32` | 通过（364 个文件） |
+| 全量 pytest，`c20d81a` | 231 失败 / 972 通过 / 30 跳过 |
+| 全量 pytest，本轮 | 231 失败 / 998 通过 / 30 跳过 |
+| 失败集合 | 与 `c20d81a` 完全相同，失败信息逐字一致，均为既有的 Windows 路径基线 |
+| 多出的 26 个通过 | 均为新增用例：`tests/test_cleanup_skip_continue.py` 22 个，`tests/test_cleanup_in_use.py` 3 个，`tests/test_deletion_workflow.py` 1 个 |
+| 审计原文 SHA-256 | 未变 |
+
+**在 Linux 上模拟 Windows（`tests/test_cleanup_skip_continue.py`）：**
+
+- **做法：** Windows 版遍历（`_empty_temp_folder`、`_purge_tree_skipping_in_use_windows`、`_purge_temp_folder_contents_windows`）在 `tmp_path` 的真实目录上运行，只把 Win32 调用换成用 `os` 删除的替身。
+- **替身抛出两种 Windows 错误形态：**
+  - Windows 上 `os` 函数的形态：`PermissionError`，errno 13，`winerror` 为 32 或 5；
+  - `_raise_windows_error` 的形态：`OSError(32 或 5, …)`，errno 为 32 或 5，`winerror` 为 None（32 在 Linux 上是 `BrokenPipeError`）。
+- 每个场景在两种形态下都跑：
+  - 两个文件被占用、一个子目录本身被程序开着：其余 6 个文件全部删除，子目录里的文件也删掉、子目录留下，计 3 项留下；只读删除标志用于每个文件；句柄全部关闭。32 与 5 两种代码都跑。
+  - 被选中的目录本身打不开删除句柄：内容全部删掉，目录留下，计 1 项。连列目录都不行时仍整项失败（原行为）。
+  - 某子目录列不出内容：只留下它，其余照删。
+  - 一个文件、一个子目录的最终路径出界：只跳过这 2 项，其余照删，不抛异常。
+  - 一个文件在删除前自己消失：不计数，整棵树仍删掉。
+  - 未知错误码（1117）：仍中止该项。
+  - 临时文件夹同样处理，并保留文件夹本身。
+- **POSIX 实现：** 子目录在清理中被换成链接、子目录列不出内容，两种情况都只跳过该项。这两个测试在 Windows 上走真实 Windows 实现，在 Linux 上走 POSIX 实现，不用 skip。
+- **执行层：** 树只因一个“安全检查跳过”而留下时，记为“删了一部分”，不再是“tree deletion stopped…”拒绝。
+- **界面层：** 状态栏与“清理结果”的文字（逐项、不截断）；换行绑定；双击方框；整树复检原因的中文。
+
+**变异检查**：逐项撤回本轮改动，相应测试失败。
+
+| 撤回 | 失败的用例数 |
+| --- | --- |
+| 子目录打不开删除句柄就整个跳过 | 6 |
+| 被选中目录打不开删除句柄就整项失败 | 2 |
+| 子目录列不出内容就中止 | 2 |
+| 文件安全检查失败就中止 | 1 |
+| 已消失的文件让上级目录留下 | 2 |
+| 整树复检任一条目出错就拒绝 | 1 |
+| Codex 缓存放回“必须关闭” | 2 |
+| 只删了一部分的项算作已清理 | 1 |
+| 双击方框打开资源管理器 | 1 |
+
+**删除前检查对照**：在 Linux 上把进程探测设为运行中，截图上的行（Chrome `Default\Cache`、`Default\Code Cache`、`GPUPersistentCache`，Codex 桌面版四个缓存目录，`.codex\.tmp\plugins`，旧 TUI 日志）在 `c20d81a` 和本轮的结果见 §12.2 (1) 的表。
+
+### 12.7 只能在真实 Windows 上验证
+
+1. **只列目录的句柄能否打开：** 被 Chrome/Codex 等开着的目录，能否用“只列目录、共享读写、不含删除权限”的句柄打开。如果持有者自己带删除权限，或不共享读，这个目录仍会整个留下（并计数）。
+2. **只读文件的删除标志：** `FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE` 在用户的 Windows 版本上的效果；旧系统会回退。
+3. **真实计数：** Chrome、Codex 运行时，每个缓存目录实际删掉多少、留下多少；块文件缓存是否正好留下 `index`、`data_*`。
+4. **Codex 重新同步：** Codex 运行时 `.codex\.tmp\plugins`、桌面版缓存被删后，Codex 是否正常重新生成或重新同步。
+5. **界面：** 状态栏换行、“清理结果”窗口、「清理结果」按钮、双击方框的实际表现（测试用的是 Tk 替身）。
+6. **Temp 未勾选：** 用户这次 Temp 未勾选的确切原因（§12.2 (4)，未证实）。
+7. **Linux 基线里的测试：** 涉及这些模块、但在 Linux 上本来就失败的测试（Windows 路径基线），只能在 Windows CI 上跑完整断言。我逐个检查了其中设置“程序运行中”或调用删除前检查的用例，涉及的规则（IDE 索引、AVD、SDK、Visual Studio 组件缓存、Claude 会话标记等）本轮都没有放开。
+
+### 12.8 发现但未改
+
+- **扫描阶段的整树汇总仍是全有或全无：** `scanner/tree_summary.summarize_tree` 只要树里有一项读不到，整个应用缓存根就不列出，它的文件也不会逐个列出。这属于扫描列出的范围，不是清理，本轮未改。
+- **清理后重新发布会把已删除的行重新列出并勾选：** 清理后若再导入 AI 结果、保存规则等，会从扫描结果重新分区，已删除的行会再出现、再勾选；再次清理时按“已不存在”计为完成。与本次反馈无关，未改。
+
+### 12.9 改动文件
+
+| 类型 | 文件 |
+| --- | --- |
+| 生产 | `core/application_cleanup.py`、`core/postscan_cleanup.py`、`core/triage.py`、`core/whole_tree_policy.py`、`platform/windows/exact_cleanup.py`、`ui/app.py`、`ui/modern_app.py`、`ui/product_app.py`、`ui/product_vendor_app.py` |
+| 测试（新） | `tests/test_cleanup_skip_continue.py` |
+| 测试（新增用例） | `tests/test_cleanup_in_use.py`、`tests/test_deletion_workflow.py` |
+| 测试（按用户决定改写断言，§12.5） | `tests/test_whole_tree_policy.py`、`test_claude_cleanup.py`、`test_codex_legacy_log_cleanup.py`、`test_cursor_cache_safety_semantics.py`、`test_cursor_cleanup.py`、`test_npm_cleanup.py`、`test_pnpm_cleanup.py`、`test_trae_cleanup.py`、`test_windsurf_cleanup.py`、`test_visual_studio_servicehub_logs.py` |
+| 文档 | 本文件 §12 |

@@ -47,6 +47,7 @@ from devclean.core.ai_review_contract import (
 from devclean.core.application_cleanup import (
     PROTECTED_OWNER_REFUSAL,
     RUNNING_OWNER_REFUSAL,
+    running_owner_reason,
     scan_root_snapshot,
 )
 from devclean.core.cleanup_catalog import (
@@ -656,6 +657,39 @@ def _expanded_live_verdicts(
     return tuple(expanded)
 
 
+# The whole-tree re-check right before a folder is deleted (whole_tree_policy),
+# in the user's terms; the first matching entry wins.
+_WHOLE_TREE_REFUSAL_REASONS: tuple[tuple[str, str], ...] = (
+    (
+        "static vendor-managed roots",
+        "删除前复检：这个目录只能由它的官方清理命令处理，不能整目录删除",
+    ),
+    (
+        "authority is no longer a deletable TOOL rule",
+        "删除前复检：这个目录已不再属于可以整目录删除的应用缓存",
+    ),
+    (
+        "resolved the exact root to a different rule",
+        "删除前复检：这个目录现在归属另一条应用规则，不能整目录删除",
+    ),
+    (
+        "no longer classifies the exact root as TOOL-owned",
+        "删除前复检：这个目录已不再属于可以整目录删除的应用缓存",
+    ),
+    (
+        "last-use evidence cannot be re-established",
+        "删除前复检：无法重新确认这个目录的最近使用情况",
+    ),
+    (
+        "no reliable last-use timestamp",
+        "删除前复检：读不到这个目录的任何时间信息，无法确认它的使用情况",
+    ),
+    (
+        "the selected folder could not be read again before deletion",
+        "删除前复检：这个目录本身无法再次读取",
+    ),
+)
+
 # Safety-check refusals in the user's terms; the first matching entry wins.
 _SAFETY_REFUSAL_REASONS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("hard-linked",), "文件还有其他硬链接名称，删除这一处不会释放空间，已跳过"),
@@ -689,6 +723,10 @@ def _reason_of(error: BaseException) -> str:
             return "扫描后它已归属受保护的应用数据，已拒绝删除"
         if message == RUNNING_OWNER_REFUSAL:
             return "所属程序正在运行，请关闭后再清理"
+        running = running_owner_reason(message)
+        if running is not None:
+            name, why = running
+            return f"{name} 正在运行，这一项要等它关闭后再清理：{why}"
         if message == INSTALLED_PROGRAM_REFUSAL:
             return "扫描后它已归属已安装的程序或安装缓存，已拒绝删除"
         if message == REVIEW_NOT_APPROVED_REFUSAL:
@@ -705,25 +743,61 @@ def _reason_of(error: BaseException) -> str:
         if message.startswith(HIDDEN_UNVERIFIED_REFUSAL):
             names = message[len(HIDDEN_UNVERIFIED_REFUSAL) :].lstrip(": ")
             return (
-                f"无法读取正在运行的程序 {names[:120]} 的启动参数；这一项是经 AI 或你批准的"
+                f"无法读取正在运行的程序 {names} 的启动参数；这一项是经 AI 或你批准的"
                 "不确定项，不能确认它没有被这些程序使用，已拒绝删除；关闭这些程序或以管理员"
                 "身份运行 DevClean 后重试"
             )
         if message.startswith(LIVE_CHECK_UNAVAILABLE_REFUSAL):
             detail = message[len(LIVE_CHECK_UNAVAILABLE_REFUSAL) :].lstrip(": ")
             return (
-                f"无法确认正在运行的程序和服务是否在使用它（{detail[:120]}），已拒绝删除；"
+                f"无法确认正在运行的程序和服务是否在使用它（{detail}），已拒绝删除；"
                 "以管理员身份运行 DevClean 或关闭相关程序后重试"
             )
+        for marker, reason in _WHOLE_TREE_REFUSAL_REASONS:
+            if marker in message:
+                detail = message.partition(": ")[2] if ": " in message else ""
+                return f"{reason}（{detail}）" if detail else reason
         for words, reason in _SAFETY_REFUSAL_REASONS:
             if any(word in message for word in words):
                 return reason
-        return f"安全检查拒绝（{message[:120]}）"
-    return f"其他（{type(error).__name__}：{str(error)[:120]}）"
+        # Shown whole: a cut-off reason says nothing (user feedback 2026-11-11).
+        return f"安全检查拒绝（{message}）"
+    return f"其他（{type(error).__name__}：{error}）"
 
 
 def _temp_folder_note(outcome: TempFolderPurgeResult) -> str:
     """What emptying a folder could not remove, in the user's terms."""
+
+    return (
+        f"已清理 {outcome.files_removed:,} 个文件"
+        f"（{_format_bytes(outcome.bytes_removed)}），留下：" + "、".join(_left_parts(outcome))
+    )
+
+
+def _left_totals(outcomes: Iterable[TempFolderPurgeResult | None]) -> str:
+    """What several partly cleaned folders left together, by reason."""
+
+    left = [outcome for outcome in outcomes if outcome is not None]
+    return "、".join(
+        _left_parts(
+            TempFolderPurgeResult(
+                root_path="",
+                files_removed=0,
+                links_removed=0,
+                directories_removed=0,
+                bytes_removed=0,
+                in_use=sum(outcome.in_use for outcome in left),
+                denied=sum(outcome.denied for outcome in left),
+                kept=sum(outcome.kept for outcome in left),
+                completed=True,
+                unsafe=sum(outcome.unsafe for outcome in left),
+            )
+        )
+    )
+
+
+def _left_parts(outcome: TempFolderPurgeResult) -> list[str]:
+    """What one folder's cleanup had to leave, by reason."""
 
     parts = []
     if outcome.in_use:
@@ -732,10 +806,116 @@ def _temp_folder_note(outcome: TempFolderPurgeResult) -> str:
         parts.append(f"当前账户没有删除权限 {outcome.denied:,} 项（可能需要管理员）")
     if outcome.kept:
         parts.append(f"由应用规则或你的保留设置单独处理 {outcome.kept:,} 项")
-    return (
-        f"已清理 {outcome.files_removed:,} 个文件"
-        f"（{_format_bytes(outcome.bytes_removed)}），留下：" + "、".join(parts)
-    )
+    if outcome.unsafe:
+        parts.append(f"安全检查未通过、只跳过它们自己 {outcome.unsafe:,} 项")
+    return parts
+
+
+@dataclass(frozen=True, slots=True)
+class CleanupOutcome:
+    """What one selected row's cleanup did, for the status line and the report."""
+
+    path: str
+    # "done": all of it went; "partial": what could go went, the rest stayed;
+    # "failed": nothing was removed.
+    state: str
+    files_removed: int = 0
+    bytes_removed: int = 0
+    # Partial: what stayed and why.  Failed: why nothing went.
+    note: str = ""
+    left: TempFolderPurgeResult | None = None
+
+
+def cleanup_outcomes(
+    results: Sequence[CleanupExecutionResult],
+    failures: Sequence[tuple[str, str]],
+) -> tuple[CleanupOutcome, ...]:
+    """Every processed row once: removed in full, in part, or not at all."""
+
+    outcomes: dict[str, CleanupOutcome] = {}
+    for path, reason in failures:
+        outcomes[path] = CleanupOutcome(path, "failed", note=reason)
+    for result in results:
+        removed = {path: (files, size) for path, files, size in result.removed}
+        for path in result.completed_paths:
+            files, size = removed.get(path, (0, 0))
+            if not removed and len(result.completed_paths) == 1:
+                size = result.purged_logical_bytes  # a vendor command's result
+            outcomes[path] = CleanupOutcome(path, "done", files, size)
+        for path, outcome in result.partial:
+            outcomes[path] = CleanupOutcome(
+                path,
+                "partial",
+                outcome.files_removed,
+                outcome.bytes_removed,
+                _temp_folder_note(outcome),
+                outcome,
+            )
+        for path, error in result.failures:
+            outcomes[path] = CleanupOutcome(path, "failed", note=_reason_of(error))
+    return tuple(outcomes.values())
+
+
+def render_cleanup_report(outcomes: Sequence[CleanupOutcome], freed: int) -> str:
+    """The whole result of one cleanup, item by item, nothing cut off."""
+
+    done = [outcome for outcome in outcomes if outcome.state == "done"]
+    partial = [outcome for outcome in outcomes if outcome.state == "partial"]
+    failed = [outcome for outcome in outcomes if outcome.state == "failed"]
+    lines = [
+        f"全部删除 {len(done):,} 项，删了一部分 {len(partial):,} 项，"
+        f"未删除 {len(failed):,} 项；共释放 {_format_bytes(freed)}。",
+        "删不掉的文件逐个跳过，其余照删；下面列出每一项删了多少、留下多少、为什么留下。",
+    ]
+    if partial:
+        lines += ["", f"删了一部分（{len(partial):,} 项）："]
+        for outcome in partial:
+            lines.append(f"• {outcome.path}")
+            lines.append(f"    {outcome.note}")
+            examples = outcome.left.examples if outcome.left is not None else ()
+            if examples:
+                lines.append("    留下的例子：")
+                lines += [f"      {path} —— {why}" for path, why in examples]
+    if failed:
+        lines += ["", f"未删除（{len(failed):,} 项）："]
+        for outcome in failed:
+            lines.append(f"• {outcome.path}")
+            lines.append(f"    原因：{outcome.note}")
+    if done:
+        lines += ["", f"全部删除（{len(done):,} 项）："]
+        for outcome in done:
+            amount = _format_bytes(outcome.bytes_removed)
+            files = f"{outcome.files_removed:,} 个文件，" if outcome.files_removed else ""
+            lines.append(f"• {outcome.path} —— {files}{amount}")
+    return "\n".join(lines)
+
+
+def open_cleanup_report(window: object) -> None:
+    """Show the last cleanup's report in its own scrollable, copyable window."""
+
+    root = getattr(window, "_root", None)
+    text = getattr(window, "_cleanup_report", "")
+    if root is None or not text:
+        return
+    previous = getattr(window, "_cleanup_report_window", None)
+    if previous is not None:
+        with contextlib.suppress(tk.TclError):
+            previous.destroy()
+    dialog = tk.Toplevel(root)
+    dialog.title("清理结果")
+    dialog.geometry("960x560")
+    frame = ttk.Frame(dialog, padding=(12, 12, 12, 6))
+    frame.pack(fill=tk.BOTH, expand=True)
+    body = tk.Text(frame, wrap=tk.WORD, font=("Segoe UI", 9), padx=8, pady=6)
+    scroll = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=body.yview)
+    body.configure(yscrollcommand=scroll.set)
+    scroll.pack(side=tk.RIGHT, fill=tk.Y)
+    body.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    body.insert("1.0", text)
+    # Read-only, but the text can still be selected and copied.
+    body.configure(state=tk.DISABLED)
+    ttk.Button(dialog, text="关闭", command=dialog.destroy).pack(pady=(0, 10))
+    window._cleanup_report_window = dialog  # type: ignore[attr-defined]
 
 
 def forget_live_rows(window: object, tree: object) -> None:
@@ -743,6 +923,15 @@ def forget_live_rows(window: object, tree: object) -> None:
 
     live: dict[str, object] = getattr(window, "_live_rows", {})
     live.pop(str(tree), None)
+
+
+def wrap_to_width(label: ttk.Label, container: tk.Misc, margin: int) -> None:
+    """Wrap *label* at *container*'s width, so a long text is never cut off."""
+
+    def resize(event: tk.Event) -> None:
+        label.configure(wraplength=max(200, event.width - margin))
+
+    container.bind("<Configure>", resize, add="+")
 
 
 def _grouped_reasons(failures: Iterable[tuple[str, str]]) -> list[tuple[str, int]]:
@@ -919,6 +1108,8 @@ class DevCleanWindow:
         self._ai_unsure_reasons: dict[str, str] = {}
         # Why a selected row was not cleaned last time, shown in its reason column.
         self._cleanup_failures: dict[str, str] = {}
+        # The last cleanup's item-by-item result, shown in the 「清理结果」 window.
+        self._cleanup_report = ""
         # Review items (AI or "需要判断") the AI or the user approved for deletion
         # in this scan, by normalised path; saved DELETE rules count as well.
         self._review_approvals: set[str] = set()
@@ -1082,9 +1273,11 @@ class DevCleanWindow:
 
         outer = ttk.Frame(self._root, style="App.TFrame", padding=(16, 12, 16, 14))
         outer.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(outer, textvariable=self._status, style="Status.TLabel").pack(
-            anchor=tk.W, pady=(0, 10)
+        status = ttk.Label(
+            outer, textvariable=self._status, style="Status.TLabel", justify=tk.LEFT
         )
+        status.pack(anchor=tk.W, fill=tk.X, pady=(0, 10))
+        wrap_to_width(status, outer, 32)
 
         buckets = ttk.Frame(outer, style="App.TFrame")
         buckets.pack(fill=tk.BOTH, expand=True)
@@ -1274,6 +1467,7 @@ class DevCleanWindow:
         self._checked.clear()
         self._ai_unsure_reasons.clear()
         self._cleanup_failures.clear()
+        self._cleanup_report = ""
         self._review_approvals.clear()
         # Completed exports remain recoverable from the bounded session index.
         # Do not retain every old package and all of its TriageItems in memory
@@ -1571,6 +1765,11 @@ class DevCleanWindow:
         tree = cast(ttk.Treeview, event.widget)
         if tree.identify_region(event.x, event.y) != "cell":
             return None
+        if tree is self._deletable_tree and tree.identify_column(event.x) == "#1":
+            # Tk delivers a double click's second press only here: it is a second
+            # click on the box, not "open in Explorer".  Otherwise a quick double
+            # click on a box flips it once and opens a window.
+            return self._on_row_click(event)
         row = tree.identify_row(event.y)
         if not row:
             return None
@@ -2421,25 +2620,13 @@ class DevCleanWindow:
         results: tuple[CleanupExecutionResult, ...],
         failures: tuple[tuple[str, str], ...],
     ) -> None:
-        finished = 0
-        failed = 0
-        freed = 0
-        unverified_recycles = 0
-        for result in results:
-            for _action, state in result.action_states:
-                if state in {ActionState.PURGED, ActionState.RECYCLED}:
-                    finished += 1
-                else:
-                    failed += 1
-            freed += result.purged_logical_bytes
-            unverified_recycles += len(result.unverified_recycle_paths)
-        failed += len(failures)
-        notes = dict(failures)
-        for result in results:
-            for path, error in result.failures:
-                notes[path] = _reason_of(error)
-            for path, outcome in result.partial:
-                notes[path] = _temp_folder_note(outcome)
+        freed = sum(result.purged_logical_bytes for result in results)
+        unverified_recycles = sum(len(result.unverified_recycle_paths) for result in results)
+        outcomes = cleanup_outcomes(results, failures)
+        finished = sum(outcome.state == "done" for outcome in outcomes)
+        partial = [outcome for outcome in outcomes if outcome.state == "partial"]
+        failed = [outcome for outcome in outcomes if outcome.state == "failed"]
+        notes = {outcome.path: outcome.note for outcome in (*partial, *failed)}
         gone = {path for result in results for path in result.completed_paths}
         self._cleanup_failures = {
             path: reason
@@ -2452,20 +2639,37 @@ class DevCleanWindow:
         self._fill(self._deletable_tree, self._deletable)
         self._fill(self._unsure_tree, self._unsure)
         self._refresh_totals()
+        self._cleanup_report = render_cleanup_report(outcomes, freed)
         self._sync_buttons()
+        # An item with nothing removed is not "cleaned": it counts as not done.
         parts = [f"已删除 {finished:,} 项"]
+        if partial:
+            parts.append(f"{len(partial):,} 项删了能删的部分，被占用等删不掉的留下")
         if freed:
             parts.append(f"释放 {_format_bytes(freed)}")
         if failed:
-            parts.append(f"{failed:,} 项未完成")
+            parts.append(f"{len(failed):,} 项未完成")
         if unverified_recycles:
             parts.append(
                 f"{unverified_recycles:,} 项已由 Windows 移除，但无法确认是否进入"
                 "回收站，可能无法恢复"
             )
-        for name, count in _grouped_reasons(notes.items()):
-            parts.append(f"{name} {count:,} 项")
+        if failed:
+            grouped = _grouped_reasons((outcome.path, outcome.note) for outcome in failed)
+            parts.append(
+                "未完成原因：" + "；".join(f"{name} {count:,} 项" for name, count in grouped)
+            )
+        if partial:
+            left = _left_totals(outcome.left for outcome in partial)
+            parts.append(f"删了一部分的项共留下：{left}")
+        if partial or failed:
+            parts.append("每一项删了多少、留下多少、为什么留下，见「清理结果」")
         self._status.set("；".join(parts) + "。点「扫描」可核对结果。")
+        if partial or failed:
+            open_cleanup_report(self)
+
+    def _show_cleanup_report(self) -> None:
+        open_cleanup_report(self)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

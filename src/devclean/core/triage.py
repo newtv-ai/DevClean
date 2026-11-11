@@ -23,12 +23,13 @@ from heapq import heappush, heapreplace
 from pathlib import Path
 
 from devclean.core.application_cleanup import (
+    ApplicationPolicyDecision,
     DecisionOwner,
     PolicyAction,
     application_display_name,
     evaluate_application_path,
     file_time_utc,
-    must_close_before_cleanup,
+    must_close_reason,
     snapshot_roots,
 )
 from devclean.core.cleanup_catalog import (
@@ -805,6 +806,15 @@ def _classify(
     )
 
 
+def _close_first(decision: ApplicationPolicyDecision) -> str:
+    """Why a running program has to be closed before this goes, when it does."""
+
+    if decision.action is not PolicyAction.TOOL_KEEP_IN_USE:
+        return ""
+    why = must_close_reason(decision.rule)
+    return f"（{why}）" if why else ""
+
+
 def _application_classification(
     path: Path,
     logical_size: int,
@@ -868,8 +878,9 @@ def _application_classification(
         threshold = decision.effective_idle_days
         threshold_text = "未知" if threshold is None else f"{threshold:g} 天"
         app_name = application_display_name(rule.app_id)
-        must_close = must_close_before_cleanup(rule)
-        guard = f"；执行前必须确认 {app_name} 已关闭" if must_close else ""
+        why_close = must_close_reason(rule)
+        must_close = why_close is not None
+        guard = f"；执行前必须确认 {app_name} 已关闭（{why_close}）" if must_close else ""
         guard_tags = ("requires_process_closed",) if must_close else ()
         return _Classification(
             category,
@@ -906,7 +917,7 @@ def _application_classification(
         Actionability.REPORT_ONLY,
         ExecutionPolicy.NONE,
         RecoveryCapability.VENDOR_REDOWNLOAD_BEST_EFFORT,
-        f"{rule.label}：{reason_by_action[decision.action]}",
+        f"{rule.label}：{reason_by_action[decision.action]}{_close_first(decision)}",
         (*common_tags, "tool_keep", decision.action.value.casefold()),
     )
 

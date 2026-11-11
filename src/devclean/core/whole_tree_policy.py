@@ -2,7 +2,9 @@
 
 Catalog discovery grants *where* a whole tree may be considered. This module
 re-checks that the exact audited TOOL rule still owns that boundary and that a
-fresh, complete aggregate can still be collected before mutation.
+fresh aggregate can still be collected before mutation.  An entry inside the
+tree that cannot be read then no longer refuses the whole tree (user decision
+2026-11-11); the deletion checks each entry on its own and leaves that one.
 
 Age, size and rebuild-cost heuristics are deliberately not safety gates here.
 They may affect ranking or recommendation text, but once a vendor/source-backed
@@ -128,9 +130,18 @@ def require_application_whole_tree_policy(
 
 
 def _fresh_tree_evidence(path: Path) -> WholeTreePolicyEvidence:
+    """Count the tree again right before it is deleted.
+
+    An entry inside it that cannot be read now -- one a running program just
+    removed or swapped, a folder this account may not list -- does not refuse
+    the whole tree: the deletion checks, and if need be leaves, each entry on
+    its own.  Only the selected folder itself failing to read refuses it.
+    """
+
     files = 0
     logical_bytes = 0
     latest_ns: int | None = None
+    selected = _normalized(path)
     for record in scan_roots(
         (path,),
         ScanOptions(
@@ -140,9 +151,11 @@ def _fresh_tree_evidence(path: Path) -> WholeTreePolicyEvidence:
         ),
     ):
         if record.kind is ScanRecordKind.ERROR:
-            raise WholeTreePolicyRefusal(
-                f"fresh whole-tree policy scan was incomplete at {record.path}"
-            )
+            if _normalized(Path(record.path)) == selected:
+                raise WholeTreePolicyRefusal(
+                    f"the selected folder could not be read again before deletion: {record.error}"
+                )
+            continue
         for timestamp in (record.creation_time_ns, record.last_write_time_ns):
             if timestamp is not None:
                 latest_ns = timestamp if latest_ns is None else max(latest_ns, timestamp)

@@ -404,11 +404,15 @@ class ModernDevCleanWindow(app.DevCleanWindow):
 
         status_shell = ttk.Frame(page, style="Alt.TFrame", padding=(12, 8))
         status_shell.pack(fill=tk.X, pady=(5, 14))
-        ttk.Label(
+        status = ttk.Label(
             status_shell,
             textvariable=self._status,
             style="Status.TLabel",
-        ).pack(anchor=tk.W)
+            justify=tk.LEFT,
+        )
+        status.pack(anchor=tk.W, fill=tk.X)
+        # A long result wraps onto more lines instead of running off the window.
+        app.wrap_to_width(status, status_shell, 24)
 
     def _build_results(self, page: ttk.Frame) -> None:
         result_title = ttk.Frame(page, style="App.TFrame")
@@ -641,6 +645,7 @@ class ModernDevCleanWindow(app.DevCleanWindow):
         self._checked.clear()
         self._ai_unsure_reasons.clear()
         self._cleanup_failures.clear()
+        self._cleanup_report = ""
         self._review_approvals.clear()
         self._ai_packages.clear()
         self._ai_group_members.clear()

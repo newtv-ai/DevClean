@@ -12,6 +12,9 @@ traverses a reparse point: a link is removed as a link, so no descent can leave
 the selected tree.
 """
 
+# Notes shown to the user are Chinese prose with fullwidth punctuation.
+# ruff: noqa: RUF001
+
 from __future__ import annotations
 
 import ctypes
@@ -47,6 +50,7 @@ _FILE_DISPOSITION_INFO_CLASS: Final = 4
 _FILE_DISPOSITION_INFO_EX_CLASS: Final = 21
 _FILE_DISPOSITION_FLAG_DELETE: Final = 0x00000001
 _FILE_DISPOSITION_FLAG_POSIX_SEMANTICS: Final = 0x00000002
+_FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE: Final = 0x00000010
 _FO_DELETE: Final = 0x0003
 _FOF_SILENT: Final = 0x0004
 _FOF_NOCONFIRMATION: Final = 0x0010
@@ -121,6 +125,9 @@ class DirectoryPurgeResult:
     in_use: int = 0
     denied: int = 0
     examples: tuple[tuple[str, str], ...] = ()
+    # Entries a safety check turned away (a link swapped in, a path that left
+    # the tree); only those entries stay, the rest of the tree still goes.
+    unsafe: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -484,10 +491,35 @@ class TempFolderPurgeResult:
     completed: bool
     # A few left entries with the reason, for the report.
     examples: tuple[tuple[str, str], ...] = ()
+    # Entries a safety check turned away; only they stay (see DirectoryPurgeResult).
+    unsafe: int = 0
 
     @property
     def skipped(self) -> int:
-        return self.in_use + self.denied + self.kept
+        return self.in_use + self.denied + self.kept + self.unsafe
+
+
+def _is_gone(error: OSError) -> bool:
+    """The entry vanished on its own (Windows 2/3 or POSIX ENOENT): nothing is left."""
+
+    winerror = getattr(error, "winerror", None)
+    code = winerror if winerror is not None else error.errno
+    return code in _GONE_WINERRORS or (winerror is None and error.errno == errno.ENOENT)
+
+
+def _safety_note(error: ExactCleanupError) -> str:
+    """Why a safety check turned one entry away, in the user's terms."""
+
+    message = str(error)
+    if "reparse" in message or "cloud" in message:
+        what = "清理时它变成了链接或云端占位项"
+    elif "escaped" in message:
+        what = "它的实际位置离开了要清理的目录"
+    elif "no longer matches" in message or "changed" in message:
+        what = "清理时它被改名或替换"
+    else:
+        what = message
+    return f"安全检查未通过，只跳过这一项（{what}）"
 
 
 class _TempPurgeState:
@@ -499,6 +531,7 @@ class _TempPurgeState:
         self.in_use = 0
         self.denied = 0
         self.kept = 0
+        self.unsafe = 0
         self.examples: list[tuple[str, str]] = []
 
     def snapshot(self) -> DirectoryPurgeProgress:
@@ -526,7 +559,7 @@ class _TempPurgeState:
         # these numbers only 5 is also a POSIX error a deletion can report (EIO);
         # there too the entry is left in place and counted, never deleted.
         windows_code = winerror if winerror is not None else code
-        if windows_code in _GONE_WINERRORS or (winerror is None and code == errno.ENOENT):
+        if _is_gone(error):
             return True
         if windows_code in _IN_USE_WINERRORS or (winerror is None and code in _IN_USE_ERRNOS):
             self.in_use += 1
@@ -538,7 +571,7 @@ class _TempPurgeState:
             or isinstance(error, PermissionError)
         ):
             self.denied += 1
-            self.note(path, "当前账户没有删除权限（可能需要管理员）")  # noqa: RUF001
+            self.note(path, "当前账户没有删除权限（可能需要管理员）")
             return True
         if windows_code in _NOT_EMPTY_WINERRORS or (
             winerror is None and code == errno.ENOTEMPTY
@@ -547,6 +580,12 @@ class _TempPurgeState:
             self.note(path, "清理期间有程序写入了新内容")
             return True
         return False
+
+    def refuse(self, path: str, reason: str) -> None:
+        """Count one entry a safety check turned away; the walk goes on without it."""
+
+        self.unsafe += 1
+        self.note(path, reason)
 
     def result(self, root_path: str, completed: bool) -> TempFolderPurgeResult:
         return TempFolderPurgeResult(
@@ -560,6 +599,7 @@ class _TempPurgeState:
             kept=self.kept,
             completed=completed,
             examples=tuple(self.examples),
+            unsafe=self.unsafe,
         )
 
 
@@ -588,6 +628,19 @@ def purge_temp_folder_contents(
         return _purge_temp_folder_contents_posix(
             root_path, expected, boundary, keep, on_progress, is_cancelled
         )
+    return _purge_temp_folder_contents_windows(
+        root_path, expected, boundary, keep, on_progress, is_cancelled
+    )
+
+
+def _purge_temp_folder_contents_windows(
+    root_path: str,
+    expected: ExactDirectorySnapshot,
+    boundary: ExactRootBoundary,
+    keep: TempEntryGuard,
+    on_progress: Callable[[DirectoryPurgeProgress], None] | None,
+    is_cancelled: Callable[[], bool] | None,
+) -> TempFolderPurgeResult:
     boundary_handle, boundary_final = _open_boundary(boundary)
     try:
         handle = _open_exact_directory(root_path)
@@ -615,6 +668,17 @@ def _empty_temp_folder(
     is_cancelled: Callable[[], bool] | None,
     retained: set[str] | None = None,
 ) -> bool:
+    """Delete everything below *root_path* that may go; leave and count the rest.
+
+    Every entry stands on its own.  One that another program holds open, that
+    this account may not delete, or that fails a safety check (a link swapped
+    in, a final path outside the folder) is left and counted, and the walk
+    carries on with the next.  A folder that cannot be opened for deletion
+    (another program has it open, or its permissions say no) is still entered
+    through a handle that only lists it and still pins it against replacement,
+    so what inside it may go still goes; that folder itself stays.
+    """
+
     pending: list[tuple[str, bool]] = [(root_path, False)]
     pinned: dict[str, wintypes.HANDLE] = {}
     # Folders that keep something, and therefore stay along with their parents.
@@ -625,21 +689,26 @@ def _empty_temp_folder(
             if is_cancelled is not None and is_cancelled():
                 return False
             current, children_done = pending.pop()
+            parent = os.path.dirname(current)
             if children_done:
                 if current != root_path:
                     handle = pinned.pop(current)
                     try:
                         if current in retained:
-                            retained.add(os.path.dirname(current))
+                            retained.add(parent)
                         else:
                             try:
                                 _delete_empty_directory(
                                     current, root_final, pinned_handle=handle
                                 )
+                            except ExactCleanupError as error:
+                                state.refuse(current, _safety_note(error))
+                                retained.add(parent)
                             except OSError as error:
                                 if not state.skip(current, error):
                                     raise
-                                retained.add(os.path.dirname(current))
+                                if not _is_gone(error):
+                                    retained.add(parent)
                             else:
                                 state.directories_removed += 1
                     finally:
@@ -653,11 +722,34 @@ def _empty_temp_folder(
                 except OSError as error:
                     if not state.skip(current, error):
                         raise
-                    retained.add(os.path.dirname(current))
-                    continue
+                    if _is_gone(error):
+                        continue
+                    # In use or not deletable as a whole: still empty it.  This
+                    # handle has no delete access, so the folder itself stays.
+                    retained.add(parent)
+                    try:
+                        handle = _open_exact_directory(_extended_path(current))
+                    except OSError:
+                        continue  # cannot even be listed: left whole, counted above
+                    retained.add(current)
                 pinned[current] = handle
-                _require_purge_directory(handle, current, root_final)
-            children = _list_purge_entries(current, root_final, already_pinned=True)
+                try:
+                    _require_purge_directory(handle, current, root_final)
+                except ExactCleanupError as error:
+                    _close_handle(pinned.pop(current))
+                    state.refuse(current, _safety_note(error))
+                    retained.add(parent)
+                    continue
+            try:
+                children = _list_purge_entries(current, root_final, already_pinned=True)
+            except OSError as error:
+                if not state.skip(current, error):
+                    raise
+                if current != root_path:
+                    _close_handle(pinned.pop(current))
+                if not _is_gone(error):
+                    retained.update((current, parent))
+                continue
             pending.append((current, True))
             for child_path, kind, size in children:
                 reason = keep(child_path, kind is _EntryKind.DIRECTORY, size, None)
@@ -670,11 +762,16 @@ def _empty_temp_folder(
                     pending.append((child_path, False))
                     continue
                 try:
-                    _delete_leaf(child_path, root_final)
+                    _delete_leaf(child_path, root_final, ignore_readonly=True)
+                except ExactCleanupError as error:
+                    state.refuse(child_path, _safety_note(error))
+                    retained.add(current)
+                    continue
                 except OSError as error:
                     if not state.skip(child_path, error):
                         raise
-                    retained.add(current)
+                    if not _is_gone(error):
+                        retained.add(current)
                     continue
                 if kind is _EntryKind.REPARSE_POINT:
                     state.links_removed += 1
@@ -699,9 +796,11 @@ def purge_directory_tree_skipping_in_use(
 ) -> DirectoryPurgeResult:
     """Remove a selected tree like :func:`purge_exact_directory_tree`, around what is in use.
 
-    The same checks guard every step.  What another program holds open, or
-    this account may not delete, is left and counted instead of stopping the
-    rest; the selected folder itself goes once nothing is left in it.
+    The same checks guard every step.  What another program holds open, what
+    this account may not delete, and an entry that fails a safety check are
+    left and counted instead of stopping the rest; the selected folder itself
+    goes once nothing is left in it.  A selected folder that cannot be opened
+    for deletion is still emptied and stays.
     """
 
     root_path = _ordinary_absolute_path(root, "tree root")
@@ -711,15 +810,38 @@ def purge_directory_tree_skipping_in_use(
             remove_root=True,
         )
         return _tree_result(root_path, emptied)
+    return _purge_tree_skipping_in_use_windows(
+        root_path, expected, boundary, on_progress, is_cancelled
+    )
+
+
+def _purge_tree_skipping_in_use_windows(
+    root_path: str,
+    expected: ExactDirectorySnapshot,
+    boundary: ExactRootBoundary,
+    on_progress: Callable[[DirectoryPurgeProgress], None] | None,
+    is_cancelled: Callable[[], bool] | None,
+) -> DirectoryPurgeResult:
+    state = _TempPurgeState()
+    retained: set[str] = set()
     boundary_handle, boundary_final = _open_boundary(boundary)
     try:
-        handle = _open_exact_directory_for_mutation(root_path)
+        try:
+            handle = _open_exact_directory_for_mutation(root_path)
+        except OSError as error:
+            if _is_gone(error) or not state.skip(root_path, error):
+                raise
+            # Another program has the folder itself open (or its permissions
+            # say no): empty it through a pinning, list-only handle and keep it.
+            try:
+                handle = _open_exact_directory(_extended_path(root_path))
+            except OSError:
+                raise error from None
+            retained.add(root_path)
         try:
             _require_handle_in_boundary(handle, boundary_final, allow_equal=False)
             _require_directory_snapshot(read_file_metadata_handle(handle), expected)
             _require_final_path(handle, root_path)
-            state = _TempPurgeState()
-            retained: set[str] = set()
             completed = _empty_temp_folder(
                 root_path,
                 _final_path(handle),
@@ -756,6 +878,7 @@ def _tree_result(root_path: str, emptied: TempFolderPurgeResult) -> DirectoryPur
         in_use=emptied.in_use,
         denied=emptied.denied,
         examples=emptied.examples,
+        unsafe=emptied.unsafe,
     )
 
 
@@ -788,15 +911,31 @@ def _purge_temp_folder_contents_posix(
     flags = os.O_RDONLY | directory_flag | no_follow_flag
     state = _TempPurgeState()
 
+    def left(child: str, error: OSError) -> bool:
+        """Count *error* for *child*; whether something stays in its folder."""
+
+        if not state.skip(child, error):
+            raise error
+        return not _is_gone(error)
+
     def empty(directory: int, path: str) -> bool:
         emptied = True
-        with os.scandir(directory) as entries:
+        try:
+            listing = os.scandir(directory)
+        except OSError as error:
+            return not left(path, error)
+        with listing as entries:
             for entry in entries:
                 if is_cancelled is not None and is_cancelled():
                     raise _Cancelled
                 child = os.path.join(path, entry.name)
-                is_directory = entry.is_dir(follow_symlinks=False)
-                status = entry.stat(follow_symlinks=False)
+                try:
+                    is_directory = entry.is_dir(follow_symlinks=False)
+                    status = entry.stat(follow_symlinks=False)
+                except OSError as error:
+                    if left(child, error):
+                        emptied = False
+                    continue
                 reason = keep(child, is_directory, status.st_size, None)
                 if reason is not None:
                     state.kept += 1
@@ -807,9 +946,16 @@ def _purge_temp_folder_contents_posix(
                     try:
                         inner = os.open(entry.name, flags, dir_fd=directory)
                     except OSError as error:
-                        if not state.skip(child, error):
-                            raise
-                        emptied = False
+                        if error.errno in {errno.ELOOP, errno.ENOTDIR}:
+                            # Swapped for a link or a file since it was listed:
+                            # only this entry is turned away.
+                            state.refuse(
+                                child,
+                                "安全检查未通过，只跳过这一项（清理时它被换成了链接或文件）",
+                            )
+                            emptied = False
+                        elif left(child, error):
+                            emptied = False
                         continue
                     try:
                         inner_emptied = empty(inner, child)
@@ -821,18 +967,16 @@ def _purge_temp_folder_contents_posix(
                     try:
                         os.rmdir(entry.name, dir_fd=directory)
                     except OSError as error:
-                        if not state.skip(child, error):
-                            raise
-                        emptied = False
+                        if left(child, error):
+                            emptied = False
                         continue
                     state.directories_removed += 1
                     continue
                 try:
                     os.unlink(entry.name, dir_fd=directory)
                 except OSError as error:
-                    if not state.skip(child, error):
-                        raise
-                    emptied = False
+                    if left(child, error):
+                        emptied = False
                     continue
                 if entry.is_symlink():
                     state.links_removed += 1
@@ -1132,19 +1276,26 @@ def _list_purge_entries(
             _close_handle(handle)
 
 
-def _delete_leaf(path: str, boundary_final: str) -> None:
+def _delete_leaf(path: str, boundary_final: str, *, ignore_readonly: bool = False) -> None:
     """Delete one file, or one link, by handle without ever resolving it.
 
     A reparse point may itself be directory-shaped -- a junction or a directory
     symlink -- and Windows refuses to open any directory-shaped object without
     backup semantics.  Requesting them here is what lets the link be removed as
     a link instead of forcing the walk to follow it.
+
+    *ignore_readonly* lets a file carrying the read-only attribute (git object
+    packs in a cache clone, for example) go with the rest of an approved tree
+    instead of being reported as "no permission".
     """
 
     handle = _open_leaf_for_delete(path)
     try:
         _require_handle_in_boundary(handle, boundary_final, allow_equal=False)
-        _set_delete_disposition(handle, path)
+        if ignore_readonly:
+            _set_delete_disposition(handle, path, ignore_readonly=True)
+        else:
+            _set_delete_disposition(handle, path)
     finally:
         _close_handle(handle)
 
@@ -1235,7 +1386,9 @@ def _close_handle(handle: wintypes.HANDLE) -> None:
     close(handle)
 
 
-def _set_delete_disposition(handle: wintypes.HANDLE, source: str) -> None:
+def _set_delete_disposition(
+    handle: wintypes.HANDLE, source: str, *, ignore_readonly: bool = False
+) -> None:
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     set_information = kernel32.SetFileInformationByHandle
     set_information.argtypes = (
@@ -1245,9 +1398,12 @@ def _set_delete_disposition(handle: wintypes.HANDLE, source: str) -> None:
         wintypes.DWORD,
     )
     set_information.restype = wintypes.BOOL
-    extended = _FILE_DISPOSITION_INFO_EX(
-        _FILE_DISPOSITION_FLAG_DELETE | _FILE_DISPOSITION_FLAG_POSIX_SEMANTICS
-    )
+    flags = _FILE_DISPOSITION_FLAG_DELETE | _FILE_DISPOSITION_FLAG_POSIX_SEMANTICS
+    if ignore_readonly:
+        # Windows 10 1809+; older systems answer "invalid parameter" and take
+        # the basic path below, where a read-only file stays "access denied".
+        flags |= _FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE
+    extended = _FILE_DISPOSITION_INFO_EX(flags)
     if set_information(
         handle,
         _FILE_DISPOSITION_INFO_EX_CLASS,

@@ -310,15 +310,18 @@ def test_project_node_modules_remains_generic_regenerable_output() -> None:
     assert scope is DirectoryScope.REGENERABLE_TOOL_OUTPUT
 
 
-def test_npm_process_guard_rechecks_live_npm_process_for_user_logs(
+def test_npm_user_logs_are_cleaned_while_npm_runs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         "devclean.core.application_cleanup.npm_process_running",
         lambda: True,
     )
-    assert not process_guard_allows(
+    # User decision 2026-11-10/11: cleaned while the program runs; what it holds
+    # open is skipped one by one at deletion.  Only what a running program would be
+    # damaged by losing waits (application_cleanup._MUST_CLOSE_REASONS).
+    assert process_guard_allows(
         r"C:\Users\alice\AppData\Local\npm-cache\_logs\2026-06-01T00_00_00_000Z-debug-0.log",
         _env(),
     )
-    assert not process_guard_allows(r"D:\src\app\npm-debug.log", _env())
+    assert process_guard_allows(r"D:\src\app\npm-debug.log", _env())

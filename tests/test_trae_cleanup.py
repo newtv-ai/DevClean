@@ -231,7 +231,7 @@ def test_trae_dynamic_whole_tree_cache_root_is_exact_only() -> None:
     assert whole_tree_application_rule(r"D:\TraeState\Crashpad\reports", env) is None
 
 
-def test_trae_process_guard_allows_user_choice_and_cache_but_blocks_live_logs(
+def test_trae_process_guard_allows_user_choice_cache_and_logs_but_not_crash_reports(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = (
@@ -250,7 +250,11 @@ def test_trae_process_guard_allows_user_choice_and_cache_but_blocks_live_logs(
     # A user decision (2026-11-10): an audited cache is cleaned while its program
     # runs; the deletion itself skips the files the program holds open.
     assert process_guard_allows(cache, _env())
-    assert not process_guard_allows(logs, _env())
+    # User decision 2026-11-10/11: cleaned while the program runs; what it holds
+    # open is skipped one by one at deletion.  Only what a running program would be
+    # damaged by losing waits (application_cleanup._MUST_CLOSE_REASONS).
+    assert process_guard_allows(logs, _env())
+    # Crash reports are protected data (KEEP), running or not.
     assert not process_guard_allows(crash, _env())
 
 

@@ -49,7 +49,7 @@ def test_cursor_roots_cover_roaming_local_system_and_home() -> None:
     assert roots.home in application_scan_roots(_env())
 
 
-def test_cursor_known_cache_is_tool_owned_and_process_guarded() -> None:
+def test_cursor_known_cache_is_tool_owned_and_offered_while_cursor_runs() -> None:
     path = r"C:\Users\alice\AppData\Roaming\Cursor\Code Cache\js\entry"
     decision = evaluate_application_path(
         path,
@@ -72,8 +72,21 @@ def test_cursor_known_cache_is_tool_owned_and_process_guarded() -> None:
         process_running=True,
         environment=_env(),
     )
+    # User decision 2026-11-10/11: cleaned while the program runs; what it holds
+    # open is skipped one by one at deletion.  Only what a running program would be
+    # damaged by losing waits (application_cleanup._MUST_CLOSE_REASONS).
     assert running is not None
-    assert running.action is PolicyAction.TOOL_KEEP_IN_USE
+    assert running.action is PolicyAction.TOOL_DELETE
+    installing = evaluate_application_path(
+        r"C:\Users\alice\AppData\Roaming\Cursor\CachedExtensionVSIXs\ext.vsix",
+        logical_size=100 * _MIB,
+        last_used=_NOW - timedelta(days=20),
+        now=_NOW,
+        process_running=True,
+        environment=_env(),
+    )
+    assert installing is not None
+    assert installing.action is PolicyAction.TOOL_KEEP_IN_USE
 
 
 def test_cursor_graphics_crash_and_extension_caches_are_tool_owned() -> None:
@@ -203,7 +216,12 @@ def test_cursor_process_guard_allows_user_database_but_rechecks_tool_cache(
         lambda: True,
     )
     cache = r"C:\Users\alice\AppData\Roaming\Cursor\Cache\data_0"
-    assert not process_guard_allows(cache, _env())
+    vsix = r"C:\Users\alice\AppData\Roaming\Cursor\CachedExtensionVSIXs\ext.vsix"
+    # User decision 2026-11-10/11: cleaned while the program runs; what it holds
+    # open is skipped one by one at deletion.  Only what a running program would be
+    # damaged by losing waits (application_cleanup._MUST_CLOSE_REASONS).
+    assert process_guard_allows(cache, _env())
+    assert not process_guard_allows(vsix, _env())
 
 
 def test_cursor_whole_tree_delete_is_exact_cache_only() -> None:

@@ -49,7 +49,7 @@ def test_fresh_tiny_cursor_extension_package_cache_is_safe_cleanup() -> None:
     assert decision.action is PolicyAction.TOOL_DELETE
 
 
-def test_cursor_process_activity_still_blocks_generated_cache_cleanup() -> None:
+def test_cursor_generated_cache_is_offered_while_cursor_runs() -> None:
     decision = evaluate_application_path(
         r"C:\Users\alice\AppData\Roaming\Cursor\GPUCache\data_0",
         logical_size=500 * _MIB,
@@ -59,9 +59,25 @@ def test_cursor_process_activity_still_blocks_generated_cache_cleanup() -> None:
         environment=_env(),
     )
 
+    # User decision 2026-11-10/11: cleaned while the program runs; what it holds
+    # open is skipped one by one at deletion.  Only what a running program would be
+    # damaged by losing waits (application_cleanup._MUST_CLOSE_REASONS).
     assert decision is not None
     assert decision.rule.rule_id == "cursor-roaming-gpu-cache"
-    assert decision.action is PolicyAction.TOOL_KEEP_IN_USE
+    assert decision.action is PolicyAction.TOOL_DELETE
+
+    # An extension Cursor may be installing right now still waits for it.
+    installing = evaluate_application_path(
+        r"C:\Users\alice\AppData\Roaming\Cursor\CachedExtensionVSIXs\ext.vsix",
+        logical_size=500 * _MIB,
+        last_used=_NOW - timedelta(days=90),
+        now=_NOW,
+        process_running=True,
+        environment=_env(),
+    )
+    assert installing is not None
+    assert installing.rule.rule_id == "cursor-roaming-cached-extension-vsix"
+    assert installing.action is PolicyAction.TOOL_KEEP_IN_USE
 
 
 def test_cursor_diagnostics_are_not_broadened_into_unconditional_cache_cleanup() -> None:

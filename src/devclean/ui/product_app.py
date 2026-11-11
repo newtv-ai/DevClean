@@ -296,6 +296,7 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
         self._checked.clear()
         self._ai_unsure_reasons.clear()
         self._cleanup_failures.clear()
+        self._cleanup_report = ""
         self._review_approvals.clear()
         self._ai_packages.clear()
         self._ai_group_members.clear()
