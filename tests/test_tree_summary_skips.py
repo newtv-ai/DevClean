@@ -72,7 +72,7 @@ def _denied(path: Path, *, winerror: int = 5) -> OSError:
 def _refuse_listing(
     monkeypatch: pytest.MonkeyPatch, folder: Path, error: Callable[[], OSError]
 ) -> None:
-    """Make *folder* fail to list, whether it is opened by path or by descriptor."""
+    """Make *folder* fail to list, opened by path (plain or extended) or by descriptor."""
 
     real_scandir = os.scandir
     target = os.path.normcase(os.path.abspath(folder))
@@ -82,7 +82,11 @@ def _refuse_listing(
         if isinstance(path, int):
             refused = os.fstat(path).st_ino == inode
         else:
-            refused = os.path.normcase(os.path.abspath(os.fspath(path))) == target
+            # The Windows deletion lists through the extended form (\\?\C:\...).
+            name = os.fspath(path)
+            if name.startswith("\\\\?\\"):
+                name = name[4:]
+            refused = os.path.normcase(os.path.abspath(name)) == target
         if refused:
             raise error()
         return real_scandir(path)
