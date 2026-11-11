@@ -8,7 +8,6 @@ No Tk window is created: trees, labels and the event loop are small fakes.
 
 from __future__ import annotations
 
-import re
 import time
 from queue import Queue
 from typing import Any, cast
@@ -136,34 +135,105 @@ def test_a_finished_scan_publishes_results_before_reporting_its_totals() -> None
     assert scheduled == [window._drain_events]
 
 
+class _Root:
+    """A Tk root whose ``after`` queue is run by hand."""
+
+    def __init__(self) -> None:
+        self.pending: dict[str, tuple[object, tuple[object, ...]]] = {}
+        self.cancelled: list[str] = []
+        self._next = 0
+
+    def after(self, _delay: int, callback: object, *args: object) -> str:
+        self._next += 1
+        job = f"after#{self._next}"
+        self.pending[job] = (callback, args)
+        return job
+
+    def after_cancel(self, job: str) -> None:
+        self.cancelled.append(job)
+        self.pending.pop(job, None)
+
+    def run_pending(self) -> None:
+        due, self.pending = self.pending, {}
+        for callback, args in due.values():
+            cast(Any, callback)(*args)
+
+
 def _product_window() -> Any:
     window: Any = product_app.ProductDevCleanWindow.__new__(product_app.ProductDevCleanWindow)
-    window._scan_duration = _Var(product_app._SCAN_RUNNING_TEXT)
+    window._root = _Root()
+    window._scan_duration = _Var("扫描耗时：—")
     window._status = _Var()
     window._session = None
+    window._scan_token = "scan"
+    window._scan_clock_job = None
     return window
 
 
-def test_the_timer_shows_no_elapsed_time_until_the_whole_scan_is_done(
+@pytest.mark.parametrize(
+    ("elapsed", "text"),
+    [
+        (0, "扫描耗时：0 秒"),
+        (45.9, "扫描耗时：45 秒"),
+        (65, "扫描耗时：1 分 05 秒"),
+        (150, "扫描耗时：2 分 30 秒"),
+        (3725, "扫描耗时：62 分 05 秒"),
+    ],
+)
+def test_the_live_clock_renders_whole_elapsed_seconds(elapsed: float, text: str) -> None:
+    assert product_app._live_elapsed_text(elapsed) == text
+
+
+def test_the_timer_shows_the_real_elapsed_time_while_scanning_and_the_total_at_the_end(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    assert "进行中" in product_app._SCAN_RUNNING_TEXT
-    assert not re.search(r"\d", product_app._SCAN_RUNNING_TEXT)
+    # A user requirement (2026-11-11): the label counts the real scan time live.
     window = _product_window()
+    root = window._root
     window._scan_started_at = time.monotonic() - 75
-    # Republishing results (an AI import, a rule edit) is not the end of a scan.
+    window._schedule_scan_clock("scan")
+    assert len(root.pending) == 1
+    root.run_pending()
+    assert window._scan_duration.get() == "扫描耗时：1 分 15 秒"
+    assert len(root.pending) == 1  # the next tick, about a second later
+
+    # A new schedule (a rescan) replaces the pending tick instead of adding one.
+    window._schedule_scan_clock("scan")
+    assert len(root.pending) == 1 and len(root.cancelled) == 1
+
+    # Republishing results (an AI import, a rule edit) does not stop the clock.
     monkeypatch.setattr(app.DevCleanWindow, "_publish", lambda *_args, **_kwargs: None)
     product_app.ProductDevCleanWindow._publish(window, cast(Any, object()))
-    assert window._scan_duration.get() == product_app._SCAN_RUNNING_TEXT
-    assert window._scan_started_at is not None
+    assert window._scan_started_at is not None and len(root.pending) == 1
 
     window._scan_finished(False, app.ScanTotals(405_827, 51_234, 118 * 1024**3))
 
     assert window._scan_started_at is None
+    assert root.pending == {}  # the clock stopped with the scan
     assert window._scan_duration.get().startswith("扫描总耗时：1 分 1")
     status = window._status.get()
     assert status.startswith("扫描完成：共 405,827 个文件、51,234 个文件夹，总大小 ")
     assert "，总耗时 1 分 1" in status
+
+
+def test_a_stale_tick_neither_overwrites_the_total_nor_reschedules() -> None:
+    window = _product_window()
+    root = window._root
+    window._scan_started_at = time.monotonic() - 5
+    window._tick_scan_clock("scan")
+    assert window._scan_duration.get() == "扫描耗时：5 秒"
+    assert len(root.pending) == 1
+
+    # A tick of an earlier scan stops itself without touching the label.
+    root.pending.clear()
+    window._scan_duration.set("unchanged")
+    window._tick_scan_clock("older-scan")
+    assert window._scan_duration.get() == "unchanged" and root.pending == {}
+
+    # After the scan is done, a tick that was already due changes nothing.
+    window._scan_started_at = None
+    window._tick_scan_clock("scan")
+    assert window._scan_duration.get() == "unchanged" and root.pending == {}
 
 
 def test_a_cancelled_scan_says_so_with_what_it_saw() -> None:

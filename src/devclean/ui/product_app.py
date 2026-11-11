@@ -14,6 +14,7 @@ belongs in this pipeline rather than in a manual per-tool dialog.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import threading
 import time
@@ -75,7 +76,18 @@ from devclean.ui import app
 from devclean.ui import modern_app as modern
 from devclean.ui.modern_app import ModernDevCleanWindow
 
-_SCAN_RUNNING_TEXT = "扫描耗时：扫描进行中，完成后显示总耗时"
+# The live scan clock refreshes about once a second while a scan runs.
+_SCAN_CLOCK_INTERVAL_MS = 1000
+
+
+def _live_elapsed_text(elapsed: float) -> str:
+    """Elapsed scan time in whole seconds: "45 秒", "1 分 05 秒"."""
+
+    whole = max(0, int(elapsed))
+    if whole < 60:
+        return f"扫描耗时：{whole} 秒"
+    minutes, seconds = divmod(whole, 60)
+    return f"扫描耗时：{minutes} 分 {seconds:02d} 秒"
 
 
 class _HybridTriageSession(TriageSession):
@@ -153,6 +165,7 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
 
     def __init__(self, root: tk.Tk) -> None:
         self._scan_started_at: float | None = None
+        self._scan_clock_job: str | None = None
         self._scan_duration = tk.StringVar(master=root, value="扫描耗时：—")
         super().__init__(root)
 
@@ -252,8 +265,9 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
         ).pack(anchor=tk.E, pady=(0, 8))
 
     def _start_scan(self) -> None:
+        self._cancel_scan_clock()
         self._scan_started_at = time.monotonic()
-        self._scan_duration.set(_SCAN_RUNNING_TEXT)
+        self._scan_duration.set(_live_elapsed_text(0))
         try:
             self._rules = load_rules()
         except (OSError, RuleConfigError, UnicodeError) as error:
@@ -310,6 +324,7 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
             return
 
         self._status.set(f"正在扫描… 已规划 {len(roots):,} 个扫描根。")
+        self._schedule_scan_clock(self._scan_token)
         threading.Thread(
             target=self._scan_worker,
             args=(
@@ -576,9 +591,40 @@ class ProductDevCleanWindow(ModernDevCleanWindow):
             "扫描耗时：—" if rendered is None else f"扫描耗时：{rendered}（扫描失败）"
         )
 
+    def _schedule_scan_clock(self, token: str) -> None:
+        """Show the real elapsed scan time, refreshed about once a second.
+
+        One pending tick at most: a new scan cancels the previous one's.  Each
+        tick only sets the label's text, and stops by itself once the clock is
+        stopped or another scan has started.
+        """
+
+        self._cancel_scan_clock()
+        self._scan_clock_job = self._root.after(
+            _SCAN_CLOCK_INTERVAL_MS, self._tick_scan_clock, token
+        )
+
+    def _tick_scan_clock(self, token: str) -> None:
+        self._scan_clock_job = None
+        started = self._scan_started_at
+        if started is None or token != self._scan_token:
+            return
+        self._scan_duration.set(_live_elapsed_text(time.monotonic() - started))
+        self._scan_clock_job = self._root.after(
+            _SCAN_CLOCK_INTERVAL_MS, self._tick_scan_clock, token
+        )
+
+    def _cancel_scan_clock(self) -> None:
+        job = getattr(self, "_scan_clock_job", None)
+        self._scan_clock_job = None
+        if job is not None:
+            with contextlib.suppress(tk.TclError):
+                self._root.after_cancel(job)
+
     def _stop_scan_clock(self) -> str | None:
         """Stop the running scan clock and render it; ``None`` if none was running."""
 
+        self._cancel_scan_clock()
         started = self._scan_started_at
         if started is None:
             return None
