@@ -54,7 +54,7 @@ def test_windsurf_roots_cover_editor_cascade_plans_extensions_and_system() -> No
     assert plans in scan_roots
 
 
-def test_windsurf_electron_caches_are_tool_owned_and_process_guarded() -> None:
+def test_windsurf_electron_caches_are_tool_owned_and_offered_while_it_runs() -> None:
     paths = {
         r"C:\Users\alice\AppData\Roaming\Windsurf\Cache\data_0": "windsurf-cache",
         (
@@ -103,8 +103,22 @@ def test_windsurf_electron_caches_are_tool_owned_and_process_guarded() -> None:
         process_running=True,
         environment=_env(),
     )
+    # A user decision (2026-11-10): an audited cache is offered while its program
+    # runs, as the pre-delete guard lets it go; the deletion skips held files.
     assert running is not None
-    assert running.action is PolicyAction.TOOL_KEEP_IN_USE
+    assert running.action is PolicyAction.TOOL_DELETE
+
+    # An extension package the editor may be installing from waits for it to close.
+    installing = evaluate_application_path(
+        r"C:\Users\alice\AppData\Roaming\Windsurf\CachedExtensionVSIXs\ext.vsix",
+        logical_size=200 * _MIB,
+        last_used=_NOW - timedelta(days=30),
+        now=_NOW,
+        process_running=True,
+        environment=_env(),
+    )
+    assert installing is not None
+    assert installing.action is PolicyAction.TOOL_KEEP_IN_USE
 
 
 def test_windsurf_audited_cache_safety_is_not_revoked_by_heuristics() -> None:

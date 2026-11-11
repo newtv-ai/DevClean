@@ -70,7 +70,7 @@ def test_fresh_explicit_brave_disk_cache_is_safe_cleanup() -> None:
     assert decision.action is PolicyAction.TOOL_DELETE
 
 
-def test_brave_process_activity_still_blocks_cache_cleanup() -> None:
+def test_brave_cache_is_offered_while_the_browser_runs() -> None:
     decision = evaluate_application_path(
         (
             r"C:\Users\alice\AppData\Local\BraveSoftware\Brave-Browser\User Data"
@@ -83,8 +83,10 @@ def test_brave_process_activity_still_blocks_cache_cleanup() -> None:
         environment=_env(),
     )
     assert decision is not None
+    # A user decision (2026-11-10): an audited cache is offered while its program
+    # runs, as the pre-delete guard lets it go; the deletion skips held files.
     assert decision.rule.rule_id == "brave-profile-gpu-cache"
-    assert decision.action is PolicyAction.TOOL_KEEP_IN_USE
+    assert decision.action is PolicyAction.TOOL_DELETE
 
 
 def test_brave_profile_site_storage_and_updater_state_are_unchanged() -> None:

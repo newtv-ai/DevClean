@@ -79,7 +79,7 @@ def test_vscode_running_cli_override_parser_handles_quoted_and_equals_forms() ->
     assert _argument_value(command, "--extensions-dir") == r"E:\Exts"
 
 
-def test_vscode_cache_is_tool_owned_and_process_guarded() -> None:
+def test_vscode_cache_is_tool_owned_and_offered_while_the_editor_runs() -> None:
     path = r"C:\Users\alice\AppData\Roaming\Code\Code Cache\js\entry"
     decision = evaluate_application_path(
         path,
@@ -102,8 +102,22 @@ def test_vscode_cache_is_tool_owned_and_process_guarded() -> None:
         process_running=True,
         environment=_env(),
     )
+    # A user decision (2026-11-10): an audited cache is offered while its program
+    # runs, as the pre-delete guard lets it go; the deletion skips held files.
     assert running is not None
-    assert running.action is PolicyAction.TOOL_KEEP_IN_USE
+    assert running.action is PolicyAction.TOOL_DELETE
+
+    # An extension package the editor may be installing from waits for it to close.
+    installing = evaluate_application_path(
+        r"C:\Users\alice\AppData\Roaming\Code\CachedExtensionVSIXs\ext.vsix",
+        logical_size=200 * _MIB,
+        last_used=_NOW - timedelta(days=30),
+        now=_NOW,
+        process_running=True,
+        environment=_env(),
+    )
+    assert installing is not None
+    assert installing.action is PolicyAction.TOOL_KEEP_IN_USE
 
 
 def test_vscode_extended_electron_caches_are_tool_owned() -> None:

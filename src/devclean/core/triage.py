@@ -28,6 +28,7 @@ from devclean.core.application_cleanup import (
     application_display_name,
     evaluate_application_path,
     file_time_utc,
+    must_close_before_cleanup,
     snapshot_roots,
 )
 from devclean.core.cleanup_catalog import (
@@ -553,8 +554,12 @@ _SYSTEM_LOCATION_REASON = (
 def _inside_system_location(classification: _Classification) -> _Classification:
     """Offer nothing that the deletion step's system-root deny-list would refuse."""
 
-    if classification.lane is ReviewLane.REPORT_ONLY:
+    if (
+        classification.lane is ReviewLane.REPORT_ONLY
+        and "tool_keep_in_use" not in classification.tags
+    ):
         # Already protected; the tag keeps AI routing and learned rules away too.
+        # A running program is only a passing reason: the deny-list replaces it.
         return replace(classification, tags=(*classification.tags, "system_location"))
     return _Classification(
         classification.category,
@@ -863,8 +868,9 @@ def _application_classification(
         threshold = decision.effective_idle_days
         threshold_text = "未知" if threshold is None else f"{threshold:g} 天"
         app_name = application_display_name(rule.app_id)
-        guard = f"；执行前必须确认 {app_name} 已关闭" if rule.requires_process_closed else ""
-        guard_tags = ("requires_process_closed",) if rule.requires_process_closed else ()
+        must_close = must_close_before_cleanup(rule)
+        guard = f"；执行前必须确认 {app_name} 已关闭" if must_close else ""
+        guard_tags = ("requires_process_closed",) if must_close else ()
         return _Classification(
             category,
             ReviewLane.DETERMINISTIC_CANDIDATE,

@@ -506,3 +506,17 @@ def test_failed_rows_keep_their_failure_reason(home: Path) -> None:
     assert "2 项未完成" in status
     assert "所属程序正在运行，请关闭后再清理 1 项" in status
     assert "扫描后已自行消失 1 项" in status
+
+
+def test_windows_codes_carried_in_errno_are_named_like_winerror() -> None:
+    # exact_cleanup._raise_windows_error builds OSError(GetLastError(), ...): the
+    # Windows code lands in errno, winerror stays None, 32 becomes BrokenPipeError.
+    in_use = OSError(32, "The process cannot access the file", "x")
+    assert isinstance(in_use, BrokenPipeError)
+    assert getattr(in_use, "winerror", None) is None
+    assert app._reason_of(in_use) == "被程序占用或权限不足"
+    assert app._reason_of(OSError(33, "lock violation", "x")) == "被程序占用或权限不足"
+    assert app._reason_of(OSError(5, "access denied", "x")) == "被程序占用或权限不足"
+    assert app._reason_of(OSError(3, "path not found", "x")) == "扫描后已自行消失"
+    # Other subclasses keep their own meaning: errno is not a Windows code there.
+    assert app._reason_of(ConnectionResetError(33, "reset", "x")) != "被程序占用或权限不足"

@@ -672,9 +672,16 @@ def _reason_of(error: BaseException) -> str:
     """Name why one object could not be processed, in the user's terms."""
 
     winerror = getattr(error, "winerror", None)
-    if isinstance(error, FileNotFoundError) or winerror in {2, 3}:
+    windows_code = winerror
+    if winerror is None and type(error) in {OSError, BrokenPipeError, ProcessLookupError}:
+        # _raise_windows_error builds OSError(GetLastError(), ...): the Windows
+        # code lands in errno and winerror stays None (32 surfaces as
+        # BrokenPipeError, 3 as ProcessLookupError), as
+        # exact_cleanup._TempPurgeState.skip also reads it.
+        windows_code = getattr(error, "errno", None)
+    if isinstance(error, FileNotFoundError) or windows_code in {2, 3}:
         return "扫描后已自行消失"
-    if isinstance(error, PermissionError) or winerror in {5, 32, 33}:
+    if isinstance(error, PermissionError) or windows_code in {5, 32, 33}:
         return "被程序占用或权限不足"
     if isinstance(error, (CleanupRefusal, ExactCleanupError)):
         message = str(error)

@@ -17,6 +17,8 @@ import pytest
 
 import devclean.core as core
 import devclean.core.application_cleanup as application_cleanup
+import devclean.core.chrome_cleanup as chrome_cleanup
+import devclean.core.claude_cleanup as claude_cleanup
 import devclean.core.installer_files as installer_files
 from devclean.core._application_cleanup_impl import ApplicationCleanupRule, scan_root_snapshot
 from devclean.core.chrome_cleanup import _CHROME_UPDATER_RULES
@@ -216,9 +218,14 @@ def test_installer_markers_are_listed_once_per_folder_in_a_run(
     assert len(listed) == 2
 
 
+@pytest.mark.parametrize("programs_running", [False, True], ids=["closed", "running"])
 def test_nothing_in_a_deny_listed_system_folder_is_offered(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, programs_running: bool
 ) -> None:
+    # Set, not detected: under the suite's process isolation the Windows probes
+    # cannot run and report "running" to be safe, while elsewhere they say no.
+    monkeypatch.setattr(chrome_cleanup, "chrome_process_running", lambda: programs_running)
+    monkeypatch.setattr(claude_cleanup, "claude_process_running", lambda: programs_running)
     rules = default_rules()
     anchor = Path(tmp_path.anchor)
     system = anchor / "Program Files (x86)"
@@ -281,7 +288,31 @@ def test_nothing_in_a_deny_listed_system_folder_is_offered(
         assert directory_item is not None
         for item in (file_item, directory_item):
             assert (item.lane is not ReviewLane.REPORT_ONLY) is offered, (crx, item.reason)
+            # The audited cache is cleaned around a running updater (user decision
+            # B1, the same rule as the pre-delete guard), so a running program is
+            # never the reason here: it is offered, or the deny-list refuses it.
+            assert "应用仍在运行" not in item.reason
+            assert "已关闭" not in item.reason
             if not offered:
                 assert "system_location" in item.tags
                 assert "Windows 系统保护位置" in item.reason
                 assert route_unresolved_file_to_ai(item).lane is ReviewLane.REPORT_ONLY
+
+    # A rule that does wait for its program (a Claude session marker): in a
+    # deny-listed folder the lasting reason is the deny-list, not the program.
+    marker = triage_file(
+        ScanRecord(
+            root=str(anchor),
+            path=str(system / "Vendor" / "tmpclaude-a1b2-cwd"),
+            kind=ScanRecordKind.FILE,
+            depth=3,
+            logical_size=1024,
+            last_write_time_ns=_OLD_NS,
+        ),
+        delete_config=rules.delete.classification,
+        keep_config=rules.keep.classification,
+        now=_NOW,
+    )
+    assert marker.lane is ReviewLane.REPORT_ONLY
+    assert "system_location" in marker.tags
+    assert "Windows 系统保护位置" in marker.reason and "应用仍在运行" not in marker.reason

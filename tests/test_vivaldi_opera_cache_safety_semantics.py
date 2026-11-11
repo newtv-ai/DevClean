@@ -63,7 +63,7 @@ def test_vivaldi_unknown_last_use_and_explicit_cache_remain_safe() -> None:
     assert explicit.action is PolicyAction.TOOL_DELETE
 
 
-def test_vivaldi_process_and_protected_boundaries_are_unchanged() -> None:
+def test_vivaldi_running_cache_is_offered_and_protected_boundaries_are_unchanged() -> None:
     running = evaluate_application_path(
         (
             r"C:\Users\alice\AppData\Local\Vivaldi\User Data\Default"
@@ -97,8 +97,10 @@ def test_vivaldi_process_and_protected_boundaries_are_unchanged() -> None:
         process_running=False,
         environment=_env(),
     )
+    # A user decision (2026-11-10): an audited cache is offered while its program
+    # runs, as the pre-delete guard lets it go; the deletion skips held files.
     assert running is not None
-    assert running.action is PolicyAction.TOOL_KEEP_IN_USE
+    assert running.action is PolicyAction.TOOL_DELETE
     assert site is not None
     assert site.rule.rule_id == "vivaldi-site-cache-storage"
     assert site.action is PolicyAction.USER_DECISION
@@ -153,7 +155,7 @@ def test_opera_roaming_generated_cache_and_explicit_cache_remain_safe() -> None:
     assert explicit.action is PolicyAction.TOOL_DELETE
 
 
-def test_opera_process_system_cache_and_recovery_boundaries_are_unchanged() -> None:
+def test_opera_running_cache_is_offered_and_other_boundaries_are_unchanged() -> None:
     running = evaluate_application_path(
         (
             r"C:\Users\alice\AppData\Local\Opera Software\Opera GX Stable\Default"
@@ -187,8 +189,10 @@ def test_opera_process_system_cache_and_recovery_boundaries_are_unchanged() -> N
         process_running=False,
         environment=_env(),
     )
+    # A user decision (2026-11-10): an audited cache is offered while its program
+    # runs, as the pre-delete guard lets it go; the deletion skips held files.
     assert running is not None
-    assert running.action is PolicyAction.TOOL_KEEP_IN_USE
+    assert running.action is PolicyAction.TOOL_DELETE
     assert system_cache is not None
     assert system_cache.rule.rule_id == "opera-system-cache"
     assert system_cache.action is PolicyAction.KEEP_PROTECTED

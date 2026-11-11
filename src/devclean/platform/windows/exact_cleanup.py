@@ -520,21 +520,29 @@ class _TempPurgeState:
             return False
         winerror = getattr(error, "winerror", None)
         code = error.errno
-        if winerror in _GONE_WINERRORS or (winerror is None and code == errno.ENOENT):
+        # _raise_windows_error builds OSError(GetLastError(), ...), which puts the
+        # Windows code in errno and leaves winerror None (32 then even surfaces as
+        # BrokenPipeError).  So the Windows code is read from either place.  Of
+        # these numbers only 5 is also a POSIX error a deletion can report (EIO);
+        # there too the entry is left in place and counted, never deleted.
+        windows_code = winerror if winerror is not None else code
+        if windows_code in _GONE_WINERRORS or (winerror is None and code == errno.ENOENT):
             return True
-        if winerror in _IN_USE_WINERRORS or (winerror is None and code in _IN_USE_ERRNOS):
+        if windows_code in _IN_USE_WINERRORS or (winerror is None and code in _IN_USE_ERRNOS):
             self.in_use += 1
             self.note(path, "正被程序使用")
             return True
         if (
-            winerror in _DENIED_WINERRORS
+            windows_code in _DENIED_WINERRORS
             or (winerror is None and code in _DENIED_ERRNOS)
             or isinstance(error, PermissionError)
         ):
             self.denied += 1
             self.note(path, "当前账户没有删除权限（可能需要管理员）")  # noqa: RUF001
             return True
-        if winerror in _NOT_EMPTY_WINERRORS or (winerror is None and code == errno.ENOTEMPTY):
+        if windows_code in _NOT_EMPTY_WINERRORS or (
+            winerror is None and code == errno.ENOTEMPTY
+        ):
             self.in_use += 1
             self.note(path, "清理期间有程序写入了新内容")
             return True

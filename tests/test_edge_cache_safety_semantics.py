@@ -91,7 +91,7 @@ def test_fresh_explicit_edge_disk_cache_is_safe_cleanup() -> None:
     assert decision.action is PolicyAction.TOOL_DELETE
 
 
-def test_edge_process_activity_still_blocks_cache_cleanup() -> None:
+def test_edge_cache_is_offered_while_the_browser_runs() -> None:
     decision = evaluate_application_path(
         (
             r"C:\Users\alice\AppData\Local\Microsoft\Edge\User Data\Profile 2"
@@ -105,8 +105,10 @@ def test_edge_process_activity_still_blocks_cache_cleanup() -> None:
     )
 
     assert decision is not None
+    # A user decision (2026-11-10): an audited cache is offered while its program
+    # runs, as the pre-delete guard lets it go; the deletion skips held files.
     assert decision.rule.rule_id == "edge-profile-gpu-cache"
-    assert decision.action is PolicyAction.TOOL_KEEP_IN_USE
+    assert decision.action is PolicyAction.TOOL_DELETE
 
 
 def test_edge_persistent_site_storage_profile_and_updater_state_are_unchanged() -> None:

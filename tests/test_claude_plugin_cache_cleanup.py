@@ -302,7 +302,7 @@ def test_catalog_surfaces_source_proven_plugin_garbage_as_exact_trees(
     assert orphan_root.application_rule.rule_id == "claude-plugin-expired-orphan-version"
 
 
-def test_process_guard_requires_claude_closed_before_plugin_cache_cleanup(
+def test_unreferenced_plugin_clones_are_cleaned_around_a_running_claude(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -313,14 +313,22 @@ def test_process_guard_requires_claude_closed_before_plugin_cache_cleanup(
     orphan, active = _plugin_versions(cache)
     _mark_orphan(orphan, now_ms)
     _write_plugin_state(cache, [_record(active)])
+    # What a running Claude session may still use waits for it to close.
+    marker = tmp_path / "home" / "source" / "tmpclaude-a1b2-cwd"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("C:\\work", encoding="utf-8")
 
     monkeypatch.setattr(application_cleanup, "claude_process_running", lambda: True)
-    assert not process_guard_allows(staging, env)
-    assert not process_guard_allows(orphan, env)
+    # A user decision (2026-11-10): clones nothing references any more are
+    # cleaned while Claude runs; the deletion skips the files it holds open.
+    assert process_guard_allows(staging, env)
+    assert process_guard_allows(orphan, env)
+    assert not process_guard_allows(marker, env)
 
     monkeypatch.setattr(application_cleanup, "claude_process_running", lambda: False)
     assert process_guard_allows(staging, env)
     assert process_guard_allows(orphan, env)
+    assert process_guard_allows(marker, env)
 
 
 def test_plugin_registry_and_marketplace_state_remain_protected(tmp_path: Path) -> None:

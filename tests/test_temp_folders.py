@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+import devclean.platform.windows.exact_cleanup as exact_cleanup
 from devclean.core.cleanup_catalog import CleanupCategory, CleanupPolicy, KnownCleanupRoot
 from devclean.core.temp_folders import TempFolderKind, temp_folder_kind
 from devclean.core.user_rules import default_rules
@@ -119,7 +120,7 @@ def test_a_file_another_program_holds_open_is_left_and_the_rest_goes(
 
         def unlink(name: Any, *, dir_fd: int | None = None) -> None:
             if name == "busy.log":
-                raise OSError(errno.EBUSY, "held by another program", name)
+                raise _windows_sharing_violation(name)
             real_unlink(name, dir_fd=dir_fd)
 
         monkeypatch.setattr(os, "unlink", unlink)
@@ -182,6 +183,18 @@ def test_a_folder_replaced_since_the_scan_is_refused(tmp_path: Path) -> None:
     assert (folder / "victim.txt").read_bytes() == b"protected"
 
 
+def _windows_sharing_violation(name: object) -> OSError:
+    """The error the Windows deletion path raises for a file in use.
+
+    ``_raise_windows_error`` builds ``OSError(32, ...)``: the Windows code lands
+    in errno (Python even makes it a BrokenPipeError) and winerror stays None.
+    """
+
+    error = OSError(32, "The process cannot access the file because it is in use", name)
+    assert getattr(error, "winerror", None) is None
+    return error
+
+
 def _hold(path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     """Make *path* undeletable as if another program held it open."""
 
@@ -191,7 +204,7 @@ def _hold(path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
 
     def unlink(name: Any, *, dir_fd: int | None = None) -> None:
         if name == path.name:
-            raise OSError(errno.EBUSY, "held by another program", name)
+            raise _windows_sharing_violation(name)
         real_unlink(name, dir_fd=dir_fd)
 
     monkeypatch.setattr(os, "unlink", unlink)
@@ -228,3 +241,45 @@ def test_a_cache_tree_nothing_holds_goes_whole(tmp_path: Path) -> None:
 
     assert result.completed and result.root_absent and result.in_use == 0
     assert not tree.exists()
+
+
+@pytest.mark.parametrize(
+    ("error", "counted"),
+    [
+        # As _raise_windows_error builds them: Windows code in errno, no winerror.
+        (OSError(32, "sharing violation", "x"), "in_use"),
+        (OSError(33, "lock violation", "x"), "in_use"),
+        (OSError(5, "access denied", "x"), "denied"),
+        (OSError(145, "directory not empty", "x"), "in_use"),
+        (OSError(2, "file not found", "x"), None),
+        (OSError(3, "path not found", "x"), None),
+        # As POSIX reports them.
+        (OSError(errno.EBUSY, "busy", "x"), "in_use"),
+        (OSError(errno.EACCES, "denied", "x"), "denied"),
+        (PermissionError(errno.EPERM, "not permitted", "x"), "denied"),
+        (OSError(errno.ENOTEMPTY, "not empty", "x"), "in_use"),
+        (FileNotFoundError(errno.ENOENT, "gone", "x"), None),
+    ],
+)
+def test_entries_in_use_or_without_rights_are_skipped_in_either_error_shape(
+    error: OSError, counted: str | None
+) -> None:
+    state = exact_cleanup._TempPurgeState()
+
+    assert state.skip("x", error)
+
+    expected = {"in_use": 0, "denied": 0}
+    if counted is not None:
+        expected[counted] = 1
+    assert {"in_use": state.in_use, "denied": state.denied} == expected
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        exact_cleanup.ExactCleanupError("opened object's final path escaped the approved root"),
+        OSError(errno.EIO + 100, "unexpected", "x"),
+    ],
+)
+def test_safety_and_unknown_errors_still_stop_the_cleanup(error: OSError) -> None:
+    assert not exact_cleanup._TempPurgeState().skip("x", error)

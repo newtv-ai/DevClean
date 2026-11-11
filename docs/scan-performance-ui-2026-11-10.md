@@ -13,7 +13,7 @@
 | 项 | 内容 |
 | --- | --- |
 | 基线 | `b156d9b` |
-| 提交状态 | 随本文档一并提交、推送，由 Windows CI 构建 |
+| 提交状态 | §1～§10 已随 `472364d` 提交、推送并由 Windows CI 构建；§11（`472364d` 的 CI 失败修复）未 commit、未 push、未构建 |
 | 审计原文 | `docs/cleanup-safety-audit-2026-11-07.md` 未改动 |
 | 运行环境 | Linux 6.12，uv 托管 CPython 3.13.18，pytest 8.4.2，mypy 2.2.0（`--platform win32`），ruff 0.15.21；`winreg` 为临时目录中的桩。**本轮没有在 Windows 上运行任何东西**，见 §9 |
 | 测试数据 | 只用 `tmp_path` 和会话临时目录里生成的文件；没有删除真实用户文件、没有卸载、没有清系统缓存 |
@@ -139,6 +139,7 @@
   - **放开的：** 经审计的可再生缓存（各浏览器/编辑器 `_SAFE_CACHE_RULE_IDS`：HTTP/代码/GPU/着色器缓存、Chrome 更新器 crx_cache 等，以及 Claude 插件缓存里无人引用的暂存/孤儿版本）在程序运行时不再整项拒绝。
   - **仍要求先关闭程序（“所属程序正在运行，请关闭后再清理”）：** IDE 索引缓存（IDE 运行中持续维护）；编辑器可能正在安装使用的下载（VSIX、WSL 服务器下载）；其他要求关闭程序的规则（如 Claude 会话的工作目录标记）。
   - 整目录删除默认改为 `purge_directory_tree_skipping_in_use`：被占用或无权限的文件跳过并计数，其余删除，目录清空后连目录一起删除；原严格版本 `purge_exact_directory_tree` 保留不变。
+  - 扫描分类最初没有跟上这条决定，仍把运行中程序的缓存标为“应用仍在运行”；`472364d` 之后补上，分类和删除前检查现在用同一个判断，见 §11.3。
   - **因用户决定而改写断言的 8 个测试：** Chrome、Brave、Edge、Opera、Vivaldi、Trae、VS Code、Windsurf 的进程守卫测试。缓存路径从“运行中拦下”改为“运行中允许、由删除逐个跳过被占用文件”；同测试中的日志、崩溃转储、WSL 下载仍断言拦下。新测试 `tests/test_cleanup_in_use.py`、`test_a_cache_tree_keeps_only_what_a_running_program_holds`。
 - **(B2) crx_cache 分类与删除矛盾：**
   - 系统根黑名单提为共用模块 `core/system_anchor.py`。分类时落在 Windows/Program Files/ProgramData 等位置、且未被配置根允许的条目不再列为可清理，原因写“位于 Windows 系统保护位置…”。
@@ -183,7 +184,7 @@ Linux 夹具上 POSIX 目录的 `st_nlink` 改报 1，与 Windows 目录一致�
 ## 9. 未在 Windows 上实测
 
 1. 扫描耗时（§7 的推断）、“未响应”是否消失、切换窗口后的响应。
-2. 句柄版的清空和整目录删除：真实共享冲突时的跳过、`ERROR_DIR_NOT_EMPTY` 的处理、文件夹本身保留与删除。Linux 上测的是同语义的 POSIX 实现；Windows 上的占用测试（真实打开文件）在 CI 上首次运行。
+2. 句柄版的清空和整目录删除：真实共享冲突时的跳过、`ERROR_DIR_NOT_EMPTY` 的处理、文件夹本身保留与删除。Linux 上测的是同语义的 POSIX 实现；Windows 上的占用测试（真实打开文件）在 `472364d` 的 CI 上首次运行并暴露了 §11.1 的缺陷。
 3. C:\Windows\Temp 在普通账户下的表现：预期大部分文件“没有删除权限”被跳过并提示可能需要管理员。
 4. Chrome/Claude 运行时的实际清理效果：哪些文件被锁、跳过数量。
 5. Defender 实时扫描对 exe 内容探测的影响（读取次数没有变化）。
@@ -197,3 +198,144 @@ Linux 夹具上 POSIX 目录的 `st_nlink` 改报 1，与 Windows 目录一致�
 | 测试（新） | `tests/test_temp_folders.py`、`tests/test_scan_hot_path.py`、`tests/test_scan_ui_refresh.py`、`tests/test_cleanup_in_use.py` |
 | 测试（新增用例） | `tests/test_deletion_workflow.py`（临时文件夹端到端、扫描线程交接） |
 | 测试（按用户决定改写断言） | `tests/test_{chrome,brave,edge,opera,vivaldi,trae,vscode,windsurf}_cleanup.py` 的进程守卫用例 |
+
+## 11. `472364d` 的 Windows CI 失败修复（2026-11-11）
+
+| 项 | 内容 |
+| --- | --- |
+| CI | run 42973479185：4 失败 / 1207 通过（日志 `/workspace/devclean-ci-472364d-failure.log`） |
+| 基线 | `472364d`（已推到 origin/main），在其上继续改，没有 revert |
+| 范围 | 只修这 4 个失败；为满足失败 4 的要求而必须同步的测试见 §11.3 |
+| 提交状态 | 随本节改动一并提交、推送，由 Windows CI 构建 |
+| 审计原文 | 未改动，SHA-256 仍为 `a078457ee2be031482f1f15073491b82976b4dcbf5aceeeface413794fc4ce0f` |
+
+### 11.1 失败 1、2：被占用的文件让整个清理中止（生产缺陷）
+
+- `tests/test_temp_folders.py::test_a_file_another_program_holds_open_is_left_and_the_rest_goes`
+- `tests/test_temp_folders.py::test_a_cache_tree_keeps_only_what_a_running_program_holds`
+
+**根因：**
+- `exact_cleanup.py` 的 `_raise_windows_error` 用 `OSError(GetLastError(), 消息, 路径)` 抛错：Windows 错误码落进 `errno`，`winerror` 为 None；32 还会被 Python 变成 `BrokenPipeError`。
+- `_TempPurgeState.skip()` 只在 `winerror` 上认 32/33/5/145。`winerror` 缺失时，它只拿 `errno` 比 POSIX 的 EBUSY/EACCES 等值，所以“文件正在使用”（32）被当作未知错误重新抛出，整个目录中止。
+- Linux 上没暴露：测试用 `EBUSY` 模拟占用，走的是 POSIX 分支。
+
+**修复：**
+- `skip()` 先取 `winerror`；缺失时从 `errno` 读同一个 Windows 错误码，再按 32/33（占用）、5（无权限）、145（目录非空）、2/3（已消失）归类。POSIX 的判断保留不变。
+- 安全错误（`ExactCleanupError`，如链接替换、越界）和未知错误仍然中止。
+- 没有改 `_raise_windows_error` 的抛出方式：别处有 `errno == 2` 的判断，也有按异常类型分支的代码，改了会波及这 4 个失败之外的路径。
+- 两条路径都修好了：临时文件夹清空（`purge_temp_folder_contents`）和程序运行时的整目录删除（`purge_directory_tree_skipping_in_use`）。两者的 7 处跳过都经过同一个 `skip()`。
+- 数字重叠：这几个码里只有 5 在 POSIX 上另有含义（EIO）。POSIX 上遇到 EIO 的条目也会被留下并计数，不会多删任何东西；正式产品只在 Windows 上运行。
+
+**测试（Linux 可复现）：**
+- 两个失败测试在 Linux 上的占用模拟改为抛出与 Windows 相同的错误形态：`OSError(32, …)`，`winerror` 为 None（原来是 `EBUSY`）。
+- 新增 `test_entries_in_use_or_without_rights_are_skipped_in_either_error_shape`（11 组）：同时覆盖“Windows 码在 errno、无 winerror”和 POSIX 两种形态。
+- 新增 `test_safety_and_unknown_errors_still_stop_the_cleanup`（2 组）：安全错误和未知错误仍然中止。
+- 变异检查：把 `exact_cleanup.py` 换回 `472364d` 版，Linux 上 7 个用例失败，包括 CI 的这两个；换回修复版全部通过。
+- 计数推演（Windows 分支，未实跑）：被占用的文件让所在目录进入 `retained`，目录本身不再尝试删除，所以不会再多记一次“目录非空”。两个测试期望的“占用 1 项”在 Windows 上也成立。
+
+### 11.2 失败 3：Claude 插件缓存进程守卫测试没跟上 B1（测试）
+
+- 原名 `test_process_guard_requires_claude_closed_before_plugin_cache_cleanup`，改名为 `test_unreferenced_plugin_clones_are_cleaned_around_a_running_claude`，与那 8 个测试同一标准。
+- **Claude 运行时：**
+  - 无人引用的暂存克隆和孤儿版本：由“拦下”改为“允许”；删除时被占用的文件逐个跳过。
+  - 新增一项必须先关闭 Claude 才能动的条目（Claude 会话的工作目录标记 `tmpclaude-*-cwd`），断言运行时拦下。
+- **Claude 未运行时：** 三者都允许，原有断言保留。
+- **Linux 上的情况：** 该测试属于既有的 Windows 路径失败基线（插件缓存模块只认 Windows 绝对路径），改前改后都在第一句暂存断言处以同样方式失败。
+  - 我在 Linux 上直接验证了守卫：暂存/孤儿两个规则无论 Claude 是否运行都放行；工作目录标记在运行时拦下、关闭后放行。
+  - CI 日志也显示，Windows 上 Claude 运行时暂存已被放行（原断言 `assert not True`）。
+
+### 11.3 失败 4：扫描分类没跟上删除侧的 B1（生产缺口）
+
+- `tests/test_scan_hot_path.py::test_nothing_in_a_deny_listed_system_folder_is_offered`
+
+**根因：**
+- B1 只改了删除前的进程守卫（`process_guard_refusal`）。扫描时，各应用模块仍按“规则要求关闭程序且程序在运行”给出 `TOOL_KEEP_IN_USE`，分类成“应用仍在运行，避免清理正在写入的数据”。
+- 真机影响：Chrome 开着时，它的缓存文件根本不会出现在可清理列表里。整树目录条目一直按“程序未运行”评估，不受影响。
+- 测试结果取决于平台：测试套件禁止启动外部程序，Windows 上 `chrome_process_running()` 调不了 PowerShell，按“运行中”保守处理；Linux 上直接返回“未运行”。这条测试没有设定进程状态，所以 Windows 上失败、Linux 上通过。
+
+**修复：** 分类和删除前检查用同一个判断。
+
+| 位置 | 改动 |
+| --- | --- |
+| `application_cleanup.must_close_before_cleanup(rule)`（新） | `rule.requires_process_closed and rule.rule_id not in cleanable_while_running()`，扫描和删除前检查共用 |
+| `evaluate_application_path`（扫描入口） | 某应用给出 `TOOL_KEEP_IN_USE`、而该规则不必关闭程序时，按“程序未运行”重新评估同一路径。闲置天数、最小释放量等其他门槛照旧，不是一律可删 |
+| `process_guard_refusal`（删除前） | 改用 `must_close_before_cleanup`，结果不变 |
+| `triage` 可清理条目 | “执行前必须确认 X 已关闭”和 `requires_process_closed` 标签只给真正必须关闭的规则 |
+| `triage._inside_system_location` | 系统禁删位置里原本因“应用仍在运行”而不能删的条目，原因改写为禁删名单（持久的原因）；其他不能删的原因不变，只加标签 |
+
+- 结果：
+  - 用户目录下的 crx_cache 在更新器运行时也列为可清理；
+  - `Program Files (x86)` 下的 crx_cache 列为不能删除，原因是“位于 Windows 系统保护位置…”；
+  - IDE 索引、编辑器 VSIX/WSL 下载、Claude 会话标记等仍是“应用仍在运行”。
+
+**测试：**
+- **失败 4 这条测试：** 按“程序关闭/运行”参数化，显式设定 Chrome 和 Claude 的进程探测，结果不再依赖机器。
+  - 两种状态下：用户目录的 crx_cache 可清理；系统目录的被禁删名单拒绝；原因里都没有“应用仍在运行”或“已关闭”。
+  - 新增一项：系统目录里的 Claude 会话标记，原因也是禁删名单。
+- **新增 `test_the_scan_lists_what_the_pre_delete_guard_lets_go_while_programs_run`：** 程序运行时，同一批路径分别走扫描和删除前检查：
+  - 3 个 Chrome 缓存都可清理，且守卫放行；
+  - Claude 会话标记为“应用仍在运行”，且守卫拦下。
+- **为满足本项要求而同步的 10 个既有测试：** 它们在 `process_running=True` 下断言扫描入口对审计过的缓存返回 `TOOL_KEEP_IN_USE`，与用户要求的“扫描时就要列为可清理”直接矛盾。
+  - 只把这一句改为 `TOOL_DELETE`，其余断言不动：Opera 系统缓存仍受保护，恢复副本、Vivaldi 站点存储仍由用户决定，崩溃转储仍受保护，未运行时的判定照旧。
+  - 名字里写着旧行为的测试改了名。
+  - 三个编辑器各补一句：运行时扩展安装包（VSIX）仍是 `TOOL_KEEP_IN_USE`。
+
+  | 文件 | 原测试名 → 新名 |
+  | --- | --- |
+  | `test_chrome_cache_safety_semantics.py` | `test_chrome_process_activity_still_blocks_cache_cleanup` → `test_chrome_cache_is_offered_while_the_browser_runs` |
+  | `test_brave_cache_safety_semantics.py` | `test_brave_process_activity_still_blocks_cache_cleanup` → `test_brave_cache_is_offered_while_the_browser_runs` |
+  | `test_edge_cache_safety_semantics.py` | `test_edge_process_activity_still_blocks_cache_cleanup` → `test_edge_cache_is_offered_while_the_browser_runs` |
+  | `test_firefox_cache_safety_semantics.py` | `test_firefox_process_activity_still_blocks_cache_cleanup` → `test_firefox_cache_is_offered_while_the_browser_runs` |
+  | `test_vscode_cache_safety_semantics.py` | `test_vscode_process_activity_still_blocks_generated_cache_cleanup` → `test_vscode_generated_cache_is_offered_while_the_editor_runs` |
+  | `test_vivaldi_opera_cache_safety_semantics.py` | `test_opera_process_system_cache_and_recovery_boundaries_are_unchanged` → `test_opera_running_cache_is_offered_and_other_boundaries_are_unchanged` |
+  | `test_vivaldi_opera_cache_safety_semantics.py` | `test_vivaldi_process_and_protected_boundaries_are_unchanged` → `test_vivaldi_running_cache_is_offered_and_protected_boundaries_are_unchanged` |
+  | `test_trae_cleanup.py` | `test_trae_known_electron_cache_is_tool_owned_and_process_guarded` → `test_trae_known_electron_cache_is_tool_owned_and_offered_while_trae_runs`（补 VSIX） |
+  | `test_vscode_cleanup.py` | `test_vscode_cache_is_tool_owned_and_process_guarded` → `test_vscode_cache_is_tool_owned_and_offered_while_the_editor_runs`（补 VSIX） |
+  | `test_windsurf_cleanup.py` | `test_windsurf_electron_caches_are_tool_owned_and_process_guarded` → `test_windsurf_electron_caches_are_tool_owned_and_offered_while_it_runs`（补 VSIX） |
+
+- **变异检查（Linux）：**
+  - 去掉扫描入口的重新评估：失败 4 测试的“运行”组和扫描/守卫一致性测试失败。
+  - 原因文字仍按 `requires_process_closed`：3 个失败。
+  - 去掉系统位置的原因改写：失败 4 测试的“运行”组失败。
+- **模拟 Windows 进程探测（Linux）：** 把所有 `*_process_running` 探测强制为“运行中”，与 Windows 测试机上探测保守返回的效果相同，然后跑全量：
+  - `472364d` 上失败 4 复现；本轮工作树上通过。
+  - 其余失败集合与失败信息两边一致；唯一差别是 §11.2 改名的那条 Linux 基线测试。
+  - 由此确认，本轮之前的扫描测试在两种进程状态下结果相同。
+  - 30 个仅 Windows 运行的测试里，Docker 那条自己设定了进程状态；npm/pnpm 剪枝的不在“运行时可清理”名单内，不受影响。
+
+### 11.4 验证（Linux）
+
+| 检查 | 结果 |
+| --- | --- |
+| `ruff check src scripts tests` | 通过 |
+| `python -m mypy --platform win32` | 通过（363 个文件） |
+| 全量 pytest，`472364d` | 232 失败 / 949 通过 / 30 跳过 |
+| 全量 pytest，本轮 | 232 失败 / 964 通过 / 30 跳过 |
+| 失败集合 | 与 `472364d` 相同，失败信息一致；唯一差别是 §11.2 改名的那条（同一 Linux 基线原因，同一行失败） |
+| 多出的 15 个通过 | 本轮新增用例：错误形态 11 组、安全/未知错误 2 组、失败 4 测试的“运行”组、扫描/守卫一致性测试 |
+| 审计原文 SHA-256 | `a078457e…4fc4ce0f`，未变 |
+
+`ruff format --check` 会报 `test_trae_cleanup.py`、`test_vscode_cleanup.py`、`test_windsurf_cleanup.py` 三个文件，它们在 `472364d` 上就是这样，本轮没有处理。
+
+### 11.5 仍然只能在真实 Windows 上验证
+
+1. **失败 1、2 的真实句柄行为：** Linux 只模拟了错误形态；计数是按代码推演的（§11.1）。需要 Windows CI 跑过才算确认。
+2. **失败 3 的 Claude 运行分支：** 插件缓存只认 Windows 路径，Linux 上只验证了守卫本身。
+3. **真机效果：** Chrome/Edge/编辑器开着时，它们的缓存是否列为可清理；删除时实际跳过多少被占用文件。
+4. **相关但没改的一处：** 界面把删除失败转成原因文字的 `_reason_of`（`ui/app.py`）同样只在 `winerror` 上认 5/32/33。`_raise_windows_error` 抛出的占用错误如果从其他删除路径冒出来（如严格版整树删除），原因列不会写“被程序占用或权限不足”。不在这 4 个失败之内，未改。
+5. §9 中其余各项仍然有效。
+
+### 11.6 本轮改动文件
+
+| 类型 | 文件 |
+| --- | --- |
+| 生产 | `platform/windows/exact_cleanup.py`（`skip()`）、`core/application_cleanup.py`（`must_close_before_cleanup`、扫描入口、删除前检查）、`core/triage.py`（原因文字、系统位置原因） |
+| 测试（失败 1、2） | `tests/test_temp_folders.py` |
+| 测试（失败 3） | `tests/test_claude_plugin_cache_cleanup.py` |
+| 测试（失败 4） | `tests/test_scan_hot_path.py`、`tests/test_cleanup_in_use.py`，以及 §11.3 表中的 10 个测试 |
+
+### 11.x 界面失败原因（核查时补）
+
+- `ui/app.py` 的 `_reason_of` 原来只看 `winerror`；`_raise_windows_error` 抛出的错误 Windows 代码在 `errno`、`winerror` 为空（32 变成 `BrokenPipeError`，3 变成 `ProcessLookupError`），会显示成“其他（…）”。
+- 现在 `winerror` 为空且错误类型是 `OSError`/`BrokenPipeError`/`ProcessLookupError` 时，按 `errno` 读 Windows 代码，与 `_TempPurgeState.skip()` 一致；其他子类不受影响。
+- 测试：`tests/test_cleanup_safety_fixes.py::test_windows_codes_carried_in_errno_are_named_like_winerror`。

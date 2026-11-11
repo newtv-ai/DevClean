@@ -54,7 +54,7 @@ def test_trae_explicit_roots_are_supported() -> None:
     assert roots.extension_roots[0] == PureWindowsPath(r"E:\TraeExtensions")
 
 
-def test_trae_known_electron_cache_is_tool_owned_and_process_guarded() -> None:
+def test_trae_known_electron_cache_is_tool_owned_and_offered_while_trae_runs() -> None:
     path = r"C:\Users\alice\AppData\Roaming\Trae\Code Cache\js\entry"
     decision = evaluate_application_path(
         path,
@@ -77,8 +77,22 @@ def test_trae_known_electron_cache_is_tool_owned_and_process_guarded() -> None:
         process_running=True,
         environment=_env(),
     )
+    # A user decision (2026-11-10): an audited cache is offered while its program
+    # runs, as the pre-delete guard lets it go; the deletion skips held files.
     assert running is not None
-    assert running.action is PolicyAction.TOOL_KEEP_IN_USE
+    assert running.action is PolicyAction.TOOL_DELETE
+
+    # An extension package the editor may be installing from waits for it to close.
+    installing = evaluate_application_path(
+        r"C:\Users\alice\AppData\Roaming\Trae\CachedExtensionVSIXs\ext.vsix",
+        logical_size=200 * _MIB,
+        last_used=_NOW - timedelta(days=30),
+        now=_NOW,
+        process_running=True,
+        environment=_env(),
+    )
+    assert installing is not None
+    assert installing.action is PolicyAction.TOOL_KEEP_IN_USE
 
 
 def test_trae_audited_cache_safety_is_not_revoked_by_heuristics() -> None:

@@ -737,8 +737,25 @@ def evaluate_application_path(
             process_running=process_running,
             environment=environment,
         )
-        if decision is not None:
-            return decision
+        if decision is None:
+            continue
+        if decision.action is PolicyAction.TOOL_KEEP_IN_USE and not must_close_before_cleanup(
+            decision.rule
+        ):
+            # Judged as the pre-delete guard judges it (process_guard_refusal): a
+            # cache cleanable while its program runs is listed as if it were
+            # closed, and its deletion skips the files the program holds open.
+            relaxed = evaluate(
+                path,
+                logical_size=logical_size,
+                last_used=last_used,
+                now=now,
+                process_running=False,
+                environment=environment,
+            )
+            if relaxed is not None:
+                return relaxed
+        return decision
     return None
 
 
@@ -1051,15 +1068,24 @@ def process_guard_refusal(
         _refresh_application(refreshed.app_id)
     if refreshed is not None and refreshed.owner is DecisionOwner.KEEP:
         return PROTECTED_OWNER_REFUSAL
-    if refreshed is None or not refreshed.requires_process_closed:
-        return None
-    if refreshed.rule_id in cleanable_while_running():
-        # An audited regenerable cache: while its program runs, the files it
+    if refreshed is None or not must_close_before_cleanup(refreshed):
+        # Includes the audited caches: while their program runs, the files it
         # holds open are skipped at deletion and the rest still goes.
         return None
     if application_process_running(refreshed.app_id):
         return RUNNING_OWNER_REFUSAL
     return None
+
+
+def must_close_before_cleanup(rule: ApplicationCleanupRule) -> bool:
+    """Whether *rule*'s data may only be cleaned while its program is closed.
+
+    The one answer for both sides: the scan (``evaluate_application_path``)
+    lists the other rules' data while their program runs, and the pre-delete
+    guard (``process_guard_refusal``) lets it go.
+    """
+
+    return rule.requires_process_closed and rule.rule_id not in cleanable_while_running()
 
 
 @lru_cache(maxsize=1)
@@ -1345,6 +1371,7 @@ __all__ = [
     "evaluate_application_path",
     "file_time_utc",
     "match_application_rule",
+    "must_close_before_cleanup",
     "process_guard_allows",
     "process_guard_refusal",
     "scan_root_snapshot",
